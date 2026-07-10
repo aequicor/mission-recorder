@@ -1,23 +1,67 @@
-# mission-recorder
+# Mission Recorder
 
-This project uses [Gradle](https://gradle.org/).
-To build and run the application, use the *Gradle* tool window by clicking the Gradle icon in the right-hand toolbar,
-or run it directly from the terminal:
+![Mission Recorder README header](docs/assets/promo/readme-header.png)
 
-* Run `./gradlew run` to build and run the application.
-* Run `./gradlew build` to only build the application.
-* Run `./gradlew check` to run all checks, including tests.
-* Run `./gradlew clean` to clean all build outputs.
+**Mission Recorder** — Kotlin-утилита для захвата экрана, звука и важных моментов на Windows, macOS, Linux (Ubuntu) и Android. Проект объединяет CLI для быстрых сценариев и Compose Multiplatform GUI для повседневной работы.
 
-Note the usage of the Gradle Wrapper (`./gradlew`).
-This is the suggested way to use Gradle in production projects.
+Главный фокус: простота, удобство, функциональность, безопасность, открытость и полностью бесплатное использование.
 
-[Learn more about the Gradle Wrapper](https://docs.gradle.org/current/userguide/gradle_wrapper.html).
+> Статус: проект в разработке. Этот README описывает целевое видение продукта и ключевые направления реализации.
 
-[Learn more about Gradle tasks](https://docs.gradle.org/current/userguide/command_line_interface.html#common_tasks).
+## Возможности
 
-This project follows the suggested multi-module setup and consists of the `app` and `utils` subprojects.
-The shared build logic was extracted to a convention plugin located in `buildSrc`.
+- Запись всего экрана или выбранного монитора.
+- Запись выделенной области экрана.
+- Захват конкретного приложения без лишнего содержимого вокруг.
+- Запись микрофона и системного звука.
+- Фильтрация системного звука по приложениям.
+- Фоновая запись с сохранением последних `N` минут по кнопке или горячей клавише.
+- Экспорт записи в изображение с кадрами по настраиваемой частоте кадрирования.
+- CLI-режим для автоматизации и GUI-режим для удобного управления.
 
-This project uses a version catalog (see `gradle/libs.versions.toml`) to declare and version dependencies
-and both a build cache and a configuration cache (see `gradle.properties`).
+## Почему Mission Recorder
+
+Mission Recorder создается для ситуаций, где запись должна быть быстрой, понятной и подконтрольной пользователю. Инструмент не требует сложной настройки, не прячет базовые возможности за платными уровнями и не делает облако обязательной частью рабочего процесса.
+
+Проект ориентирован на локальную работу: пользователь контролирует, что записывается, где хранится и как экспортируется. Открытая Kotlin-архитектура упрощает аудит, расширение и адаптацию под разные платформы.
+
+## Для кого
+
+- Разработчики, которым нужно быстро записывать баги, демо и воспроизведения проблем.
+- Пользователи, которым нужен простой экранный рекордер без подписок.
+- Команды, которым важны прозрачность, локальное хранение и кроссплатформенность.
+- Создатели гайдов, видеоинструкций и технических материалов.
+
+## Технологии
+
+- Kotlin
+- Gradle
+- CLI
+- Compose Multiplatform
+- Kotlin Coroutines и Flow
+- JNI и Kotlin/Native interop для платформенного захвата
+
+## Разработка
+
+Используйте Gradle Wrapper из корня репозитория:
+
+```bash
+./gradlew run
+./gradlew build
+./gradlew check
+```
+
+На Windows:
+
+```powershell
+.\gradlew.bat run
+.\gradlew.bat check
+```
+
+## Принципы продукта
+
+- **Просто**: быстрый старт без перегруженного интерфейса.
+- **Безопасно**: локальная обработка и явное управление разрешениями.
+- **Открыто**: код и архитектура доступны для проверки.
+- **Функционально**: запись экрана, приложений, областей, микрофона и системного звука.
+- **Бесплатно**: базовая ценность продукта не должна зависеть от подписки.
