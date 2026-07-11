@@ -8,6 +8,86 @@
 
 > Статус: проект в разработке. Этот README описывает целевое видение продукта и ключевые направления реализации.
 
+## Текущий статус реализации
+
+- Сборка стабилизирована под локальный JDK 21.
+- `:capture-core` переведен в KMP `commonMain/commonTest` и содержит platform-neutral модели и state machine записи.
+- `AudioFrame` поддерживает PCM payload и sample format для текущих и будущих microphone/system audio adapters.
+- `:audio-core` переведен в KMP `commonMain/commonTest` и содержит PCM mixer, level metering и runtime mute gate для микрофона/system audio.
+- Добавлен `:audio-desktop-javasound` с JVM discovery микрофонов через Java Sound и PCM S16LE capture adapter.
+- Добавлен `:audio-windows-wasapi` с discovery активных render endpoints, чтением их Windows friendly names и shared-mode WASAPI loopback capture выбранного устройства на выделенном COM-потоке.
+- `:audio-core` нормализует и смешивает microphone + system loopback в один 48 kHz stereo PCM поток для AAC-дорожки.
+- Перед mixing каждый физический audio route проходит KMP drift correction: минимальная transport latency оценивается окнами по 5 секунд, отклонения до 10 мс игнорируются, а более крупный clock drift компенсируется не более чем 5 мс PCM за окно с непрерывными timestamps. Счетчики вставленных/удаленных samples доступны через `AudioDriftCorrectionMonitor`.
+- Compose GUI показывает throttled peak meters для выбранного микрофона и системного звука, измеряя только уже записываемые PCM frames без отдельного скрытого capture.
+- Реализован первый `RecordingController` со `StateFlow<RecordingState>`.
+- Добавлены fake video/audio adapters и unit-тесты lifecycle: start, stop, cancel, failure и validation.
+- `:capture-platform-api` собирает из KMP `commonMain` контракты discovery источников, audio sources, permissions и routing.
+- GUI и CLI выполняют общий permission preflight перед каждой записью/replay: незаявленный статус считается отказом, а capture adapters и output не открываются до успешной проверки. Платформенная семантика описана в [docs/permissions.md](docs/permissions.md).
+- Контракт владения GDI, COM/WASAPI, global hotkey и будущими platform resources описан в [docs/native-ownership.md](docs/native-ownership.md); native handles не выходят в common/KMP API.
+- Добавлен `:cli` с parser-ом команд, стабильными exit codes, help, `list-sources`, `list-audio`, записью и экспортом раскадровки.
+- Добавлен `:media-desktop-ffmpeg`: локальный MP4 с H.264-видео и AAC-аудио, атомарное завершение файла и декодирование раскадровки.
+- Desktop encoder и replay передают RGBA кадры в FFmpeg с явным pixel format; regression-тесты проверяют порядок RGB-каналов в MP4 и экспортированных PNG без красного оттенка.
+- Desktop GUI использует единый Mission Recorder visual style: фирменный знак экрана с индикатором записи, лапис-лазурный primary, графитовые нейтрали, зелёные успешные состояния и отдельный красный recording accent. Иконки `ICO`, `ICNS` и `PNG` подключены к окнам и нативным пакетам Windows, macOS и Linux.
+- `:encoder` сохраняет `.mrec` frame sequence как внутренний совместимый формат для тестов и старых артефактов.
+- Добавлен `:export` с экспортом кадров из `.mrec` в PNG/JPEG, поддержкой `--fps`, `--interval` и `--overwrite`.
+- `:replay-buffer` собирает platform-neutral lifecycle controller из KMP `commonMain`, а `:media-desktop-ffmpeg` хранит последние `N` минут в ограниченном кольце H.264/AAC сегментов на локальном диске.
+- `:settings` разделяет KMP common schema/validation профилей и JVM atomic JSON migration/store.
+- Добавлен `:capture-desktop-awt` с JVM desktop discovery и capture adapter для screen/monitor/region; указатель мыши рисуется в видеокадре.
+- В Compose GUI область выбирается только явной кнопкой: AWT overlay поддерживает virtual desktop, отрицательные координаты, отмену через Escape/правую кнопку и не запускает запись сам.
+- Центральная панель GUI показывает opt-in live preview выбранного screen/monitor/region/window/application после отдельной кнопки и permission preflight; preview не включает audio, не создаёт файл и останавливается перед recording/replay.
+- Добавлен `:capture-windows-jna`: Windows discovery видимых окон/приложений и isolated capture через `PrintWindow` с GDI fallback; нативные handles остаются внутри adapter-а.
+- На Windows CLI и GUI объединяют AWT screen/monitor/region с native window/application sources; курсор накладывается и на window/app video frames.
+- Добавлен `:capture-linux-x11`: EWMH/Xlib discovery окон и приложений по opaque Window/PID ids, прямой `XGetImage` в RGBA, cursor overlay и отдельный single-thread native dispatcher. Adapter включается только в подтверждённой X11-сессии и не используется как неявный XWayland fallback.
+- Добавлен `:capture-macos-coregraphics`: CoreGraphics discovery и window/application capture с рендерингом `CGImage` в контролируемый Retina RGBA context. Native gateway использует `CGPreflightScreenCaptureAccess`/`CGRequestScreenCaptureAccess` и AVFoundation TCC status; app bundle содержит явные Screen Capture и Microphone usage descriptions.
+- Курсор включен по умолчанию, но его можно явно отключить через Video switch в Compose GUI, `--no-cursor` в CLI или `video.captureCursor=false` в локальном profile JSON; то же значение применяется к replay buffer.
+- Добавлены `:compose-ui` с общим Compose Multiplatform UI и `:desktop-app` с JVM desktop wiring.
+- `:app` больше не зависит от демонстрационного `Printer`.
+- `:app` подключен к CLI runner и desktop backend для AWT video capture с опциональным Java Sound microphone capture.
+- `list-audio` в desktop app wiring использует Java Sound и показывает доступные микрофонные входы, если они видны JVM.
+- `record ... --mic ID` и `--mic default` кодируют выбранный микрофон в AAC-дорожку MP4; выбор устройства происходит явно до старта записи.
+- На Windows `--system-audio` и GUI toggle явно включают WASAPI loopback; активный output endpoint выбирается в GUI или через `--system-audio-endpoint ID`, а микрофон и системный звук можно записывать отдельно или вместе.
+- На Linux `:audio-linux-pulse` обнаруживает monitor sources через `pactl --format=json` и записывает выбранный источник через cancellable `parec` PCM stream. Adapter включается только при наличии обеих команд и работает с PulseAudio либо PipeWire через `pipewire-pulse` compatibility layer.
+- `export-frames` читает MP4 и создает отдельные PNG либо один контактный лист; legacy-экспорт `.mrec` сохранен.
+- GUI всегда записывает MP4. Раскадровка запускается отдельной кнопкой после записи и имеет переключатель «отдельные PNG / один PNG»: отдельные кадры сохраняют разрешение видео, а контактный лист использует ячейки шириной до 640 px с качественным масштабированием.
+- Путь MP4 можно вводить вручную или выбрать явной кнопкой через нативный desktop save dialog; диалог не запускает запись и добавляет `.mp4`, если расширение не указано.
+- В Output есть отдельная кнопка открытия каталога текущего `outputPath` в Проводнике/Finder/file manager; отсутствующий локальный каталог создаётся перед открытием.
+- GUI явно запускает replay buffer на 1-60 минут, показывает накопленную длительность и сохраняет последние минуты в MP4 без остановки буферизации.
+- В меню desktop GUI есть явный toggle компактной always-on-top панели; она использует общий recording state, показывает статус, источник и таймер и запускает/останавливает ту же recording session, что и главное окно.
+- Микрофон и системный звук можно mute/unmute из главного окна и мини-панели во время записи: audio gate передает PCM silence с исходными timestamps, не закрывая устройство и не разрывая AAC timeline.
+- Для микрофона и системного звука доступны независимые gain 0-200% в GUI/profile и CLI (`--mic-gain`, `--system-audio-gain`); коэффициенты применяются KMP PCM pipeline одинаково для single-source, mixed recording и replay до кодирования AAC.
+- В основном Audio-разделе runtime solo позволяет временно оставить только микрофон или системный звук во время recording/replay; solo не изменяет сохранённые mute-флаги и очищается при смене источника.
+- Позиция мини-панели сохраняется в локальном settings JSON при закрытии и при следующем явном открытии зажимается внутри ближайшего доступного монитора, включая конфигурации с отрицательными координатами.
+- Запись можно приостановить и продолжить из главного окна или мини-панели: capture devices остаются открытыми, кадры во время паузы не кодируются, а общая pause duration вычитается из video/audio timestamps и длительности MP4.
+- На Windows меню позволяет явно включить системные hotkeys: `Ctrl+Shift+F9` запускает/останавливает запись, `Ctrl+Shift+F10` переключает pause/resume, `Ctrl+Shift+F11` сохраняет активный replay buffer. Регистрация не запускает capture и полностью снимается при выключении или закрытии приложения.
+- CLI поддерживает foreground replay: `replay run ... --buffer N --output replay.mp4` работает до `Ctrl+C` и сохраняет накопленный snapshot; опциональный `--run-for N` задает дедлайн, а `--control-endpoint PATH` включает локальные `status`, отдельный `save` без остановки и финальный `stop` для automation.
+- CLI-запись может работать без `--duration` до `Ctrl+C`; JVM shutdown hook запрашивает stop и ждёт финализации локального MP4.
+- CLI-запись поддерживает явный локальный `--control-endpoint`: отдельные команды `control status|pause|resume|stop` управляют той же сессией через loopback и одноразовый токен. Сценарий описан в [docs/cli-control.md](docs/cli-control.md).
+- `settings init/validate/show` подключены к CLI и работают с локальным JSON-файлом настроек.
+- `record profile --settings ...` использует локальный профиль настроек для source/video/audio/encoder/replay defaults.
+- Desktop GUI атомарно сохраняет FPS, cursor visibility, H.264 video bitrate, replay duration, storyboard layout и полный encoder snapshot в выбранном profile/settings, а также восстанавливает ранее включенные opt-in global hotkeys; mini-window position хранится в том же локальном JSON.
+- В header Compose GUI доступен редактор именованных профилей: выбор применяет source, microphone/system audio, video, encoder, replay и output snapshot целиком; создание копирует текущую конфигурацию, изменения сохраняются атомарно, удаление требует подтверждения и последний профиль удалить нельзя.
+- После завершения MP4 GUI сохраняет фактический файл в `lastOutputPath` для отдельной раскадровки и сразу вычисляет следующий output из `directory/fileNamePattern` активного профиля, поэтому последовательные записи не пытаются перезаписать предыдущую.
+- В Output доступен отдельный редактор каталога и `.mp4`-шаблона имени с подстановками `{timestamp}` и `{profile}`; Apply обновляет предпросмотр следующего пути и атомарно сохраняет policy активного профиля.
+- Явный Output toggle управляет `output.overwrite` выбранного профиля и общими `RecordingSettings`: без opt-in существующий target отклоняется, а при включении старый MP4 заменяется только после успешного завершения нового временного файла; cancel/failure сохраняет прежний файл.
+- Прямой CLI record имеет тот же явный opt-in через `--overwrite`; отсутствие флага сохраняет profile policy и никогда не включает замену неявно.
+
+Текущие ограничения backend-а:
+
+- system audio реализован для активных Windows output devices через WASAPI и Linux PulseAudio/PipeWire monitor sources через `pactl`/`parec`; app/PID filtering пока не подключен;
+- protected/DRM audio не обходится и может отсутствовать в loopback потоке;
+- window/application capture реализован на Windows и Linux/X11; на X11 obscured regions без backing store могут быть неопределёнными, а protected/elevated/hardware surfaces на Windows могут возвращать пустой кадр;
+- Windows Graphics Capture backend, Wayland portal capture, ScreenCaptureKit replacement для deprecated CoreGraphics image API и Android adapters еще не подключены;
+- GUI region overlay покрыт автоматическими тестами геометрии, но live-сценарии с несколькими мониторами и разным DPI еще требуют проверки на реальном оборудовании;
+- текущий production output desktop backend-а - MP4; WebM пока не подключен;
+- GUI позволяет выбирать video bitrate 2-30 Mbps, но codec/container selector не показывается: production backend пока честно поддерживает только MP4/H.264 и AAC.
+- bounded A/V drift correction покрыта детерминированными slow/fast-clock тестами, но многочасовая проверка на реальных Java Sound/WASAPI устройствах еще не выполнена;
+- replay daemon еще не подключен; Windows global hotkey готов в GUI, но adapters для macOS/Linux и фоновый процесс без открытого GUI остаются.
+- Pause/resume доступны в Compose GUI, доменном controller и opt-in локальном CLI control channel. Тот же versioned loopback protocol управляет foreground replay через `status`, `control save --output ...` и `stop`; replay pause/resume явно отклоняются.
+- Compose transport bar и `control status --json` показывают средний фактический FPS и оценку пропущенных видеокадров; паузы исключаются из media timeline и drop-расчета.
+- профили настроек можно создавать, проверять и использовать из CLI и Compose GUI; скрытые codec/container поля пока остаются доступны только через локальный JSON.
+- Always-on-top, восстановление окна после live-смены monitor layout/DPI и compact layout требуют ручного visual smoke на целевых desktop-платформах; автоматические geometry-тесты покрывают reopen после отключения монитора, отрицательные координаты и промежутки между экранами.
+- macOS production wiring использует native screen preflight/request и microphone TCC status; system audio пока unsupported. Linux portal gateway еще не реализован: JVM gateway работает fail-closed на Wayland и неизвестной session, разрешая AWT/Xlib capture только для подтверждённого X11.
+
 ## Возможности
 
 - Запись всего экрана или выбранного монитора.
@@ -46,7 +126,8 @@ Mission Recorder создается для ситуаций, где запись
 Используйте Gradle Wrapper из корня репозитория:
 
 ```bash
-./gradlew run
+./gradlew run --args="help"
+./gradlew runGui
 ./gradlew build
 ./gradlew check
 ```
@@ -54,8 +135,48 @@ Mission Recorder создается для ситуаций, где запись
 На Windows:
 
 ```powershell
-.\gradlew.bat run
+.\gradlew.bat run --args="help"
+.\gradlew.bat runGui
 .\gradlew.bat check
+```
+
+Корневой `run` запускает CLI; Compose Desktop GUI запускается только явной задачей `runGui` или `:desktop-app:run`.
+
+Для системного звука на Linux нужны `pactl` с JSON output (PulseAudio 16+ либо совместимый `pipewire-pulse`) и `parec` из пакета PulseAudio utilities. При отсутствии команд или доступного audio server adapter не включается и Mission Recorder продолжает работать с Java Sound микрофонами.
+
+Проверка CLI через Gradle:
+
+```powershell
+.\gradlew.bat :app:run --args="list-sources --json"
+.\gradlew.bat :app:run --args="list-audio --json"
+.\gradlew.bat :app:run --args="settings init --path mission-recorder.settings.json --json"
+.\gradlew.bat :app:run --args="settings validate --path mission-recorder.settings.json --json"
+.\gradlew.bat :app:run --args="record profile --settings mission-recorder.settings.json --duration 3s --json"
+.\gradlew.bat :app:run --args="record screen --output build\record-until-ctrl-c.mp4"
+.\gradlew.bat :app:run --args="record screen --output build\controlled.mp4 --control-endpoint build\controlled.control.json"
+.\gradlew.bat :app:run --args="control status --endpoint build\controlled.control.json --json"
+.\gradlew.bat :app:run --args="control pause --endpoint build\controlled.control.json --json"
+.\gradlew.bat :app:run --args="control resume --endpoint build\controlled.control.json --json"
+.\gradlew.bat :app:run --args="control stop --endpoint build\controlled.control.json --json"
+.\gradlew.bat :app:run --args="record screen --output build\sample.mp4 --duration 3s --fps 30"
+.\gradlew.bat :app:run --args="record screen --output build\replace-me.mp4 --duration 3s --overwrite"
+.\gradlew.bat :app:run --args="record screen --output build\sample-with-mic.mp4 --duration 3s --fps 30 --mic default --json"
+.\gradlew.bat :app:run --args="record screen --output build\sample-with-system-audio.mp4 --duration 3s --system-audio --json"
+.\gradlew.bat :app:run --args="record screen --output build\sample-with-headset-audio.mp4 --duration 3s --system-audio-endpoint wasapi:loopback:endpoint:DEVICE_ID --json"
+.\gradlew.bat :app:run --args="record screen --output build\sample-mixed.mp4 --duration 3s --mic default --system-audio --json"
+.\gradlew.bat :app:run --args="record screen --output build\sample-balanced.mp4 --duration 3s --mic default --mic-gain 75 --system-audio-gain 40 --json"
+.\gradlew.bat :app:run --args="record window --id window:win32:HANDLE --output build\window.mp4 --duration 3s"
+.\gradlew.bat :app:run --args="record app --id application:win32:PID --output build\application.mp4 --duration 3s"
+.\gradlew.bat :app:run --args="replay run screen --buffer 5m --output build\replay.mp4 --json"
+.\gradlew.bat :app:run --args="replay run screen --buffer 5m --output build\replay-final.mp4 --control-endpoint build\replay.control.json"
+.\gradlew.bat :app:run --args="control save --endpoint build\replay.control.json --output build\replay-snapshot.mp4 --json"
+.\gradlew.bat :app:run --args="control stop --endpoint build\replay.control.json --json"
+
+# Опциональный автоматический дедлайн:
+.\gradlew.bat :app:run --args="replay run screen --buffer 5m --run-for 30m --output build\replay.mp4 --json"
+.\gradlew.bat :app:run --args="export-frames --input build\sample.mp4 --output build\sample-frames --fps 1 --layout separate --json"
+.\gradlew.bat :app:run --args="export-frames --input build\sample.mp4 --output build\sample-storyboard.png --interval 2s --layout sheet --json"
+.\gradlew.bat :desktop-app:run
 ```
 
 ## Принципы продукта
