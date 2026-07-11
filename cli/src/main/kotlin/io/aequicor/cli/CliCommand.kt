@@ -11,8 +11,8 @@ sealed interface CliCommand {
         val outputPath: String? = null,
         val json: Boolean,
     ) : CliCommand
-    data class ReplayStart(val duration: String, val json: Boolean) : CliCommand
-    data class ReplaySave(val outputPath: String, val json: Boolean) : CliCommand
+    data class ReplayStart(val target: RecordTarget, val options: ReplayRunOptions) : CliCommand
+    data class ReplaySave(val endpointPath: String, val outputPath: String, val json: Boolean) : CliCommand
     data class ReplayRun(val target: RecordTarget, val options: ReplayRunOptions) : CliCommand
     data class ExportFrames(val options: ExportFramesOptions) : CliCommand
     data class Settings(val action: SettingsAction) : CliCommand
@@ -181,6 +181,26 @@ data object UnsupportedRecordingControlCommandBackend : RecordingControlCommandB
 
 interface ReplayCommandBackend {
     suspend fun run(command: CliCommand.ReplayRun): ReplayCommandResult
+}
+
+interface ReplayDaemonCommandBackend {
+    suspend fun start(command: CliCommand.ReplayStart): ReplayDaemonCommandResult
+}
+
+sealed interface ReplayDaemonCommandResult {
+    data class Started(
+        val processId: Long,
+        val endpointPath: String,
+        val outputPath: String,
+    ) : ReplayDaemonCommandResult
+
+    data class Rejected(val message: String) : ReplayDaemonCommandResult
+    data class Failed(val message: String) : ReplayDaemonCommandResult
+}
+
+data object UnsupportedReplayDaemonCommandBackend : ReplayDaemonCommandBackend {
+    override suspend fun start(command: CliCommand.ReplayStart): ReplayDaemonCommandResult =
+        ReplayDaemonCommandResult.Failed("No replay daemon backend is wired.")
 }
 
 sealed interface ReplayCommandResult {

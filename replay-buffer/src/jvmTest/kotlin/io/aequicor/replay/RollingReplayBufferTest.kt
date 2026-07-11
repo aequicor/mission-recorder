@@ -17,8 +17,27 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
 
 class RollingReplayBufferTest {
+    @Test
+    fun countsOnlyDroppedFramesInsideRetainedWindow() {
+        val buffer = RollingReplayBuffer(
+            ReplayBufferSettings(duration = 1.seconds, frameRate = 10),
+        )
+
+        buffer.append(videoFrameAt(0.milliseconds.inWholeNanoseconds))
+        buffer.append(videoFrameAt(100.milliseconds.inWholeNanoseconds))
+        buffer.append(videoFrameAt(400.milliseconds.inWholeNanoseconds))
+        assertEquals(2, buffer.stats().droppedVideoFrameCount)
+
+        buffer.append(videoFrameAt(1_200.milliseconds.inWholeNanoseconds))
+        assertEquals(7, buffer.stats().droppedVideoFrameCount)
+
+        buffer.append(videoFrameAt(1_500.milliseconds.inWholeNanoseconds))
+        assertEquals(2, buffer.stats().droppedVideoFrameCount)
+    }
+
     @Test
     fun keepsOnlyFramesInsideDuration() {
         val buffer = RollingReplayBuffer(ReplayBufferSettings(duration = 2.seconds))
@@ -123,6 +142,27 @@ class RollingReplayBufferTest {
     }
 
     @Test
+    fun savedSnapshotCarriesDroppedFrameMetric() = runTest {
+        val buffer = RollingReplayBuffer(ReplayBufferSettings(duration = 5.seconds, frameRate = 10))
+        buffer.append(videoFrameAt(0))
+        buffer.append(videoFrameAt(100.milliseconds.inWholeNanoseconds))
+        buffer.append(videoFrameAt(400.milliseconds.inWholeNanoseconds))
+        val output = Files.createTempDirectory("mission-recorder-replay-drops").resolve("replay.mrec")
+
+        val result = ReplayBufferSaver(FrameSequenceMediaEncoder()).save(
+            ReplaySaveRequest(
+                snapshot = buffer.snapshot(),
+                outputPath = output.toString(),
+                captureSource = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen"),
+                frameRate = 10,
+                sessionId = RecordingSessionId("replay-drop-session"),
+            ),
+        )
+
+        assertEquals(2, result.droppedFrames)
+    }
+
+    @Test
     fun rejectsSavingEmptySnapshot() = runTest {
         val buffer = RollingReplayBuffer(ReplayBufferSettings(duration = 5.seconds))
 
@@ -143,8 +183,14 @@ class RollingReplayBufferTest {
     }
 
     private fun videoFrame(seconds: Long, pixels: ByteArray = byteArrayOf(255.toByte(), 0, 0, 255.toByte())) =
+        videoFrameAt(seconds * 1_000_000_000L, pixels)
+
+    private fun videoFrameAt(
+        timestampNanoseconds: Long,
+        pixels: ByteArray = byteArrayOf(255.toByte(), 0, 0, 255.toByte()),
+    ) =
         VideoFrame(
-            timestamp = MediaTimestamp(seconds * 1_000_000_000L),
+            timestamp = MediaTimestamp(timestampNanoseconds),
             width = 1,
             height = 1,
             pixelFormat = PixelFormat.Rgba8888,

@@ -46,6 +46,8 @@ import io.aequicor.replay.StartReplayResult
 import io.aequicor.replay.StopReplayResult
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +65,27 @@ import kotlin.time.Duration.Companion.minutes
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DesktopRecorderViewModelTest {
+    @Test
+    fun completesShutdownWhenWorkerScopeWasAlreadyCancelled() = runTest {
+        val cancelledJob = Job().apply { cancel() }
+        val viewModel = DesktopRecorderViewModel(
+            scope = CoroutineScope(coroutineContext + cancelledJob),
+            captureSourceRepository = StaticCaptureSourceRepository(emptyList()),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+        )
+        var completions = 0
+
+        viewModel.shutdown { completions += 1 }
+        runCurrent()
+
+        assertEquals(1, completions)
+    }
+
     @Test
     fun opensFolderForCurrentOutputPathAndReportsPlatformFailure() = runTest {
         val opener = FakeRecordingsDirectoryOpener()
@@ -122,6 +145,30 @@ class DesktopRecorderViewModelTest {
         assertEquals(PreviewUiStatus.Idle, viewModel.state.value.previewStatus)
         assertEquals(null, viewModel.previewFrame.value)
         assertNotNull(recording.startedSettings)
+    }
+
+    @Test
+    fun keepsPreviewLargeEnoughForAFullWidthQhdWorkspace() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            previewEngine = FakeDesktopPreviewEngine(width = 3440, height = 1440),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.StartPreview)
+        runCurrent()
+
+        val preview = assertNotNull(viewModel.previewFrame.value)
+        assertEquals(1920, preview.width)
+        assertEquals(804, preview.height)
     }
 
     @Test
@@ -888,12 +935,14 @@ class DesktopRecorderViewModelTest {
                 audioFrameCount = 0,
                 retainedDuration = 90.seconds,
                 storagePolicy = ReplayStoragePolicy.DiskSegments,
+                droppedVideoFrameCount = 4,
             ),
         )
         runCurrent()
 
         assertEquals(90_000, viewModel.state.value.replayRetainedMilliseconds)
         assertEquals(100, viewModel.state.value.replayVideoFrames)
+        assertEquals(4, viewModel.state.value.replayDroppedFrames)
 
         viewModel.onAction(RecorderUiAction.SaveReplayBuffer)
         runCurrent()
@@ -1056,7 +1105,10 @@ private class StaticAudioSourceRepository(
     override suspend fun listAudioSources(request: AudioSourceRequest): List<AudioSource> = sources
 }
 
-private class FakeDesktopPreviewEngine : DesktopPreviewEngine {
+private class FakeDesktopPreviewEngine(
+    private val width: Int = 2,
+    private val height: Int = 1,
+) : DesktopPreviewEngine {
     var settings: RecordingSettings? = null
         private set
     var starts: Int = 0
@@ -1071,15 +1123,12 @@ private class FakeDesktopPreviewEngine : DesktopPreviewEngine {
             emit(
                 VideoFrame(
                     timestamp = MediaTimestamp(0),
-                    width = 2,
-                    height = 1,
+                    width = width,
+                    height = height,
                     pixelFormat = PixelFormat.Rgba8888,
-                    strideBytes = 8,
+                    strideBytes = width * 4,
                     sourceId = CaptureSourceId("screen:test"),
-                    pixelData = byteArrayOf(
-                        255.toByte(), 0, 0, 255.toByte(),
-                        0, 255.toByte(), 0, 255.toByte(),
-                    ),
+                    pixelData = previewPixels(width, height),
                 ),
             )
             awaitCancellation()
@@ -1088,6 +1137,16 @@ private class FakeDesktopPreviewEngine : DesktopPreviewEngine {
         }
     }
 }
+
+private fun previewPixels(width: Int, height: Int): ByteArray =
+    if (width == 2 && height == 1) {
+        byteArrayOf(
+            255.toByte(), 0, 0, 255.toByte(),
+            0, 255.toByte(), 0, 255.toByte(),
+        )
+    } else {
+        ByteArray(width * height * 4)
+    }
 
 private class FakeRecordingsDirectoryOpener : DesktopRecordingsDirectoryOpener {
     var lastOutputPath: String? = null

@@ -89,6 +89,7 @@ fun main(args: Array<String>) {
                 recordingCommandBackend = recordingBackend,
                 recordingControlCommandBackend = LocalRecordingControlCommandBackend(),
                 replayCommandBackend = replayBackend,
+                replayDaemonCommandBackend = LocalReplayDaemonCommandBackend(),
                 exportFramesCommandBackend = DesktopExportFramesCommandBackend(
                     legacyFrameSequenceBackend = FrameSequenceExportFramesCommandBackend(
                         exporter = FrameSequenceExporter(),

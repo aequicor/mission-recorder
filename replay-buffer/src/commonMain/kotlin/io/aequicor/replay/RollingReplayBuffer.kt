@@ -10,6 +10,7 @@ import io.aequicor.capture.core.RecordingSession
 import io.aequicor.capture.core.RecordingSessionId
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.estimateDroppedVideoFrames
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.nanoseconds
 
@@ -18,9 +19,12 @@ class RollingReplayBuffer(
 ) {
     private val videoFrames = ArrayDeque<VideoFrame>()
     private val audioFrames = ArrayDeque<AudioFrame>()
+    private val droppedFramesBeforeVideoFrame = ArrayDeque<Long>()
+    private var retainedDroppedVideoFrames: Long = 0
 
     init {
         require(settings.duration.isPositive()) { "Replay duration must be positive." }
+        require(settings.frameRate > 0) { "Replay frame rate must be positive." }
         require(settings.maxVideoFrames == null || settings.maxVideoFrames > 0) {
             "Max video frames must be positive when provided."
         }
@@ -31,7 +35,14 @@ class RollingReplayBuffer(
 
     @Synchronized
     fun append(frame: VideoFrame): ReplayBufferStats {
+        val droppedFrames = estimateDroppedVideoFrames(
+            previousTimestampNanoseconds = videoFrames.lastOrNull()?.timestamp?.nanoseconds,
+            timestampNanoseconds = frame.timestamp.nanoseconds,
+            frameRate = settings.frameRate,
+        )
         videoFrames.addLast(frame.retainedCopy())
+        droppedFramesBeforeVideoFrame.addLast(droppedFrames)
+        retainedDroppedVideoFrames += droppedFrames
         trimFrames()
         return stats()
     }
@@ -55,6 +66,8 @@ class RollingReplayBuffer(
     fun clear() {
         videoFrames.clear()
         audioFrames.clear()
+        droppedFramesBeforeVideoFrame.clear()
+        retainedDroppedVideoFrames = 0
     }
 
     @Synchronized
@@ -64,12 +77,13 @@ class RollingReplayBuffer(
             audioFrameCount = audioFrames.size,
             retainedDuration = retainedDuration(),
             storagePolicy = settings.storagePolicy,
+            droppedVideoFrameCount = retainedDroppedVideoFrames,
         )
 
     private fun trimFrames() {
         val minimumTimestamp = minimumTimestamp(latestTimestampNanoseconds() ?: return)
         while (videoFrames.firstOrNull()?.timestamp?.nanoseconds?.let { it < minimumTimestamp } == true) {
-            videoFrames.removeFirst()
+            removeFirstVideoFrame()
         }
         while (audioFrames.firstOrNull()?.timestamp?.nanoseconds?.let { it < minimumTimestamp } == true) {
             audioFrames.removeFirst()
@@ -78,7 +92,7 @@ class RollingReplayBuffer(
         val maxFrames = settings.maxVideoFrames
         if (maxFrames != null) {
             while (videoFrames.size > maxFrames) {
-                videoFrames.removeFirst()
+                removeFirstVideoFrame()
             }
         }
         val maxAudioFrames = settings.maxAudioFrames
@@ -86,6 +100,15 @@ class RollingReplayBuffer(
             while (audioFrames.size > maxAudioFrames) {
                 audioFrames.removeFirst()
             }
+        }
+    }
+
+    private fun removeFirstVideoFrame() {
+        videoFrames.removeFirst()
+        retainedDroppedVideoFrames -= droppedFramesBeforeVideoFrame.removeFirst()
+        if (droppedFramesBeforeVideoFrame.isNotEmpty()) {
+            retainedDroppedVideoFrames -= droppedFramesBeforeVideoFrame.removeFirst()
+            droppedFramesBeforeVideoFrame.addFirst(0)
         }
     }
 
@@ -113,6 +136,7 @@ class RollingReplayBuffer(
 
 data class ReplayBufferSettings(
     val duration: Duration,
+    val frameRate: Int = 30,
     val maxVideoFrames: Int? = null,
     val maxAudioFrames: Int? = null,
     val storagePolicy: ReplayStoragePolicy = ReplayStoragePolicy.Memory,
@@ -128,6 +152,7 @@ data class ReplayBufferStats(
     val audioFrameCount: Int,
     val retainedDuration: Duration,
     val storagePolicy: ReplayStoragePolicy,
+    val droppedVideoFrameCount: Long = 0,
 )
 
 data class ReplayBufferSnapshot(
@@ -164,13 +189,14 @@ class ReplayBufferSaver(
             encoder.open(session, session.settings)
             request.snapshot.videoFrames.forEach { encoder.writeVideoFrame(it) }
             request.snapshot.audioFrames.forEach { encoder.writeAudioFrame(it) }
-            val metrics = request.snapshot.metrics()
+            val metrics = request.snapshot.metrics(request.frameRate)
             val output = encoder.finish(session, metrics)
             ReplaySaveResult(
                 output = output,
                 videoFrames = metrics.videoFrames,
                 audioFrames = metrics.audioFrames,
                 duration = metrics.duration,
+                droppedFrames = metrics.droppedFrames,
             )
         } catch (throwable: Throwable) {
             encoder.cancel(session)
@@ -195,6 +221,7 @@ data class ReplaySaveResult(
     val videoFrames: Long,
     val audioFrames: Long,
     val duration: Duration,
+    val droppedFrames: Long = 0,
 )
 
 class ReplayBufferException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
@@ -209,11 +236,18 @@ private fun ReplayBufferSnapshot.endTimestampNanoseconds(): Long =
         audioFrames.asSequence().map { it.timestamp.nanoseconds })
         .maxOrNull() ?: startTimestampNanoseconds()
 
-private fun ReplayBufferSnapshot.metrics(): RecordingMetrics =
+private fun ReplayBufferSnapshot.metrics(frameRate: Int): RecordingMetrics =
     RecordingMetrics(
         duration = (endTimestampNanoseconds() - startTimestampNanoseconds()).coerceAtLeast(0).nanoseconds,
         videoFrames = videoFrames.size.toLong(),
         audioFrames = audioFrames.size.toLong(),
+        droppedFrames = videoFrames.zipWithNext().sumOf { (previous, current) ->
+            estimateDroppedVideoFrames(
+                previousTimestampNanoseconds = previous.timestamp.nanoseconds,
+                timestampNanoseconds = current.timestamp.nanoseconds,
+                frameRate = frameRate,
+            )
+        },
     )
 
 private fun VideoFrame.retainedCopy(): VideoFrame =

@@ -320,19 +320,14 @@ class RecordingController(
         }
 
         fun estimatedDroppedFrames(timestampNanoseconds: Long): Long {
-            val previousTimestamp = lastVideoTimestampNanoseconds ?: return 0
-            val gap = timestampNanoseconds - previousTimestamp
-            if (gap <= 0) return 0
-
-            val frameInterval = NANOS_PER_SECOND / session.settings.frameRate
-            val roundedIntervals = gap / frameInterval +
-                if (gap % frameInterval >= (frameInterval + 1) / 2) 1 else 0
-            return (roundedIntervals - 1).coerceAtLeast(0)
+            return estimateDroppedVideoFrames(
+                previousTimestampNanoseconds = lastVideoTimestampNanoseconds,
+                timestampNanoseconds = timestampNanoseconds,
+                frameRate = session.settings.frameRate,
+            )
         }
     }
 }
-
-private const val NANOS_PER_SECOND = 1_000_000_000L
 
 private fun VideoFrame.withPauseOffset(offsetNanoseconds: Long): VideoFrame =
     copy(timestamp = timestamp.minusOffset(offsetNanoseconds))

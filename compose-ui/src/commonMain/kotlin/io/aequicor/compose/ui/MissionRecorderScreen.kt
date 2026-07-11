@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -782,6 +783,7 @@ private fun PreviewPane(
                         contentDescription = stringResource(Res.string.preview_image_description),
                         modifier = Modifier.fillMaxSize().testTag("preview-image"),
                         contentScale = ContentScale.Fit,
+                        filterQuality = FilterQuality.High,
                     )
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1592,7 +1594,7 @@ private fun TransportBar(state: RecorderUiState, onAction: (RecorderUiAction) ->
     }
     val displayedVideoFrames = if (state.isReplayActive) state.replayVideoFrames.toLong() else state.videoFrames
     val displayedAudioFrames = if (state.isReplayActive) state.replayAudioFrames.toLong() else state.audioFrames
-    val displayedDroppedFrames = if (state.isReplayActive) 0 else state.droppedFrames
+    val displayedDroppedFrames = if (state.isReplayActive) state.replayDroppedFrames else state.droppedFrames
     val displayedEffectiveFps = if (state.isReplayActive) {
         framesPerSecond(displayedVideoFrames, displayedElapsed)
     } else {
@@ -1837,17 +1839,17 @@ private fun formatFramesPerSecond(value: Double): String {
 private object Symbols {
     const val Add = "\uE145"
     const val Application = "\uE5C3"
-    const val Capture = "\uF727"
+    const val Capture = "\uEC08"
     const val Close = "\uE5CD"
     const val Crop = "\uE3C2"
-    const val Delete = "\uE872"
-    const val Edit = "\uE3C9"
+    const val Delete = "\uE92E"
+    const val Edit = "\uF097"
     const val ExpandMore = "\uE5CF"
-    const val Folder = "\uE2C8"
-    const val FolderOpen = "\uE2C7"
+    const val Folder = "\uE2C7"
+    const val FolderOpen = "\uE2C8"
     const val Mic = "\uE31D"
     const val MicOff = "\uE02B"
-    const val Monitor = "\uE30C"
+    const val Monitor = "\uEF5B"
     const val Pause = "\uE034"
     const val Play = "\uE037"
     const val Record = "\uE061"

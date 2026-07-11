@@ -23,6 +23,19 @@
 
 Для установленного приложения вместо Gradle используется исполняемый файл `mission-recorder` с теми же аргументами.
 
+### Фоновый replay daemon
+
+`replay start` запускает отдельный локальный процесс с теми же capture/audio параметрами, что `replay run`, и возвращается только после подтвержденного состояния `replay-buffering`:
+
+```powershell
+.\gradlew.bat run --args="replay start screen --buffer 5m --output build\replay-final.mp4 --control-endpoint build\replay.control.json --json"
+.\gradlew.bat run --args="control status --endpoint build\replay.control.json --json"
+.\gradlew.bat run --args="replay save --endpoint build\replay.control.json --output build\replay-snapshot.mp4 --json"
+.\gradlew.bat run --args="control stop --endpoint build\replay.control.json --json"
+```
+
+Control endpoint обязателен: это явный локальный handle для status/save/stop, а не скрытый фоновый сервис. `--run-for` у daemon не принимается; финальный `--output` создается при `control stop`. Существующий endpoint или финальный MP4 не перезаписывается. stdout/stderr дочернего процесса направляются в `<endpoint>.daemon.log`, чтобы daemon не зависел от терминала и сохранял локальную диагностику.
+
 ### Replay buffer
 
 В первом терминале:
@@ -42,7 +55,7 @@
 ## Семантика
 
 - `status` возвращает state, output path, записанную длительность, счетчики video/audio frames, средний `effectiveFramesPerSecond` и оценку `droppedFrames` относительно целевого FPS;
-- для replay `effectiveFramesPerSecond` вычисляется по удержанному интервалу, а `droppedFrames` пока равен нулю до подключения отдельного replay drop detector;
+- для replay `effectiveFramesPerSecond` и `droppedFrames` относятся к текущему удерживаемому окну; при вытеснении старых сегментов их drop-вклад также удаляется;
 - `pause` оставляет capture devices открытыми, не кодирует кадры во время паузы и сохраняет непрерывную media timeline;
 - `resume` продолжает ту же сессию без создания второго output;
 - `stop` подтверждает принятие запроса, после чего исходный процесс финализирует MP4 и печатает итоговый результат записи;
@@ -50,7 +63,8 @@
 - для replay команда `stop` сохраняет актуальный буфер в финальный `--output`, останавливает capture и удаляет descriptor;
 - replay не поддерживает `pause` и `resume`, поэтому такие запросы явно отклоняются;
 - повторный `pause` идемпотентен, а неверный `resume` и недоступный endpoint возвращают ненулевой exit code и понятную ошибку;
-- descriptor удаляется при штатном завершении, cancellation и ошибке записи или replay buffer.
+- descriptor удаляется при штатном завершении, cancellation и ошибке записи или replay buffer;
+- `replay start` ждет рабочий versioned endpoint, возвращает PID дочернего процесса и уничтожает его при startup timeout/cancellation; `replay save` является alias команды `control save`.
 
 ## Локальность и безопасность
 

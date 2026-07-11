@@ -218,4 +218,35 @@ class MissionRecorderSettingsTest {
         assertEquals(CURRENT_SETTINGS_SCHEMA_VERSION, settings.schemaVersion)
         assertEquals("default", settings.defaultProfileId)
     }
+
+    @Test
+    fun migratesSchemaOneDefaultVideoBitrateWithoutOverwritingCustomQuality() {
+        val raw = """
+            {
+              "schemaVersion": 1,
+              "defaultProfileId": "default",
+              "profiles": [
+                {
+                  "id": "default",
+                  "name": "Default",
+                  "source": { "type": "Screen", "id": "screen:all", "displayName": "All screens" },
+                  "encoder": { "videoBitrateBitsPerSecond": 8000000 }
+                },
+                {
+                  "id": "custom",
+                  "name": "Custom",
+                  "source": { "type": "Screen", "id": "screen:all", "displayName": "All screens" },
+                  "encoder": { "videoBitrateBitsPerSecond": 42000000 }
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val migrated = SettingsMigrator.migrate(raw)
+        val settings = defaultSettingsJson.decodeFromString(MissionRecorderSettings.serializer(), migrated)
+
+        assertEquals(CURRENT_SETTINGS_SCHEMA_VERSION, settings.schemaVersion)
+        assertEquals(24_000_000, settings.profiles[0].encoder.videoBitrateBitsPerSecond)
+        assertEquals(42_000_000, settings.profiles[1].encoder.videoBitrateBitsPerSecond)
+    }
 }

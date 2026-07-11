@@ -163,10 +163,12 @@ class DesktopReplayCommandBackendTest {
         val status = controlBackend.control(
             CliCommand.Control(RecordingControlAction.Status, endpoint.toString(), json = false),
         )
+        val completedStatus = assertIs<RecordingControlCommandResult.Completed>(status).status
         assertEquals(
             "replay-buffering",
-            assertIs<RecordingControlCommandResult.Completed>(status).status.state,
+            completedStatus.state,
         )
+        assertEquals(2, completedStatus.droppedFrames)
         val conflictingSave = controlBackend.control(
             CliCommand.Control(
                 action = RecordingControlAction.Save,
@@ -266,6 +268,7 @@ private class FakeCommandReplayMediaBuffer : ReplayMediaBuffer {
             videoFrames = videoFrames.toLong(),
             audioFrames = 0,
             duration = 1.seconds,
+            droppedFrames = 2,
         )
     }
 
@@ -278,6 +281,7 @@ private class FakeCommandReplayMediaBuffer : ReplayMediaBuffer {
         audioFrameCount = 0,
         retainedDuration = 1.seconds,
         storagePolicy = ReplayStoragePolicy.DiskSegments,
+        droppedVideoFrameCount = 2,
     )
 }
 

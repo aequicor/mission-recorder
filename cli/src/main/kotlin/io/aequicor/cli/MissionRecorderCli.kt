@@ -9,6 +9,7 @@ class MissionRecorderCli(
     private val recordingCommandBackend: RecordingCommandBackend = UnsupportedRecordingCommandBackend,
     private val recordingControlCommandBackend: RecordingControlCommandBackend = UnsupportedRecordingControlCommandBackend,
     private val replayCommandBackend: ReplayCommandBackend = UnsupportedReplayCommandBackend,
+    private val replayDaemonCommandBackend: ReplayDaemonCommandBackend = UnsupportedReplayDaemonCommandBackend,
     private val exportFramesCommandBackend: ExportFramesCommandBackend = UnsupportedExportFramesCommandBackend,
     private val settingsCommandBackend: SettingsCommandBackend = UnsupportedSettingsCommandBackend,
 ) {
@@ -45,8 +46,17 @@ class MissionRecorderCli(
             }
             is CliCommand.Record -> record(command, stdout, stderr)
             is CliCommand.Control -> control(command, stdout, stderr)
-            is CliCommand.ReplayStart -> unsupported("replay start", command.json, stdout, stderr)
-            is CliCommand.ReplaySave -> unsupported("replay save", command.json, stdout, stderr)
+            is CliCommand.ReplayStart -> replayStart(command, stdout, stderr)
+            is CliCommand.ReplaySave -> control(
+                CliCommand.Control(
+                    action = RecordingControlAction.Save,
+                    endpointPath = command.endpointPath,
+                    outputPath = command.outputPath,
+                    json = command.json,
+                ),
+                stdout,
+                stderr,
+            )
             is CliCommand.ReplayRun -> replay(command, stdout, stderr)
             is CliCommand.ExportFrames -> exportFrames(command, stdout, stderr)
             is CliCommand.Settings -> settings(command, stdout, stderr)
@@ -112,20 +122,6 @@ class MissionRecorderCli(
         }
     }
 
-    private fun unsupported(
-        command: String,
-        json: Boolean,
-        stdout: Appendable,
-        stderr: Appendable,
-    ): Int {
-        if (json) {
-            stdout.appendLine(CliRendering.unsupportedJson(command))
-        } else {
-            stderr.appendLine("$command is parsed, but no recording backend is wired yet.")
-        }
-        return CliExitCode.Unsupported.code
-    }
-
     private suspend fun replay(command: CliCommand.ReplayRun, stdout: Appendable, stderr: Appendable): Int {
         return when (val result = replayCommandBackend.run(command)) {
             is ReplayCommandResult.Completed -> {
@@ -162,6 +158,30 @@ class MissionRecorderCli(
                 }
                 CliExitCode.Failure.code
             }
+        }
+    }
+
+    private suspend fun replayStart(
+        command: CliCommand.ReplayStart,
+        stdout: Appendable,
+        stderr: Appendable,
+    ): Int = when (val result = replayDaemonCommandBackend.start(command)) {
+        is ReplayDaemonCommandResult.Started -> {
+            stdout.appendLine(
+                if (command.options.json) CliRendering.replayDaemonStartedJson(result)
+                else CliRendering.replayDaemonStartedText(result),
+            )
+            CliExitCode.Success.code
+        }
+        is ReplayDaemonCommandResult.Rejected -> {
+            if (command.options.json) stdout.appendLine(CliRendering.errorJson("validation", result.message))
+            else stderr.appendLine(result.message)
+            CliExitCode.Validation.code
+        }
+        is ReplayDaemonCommandResult.Failed -> {
+            if (command.options.json) stdout.appendLine(CliRendering.errorJson("failure", result.message))
+            else stderr.appendLine(result.message)
+            CliExitCode.Failure.code
         }
     }
 

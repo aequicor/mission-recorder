@@ -142,7 +142,7 @@ data class EncoderSettings(
     val container: ContainerFormat = ContainerFormat.Mp4,
     val videoCodec: VideoCodec = VideoCodec.H264,
     val audioCodec: AudioCodec = AudioCodec.Aac,
-    val videoBitrateBitsPerSecond: Int = 8_000_000,
+    val videoBitrateBitsPerSecond: Int = 24_000_000,
     val audioBitrateBitsPerSecond: Int = 192_000,
     val keyframeIntervalSeconds: Int = 2,
     val hardwareAcceleration: HardwareAccelerationMode = HardwareAccelerationMode.Auto,

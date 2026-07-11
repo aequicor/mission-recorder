@@ -19,6 +19,8 @@ object CliRendering {
           mission-recorder record app --id ID --output out.mp4 [--duration 3s]
           mission-recorder replay run screen --buffer 5m --output replay.mp4 [--run-for 30m] [--mic ID|default] [--mic-gain 0..200] [--system-audio] [--system-audio-endpoint ID] [--system-audio-gain 0..200] [--control-endpoint PATH]
           mission-recorder replay run window --id ID --buffer 5m --output replay.mp4 [--run-for 30m]
+          mission-recorder replay start screen --buffer 5m --output replay-final.mp4 --control-endpoint replay.control.json [--mic ID|default] [--system-audio]
+          mission-recorder replay save --endpoint replay.control.json --output replay-snapshot.mp4 [--json]
           mission-recorder export-frames --input in.mp4 --output frames [--fps 1] [--layout separate|sheet]
           mission-recorder settings init [--path mission-recorder.settings.json] [--force]
           mission-recorder settings validate [--path mission-recorder.settings.json]
@@ -29,6 +31,7 @@ object CliRendering {
         Record runs until Ctrl+C when --duration is omitted.
         Existing recording targets are replaced only when --overwrite or profile output.overwrite is enabled.
         Replay run continues until Ctrl+C when --run-for is omitted, then saves the retained buffer.
+        Replay start launches the same buffer as a detached local process; use control status/save/stop with its endpoint.
         A control endpoint is local, opt-in, and exists only while its recording or replay process is active.
         """.trimIndent()
 
@@ -66,9 +69,6 @@ object CliRendering {
             """{"type":"${source.typeName()}","id":"${source.id.value.jsonEscape()}","displayName":"${source.displayName.jsonEscape()}"}"""
         }
 
-    fun unsupportedJson(command: String): String =
-        """{"error":{"code":"unsupported","message":"${command.jsonEscape()} is parsed but no recording backend is wired yet."}}"""
-
     fun recordCompletedText(result: RecordingCommandResult.Completed): String =
         "Recording saved to ${result.outputPath} (${result.videoFrames} video frames, ${result.audioFrames} audio frames)."
 
@@ -93,6 +93,12 @@ object CliRendering {
 
     fun replayCompletedJson(result: ReplayCommandResult.Completed): String =
         """{"replay":{"outputPath":"${result.outputPath.jsonEscape()}","videoFrames":${result.videoFrames},"audioFrames":${result.audioFrames},"durationMilliseconds":${result.durationMilliseconds}}}"""
+
+    fun replayDaemonStartedText(result: ReplayDaemonCommandResult.Started): String =
+        "Replay daemon started as process ${result.processId}; endpoint ${result.endpointPath}; final output ${result.outputPath}."
+
+    fun replayDaemonStartedJson(result: ReplayDaemonCommandResult.Started): String =
+        """{"replayDaemon":{"state":"started","processId":${result.processId},"endpointPath":"${result.endpointPath.jsonEscape()}","outputPath":"${result.outputPath.jsonEscape()}"}}"""
 
     fun exportFramesCompletedText(result: ExportFramesCommandResult.Completed): String =
         "Exported ${result.exportedFrames} of ${result.sourceFrames} frames to ${result.outputDirectory} as ${result.imageFormat}."

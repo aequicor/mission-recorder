@@ -43,6 +43,14 @@ interface GlobalHotkeyService {
     fun close()
 }
 
+interface GlobalHotkeyServiceFactory {
+    val isSupported: Boolean
+
+    fun create(
+        bindings: List<GlobalHotkeyBinding> = defaultDesktopGlobalHotkeys,
+    ): GlobalHotkeyService
+}
+
 val defaultDesktopGlobalHotkeys: List<GlobalHotkeyBinding> = listOf(
     GlobalHotkeyBinding(
         action = GlobalHotkeyAction.ToggleRecording,

@@ -241,6 +241,7 @@ private data class ActiveCliReplay(
                     durationMilliseconds = result.result.duration.inWholeMilliseconds,
                     videoFrames = result.result.videoFrames,
                     audioFrames = result.result.audioFrames,
+                    droppedFrames = result.result.droppedFrames,
                 ),
                 message = "Replay snapshot saved.",
             )
@@ -279,6 +280,7 @@ private fun ReplayCaptureState.toControlStatus(fallbackOutputPath: String): Reco
         durationMilliseconds = stats?.retainedDuration?.inWholeMilliseconds ?: 0,
         videoFrames = stats?.videoFrameCount?.toLong() ?: 0,
         audioFrames = stats?.audioFrameCount?.toLong() ?: 0,
+        droppedFrames = stats?.droppedVideoFrameCount ?: 0,
     )
 }
 

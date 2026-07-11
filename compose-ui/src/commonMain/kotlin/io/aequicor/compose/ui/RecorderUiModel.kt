@@ -109,6 +109,7 @@ data class RecorderUiState(
     val replayRetainedMilliseconds: Long = 0,
     val replayVideoFrames: Int = 0,
     val replayAudioFrames: Int = 0,
+    val replayDroppedFrames: Long = 0,
     val lastReplayPath: String? = null,
     val errorMessage: String? = null,
 ) {
@@ -236,8 +237,8 @@ sealed interface RecorderUiAction {
 }
 
 const val MIN_VIDEO_BITRATE_MBPS: Int = 2
-const val MAX_VIDEO_BITRATE_MBPS: Int = 30
-const val DEFAULT_VIDEO_BITRATE_MBPS: Int = 8
+const val MAX_VIDEO_BITRATE_MBPS: Int = 80
+const val DEFAULT_VIDEO_BITRATE_MBPS: Int = 24
 const val DEFAULT_AUDIO_GAIN_PERCENT: Int = 100
 const val MIN_AUDIO_GAIN_PERCENT: Int = 0
 const val MAX_AUDIO_GAIN_PERCENT: Int = 200

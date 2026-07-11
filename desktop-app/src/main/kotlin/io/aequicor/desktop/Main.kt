@@ -65,7 +65,6 @@ import io.aequicor.media.desktop.ffmpeg.StoryboardExportSettings
 import io.aequicor.media.desktop.ffmpeg.StoryboardExporter
 import io.aequicor.media.desktop.ffmpeg.StoryboardLayout
 import io.aequicor.hotkey.GlobalHotkeyEvent
-import io.aequicor.hotkey.windows.jna.WindowsGlobalHotkeyServiceFactory
 import io.aequicor.replay.ReplayCaptureController
 import io.aequicor.settings.MissionRecorderSettingsStore
 import kotlinx.coroutines.CoroutineScope
@@ -86,7 +85,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.jetbrains.compose.resources.stringResource
 import org.jetbrains.compose.resources.painterResource
 
-fun main() = application {
+fun main() {
+    installDesktopFatalErrorHandler()
+    desktopApplication()
+}
+
+private fun desktopApplication() = application(exitProcessOnExit = true) {
     val applicationIcon = painterResource(Res.drawable.mission_recorder)
     val recorderScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val audioAdapters = remember { createDesktopAudioAdapters() }
@@ -111,7 +115,7 @@ fun main() = application {
     val previewFrame by viewModel.previewFrame.collectAsState()
     val previewImage = remember(previewFrame) { previewFrame?.toImageBitmap() }
     val currentState by rememberUpdatedState(state)
-    val hotkeyFactory = remember { WindowsGlobalHotkeyServiceFactory() }
+    val hotkeyFactory = remember { DesktopGlobalHotkeyServiceFactory() }
     var closing by remember { mutableStateOf(false) }
     var showMiniController by remember { mutableStateOf(false) }
     var globalHotkeysEnabled by remember { mutableStateOf(startupSettings.globalHotkeysEnabled) }
@@ -185,9 +189,12 @@ fun main() = application {
         onCloseRequest = {
             if (!closing) {
                 closing = true
+                showMiniController = false
+                scheduleForcedDesktopExit()
                 viewModel.shutdown(::exitApplication)
             }
         },
+        visible = !closing,
         state = windowState,
         title = "Mission Recorder",
         icon = applicationIcon,

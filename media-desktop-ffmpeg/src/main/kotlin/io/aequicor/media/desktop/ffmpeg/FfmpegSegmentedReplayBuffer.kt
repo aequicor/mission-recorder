@@ -5,6 +5,7 @@ import io.aequicor.capture.core.RecordingOutput
 import io.aequicor.capture.core.RecordingSession
 import io.aequicor.capture.core.VideoFrame
 import io.aequicor.capture.core.audioOutputFormat
+import io.aequicor.capture.core.estimateDroppedVideoFrames
 import io.aequicor.replay.ReplayBufferException
 import io.aequicor.replay.ReplayBufferStats
 import io.aequicor.replay.ReplayMediaBuffer
@@ -206,6 +207,7 @@ class FfmpegSegmentedReplayBuffer(
                 segments = orderedSegments,
                 session = current.session,
                 duration = current.duration,
+                droppedFrames = current.retainedDroppedVideoFrames,
             )
         } catch (throwable: Throwable) {
             current.unpinSegments(orderedSegments)
@@ -317,6 +319,7 @@ class FfmpegSegmentedReplayBuffer(
                 videoFrames = videoFrames,
                 audioFrames = audioFrames,
                 duration = finalTimestampMicros.microseconds,
+                droppedFrames = snapshot.droppedFrames,
             )
         } catch (throwable: Throwable) {
             runCatching { recorder.release() }
@@ -364,6 +367,7 @@ private data class ReplayContext(
     val segmentScanIntervalNanoseconds: Long,
     val pendingAudioFrames: MutableList<AudioFrame> = mutableListOf(),
     val videoTimestamps: ArrayDeque<Long> = ArrayDeque(),
+    val droppedFramesBeforeVideoTimestamp: ArrayDeque<Long> = ArrayDeque(),
     val audioTimestamps: ArrayDeque<Long> = ArrayDeque(),
     val fingerprints: MutableMap<Path, SegmentFingerprint> = mutableMapOf(),
     val segmentOrder: MutableMap<Path, Long> = mutableMapOf(),
@@ -379,6 +383,7 @@ private data class ReplayContext(
     var encodedHeight: Int = 0,
     var nextSegmentIndex: Int = 0,
     var lastSegmentScanTimestampNanoseconds: Long? = null,
+    var retainedDroppedVideoFrames: Long = 0,
 ) {
     fun relativeTimestampMicros(timestampNanoseconds: Long): Long {
         val origin = generationOriginNanoseconds ?: timestampNanoseconds
@@ -386,7 +391,14 @@ private data class ReplayContext(
     }
 
     fun appendVideoTimestamp(timestampNanoseconds: Long) {
+        val droppedFrames = estimateDroppedVideoFrames(
+            previousTimestampNanoseconds = videoTimestamps.lastOrNull(),
+            timestampNanoseconds = timestampNanoseconds,
+            frameRate = session.settings.frameRate,
+        )
         videoTimestamps.addLast(timestampNanoseconds)
+        droppedFramesBeforeVideoTimestamp.addLast(droppedFrames)
+        retainedDroppedVideoFrames += droppedFrames
         trimTimestamps(timestampNanoseconds)
     }
 
@@ -407,6 +419,7 @@ private data class ReplayContext(
                 (last - first).coerceAtLeast(0).nanoseconds
             },
             storagePolicy = ReplayStoragePolicy.DiskSegments,
+            droppedVideoFrameCount = retainedDroppedVideoFrames,
         )
     }
 
@@ -506,10 +519,19 @@ private data class ReplayContext(
     private fun trimTimestamps(newestTimestampNanoseconds: Long) {
         val minimum = (newestTimestampNanoseconds - duration.inWholeNanoseconds).coerceAtLeast(0)
         while (videoTimestamps.firstOrNull()?.let { it < minimum } == true) {
-            videoTimestamps.removeFirst()
+            removeFirstVideoTimestamp()
         }
         while (audioTimestamps.firstOrNull()?.let { it < minimum } == true) {
             audioTimestamps.removeFirst()
+        }
+    }
+
+    private fun removeFirstVideoTimestamp() {
+        videoTimestamps.removeFirst()
+        retainedDroppedVideoFrames -= droppedFramesBeforeVideoTimestamp.removeFirst()
+        if (droppedFramesBeforeVideoTimestamp.isNotEmpty()) {
+            retainedDroppedVideoFrames -= droppedFramesBeforeVideoTimestamp.removeFirst()
+            droppedFramesBeforeVideoTimestamp.addFirst(0)
         }
     }
 }
@@ -518,6 +540,7 @@ private data class ReplaySegmentSnapshot(
     val segments: List<Path>,
     val session: RecordingSession,
     val duration: Duration,
+    val droppedFrames: Long,
 )
 
 private data class SegmentProbe(

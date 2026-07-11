@@ -95,6 +95,58 @@ class CliParserTest {
     }
 
     @Test
+    fun parsesReplayDaemonStartAndSaveAlias() {
+        val startResult = CliParser.parse(
+            arrayOf(
+                "replay", "start", "screen",
+                "--buffer", "5m",
+                "--output", "final.mp4",
+                "--control-endpoint", "replay.control.json",
+                "--json",
+            ),
+        )
+        val saveResult = CliParser.parse(
+            arrayOf(
+                "replay", "save",
+                "--endpoint", "replay.control.json",
+                "--output", "snapshot.mp4",
+                "--json",
+            ),
+        )
+
+        val start = assertIs<CliCommand.ReplayStart>(assertIs<CliParseResult.Parsed>(startResult).command)
+        assertEquals(RecordTarget.Screen, start.target)
+        assertEquals("5m", start.options.bufferDuration)
+        assertEquals("replay.control.json", start.options.controlEndpointPath)
+        assertEquals(
+            CliCommand.ReplaySave("replay.control.json", "snapshot.mp4", json = true),
+            assertIs<CliParseResult.Parsed>(saveResult).command,
+        )
+    }
+
+    @Test
+    fun requiresControlEndpointAndRejectsDeadlineForReplayDaemon() {
+        val missingEndpoint = CliParser.parse(
+            arrayOf("replay", "start", "screen", "--buffer", "5m", "--output", "final.mp4"),
+        )
+        val deadline = CliParser.parse(
+            arrayOf(
+                "replay", "start", "screen", "--buffer", "5m", "--output", "final.mp4",
+                "--control-endpoint", "replay.control.json", "--run-for", "1h",
+            ),
+        )
+
+        assertEquals(
+            "replay start requires --control-endpoint.",
+            assertIs<CliParseResult.Invalid>(missingEndpoint).message,
+        )
+        assertEquals(
+            "replay start does not accept --run-for; stop it through the control endpoint.",
+            assertIs<CliParseResult.Invalid>(deadline).message,
+        )
+    }
+
+    @Test
     fun parsesRecordRegion() {
         val result = CliParser.parse(
             arrayOf(

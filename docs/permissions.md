@@ -20,6 +20,8 @@ GUI выполняет preflight после явного нажатия кноп
 
 Текущие JVM/AWT и JNA/Xlib backends поддерживают screen/monitor/region и window/application capture только в подтверждённой X11-сессии и не имеют отдельного permission prompt. `JvmDesktopPermissionGateway` проверяет `XDG_SESSION_TYPE`, `WAYLAND_DISPLAY` и `DISPLAY`: Wayland или неизвестная сессия получают `Unsupported` до открытия capture adapter и создания output. Наличие XWayland `DISPLAY` не считается согласием и не заменяет portal consent фиктивным разрешением.
 
+Глобальные hotkeys на Linux используют отдельный opt-in `XGrabKey` adapter по тем же правилам определения сессии: переключатель доступен только в подтвержденном X11 и остается выключенным на Wayland/XWayland. Регистрация клавиш не запрашивает screen/audio permissions и не запускает capture.
+
 Микрофон в Linux использует Java Sound и разрешается preflight-ом, после чего недоступность устройства возвращается самим adapter-ом. System audio разрешается только когда production wiring обнаружил `pactl` и `parec`; GUI/CLI показывают только реальные PulseAudio monitor sources. Это также работает с PipeWire при активном `pipewire-pulse` compatibility server. Включение остаётся явным через toggle или `--system-audio`, а отсутствие команд/monitor source не маскируется. Для Wayland захват экрана по-прежнему требует будущий xdg-desktop-portal и PipeWire flow с явным пользовательским выбором источника.
 
 ## macOS
@@ -27,6 +29,8 @@ GUI выполняет preflight после явного нажатия кноп
 Production wiring использует native `CGPreflightScreenCaptureAccess` для проверки Screen Recording и вызывает `CGRequestScreenCaptureAccess` только после явного Start/Preview действия. Отказ возвращает инструкции для `System Settings > Privacy & Security > Screen Recording` до открытия output. Для микрофона AVFoundation TCC status проверяется заранее: denied/restricted блокируются, authorized разрешается, а not-determined передается Java Sound только после явного включения микрофона и запуска записи, чтобы системный prompt не появлялся при старте приложения. System-audio capture текущим macOS backend-ом не поддерживается.
 
 Native app bundle содержит `NSScreenCaptureUsageDescription` и `NSMicrophoneUsageDescription`. Текущий window/application image path основан на deprecated CoreGraphics API и должен быть заменен ScreenCaptureKit; до hardware smoke на поддерживаемых macOS версиях нельзя считать этот backend полностью проверенным.
+
+Opt-in global hotkeys используют Carbon `RegisterEventHotKey` и не требуют Screen Recording, Accessibility или Microphone permission. Их включение не открывает capture source и не создает output.
 
 ## Android
 

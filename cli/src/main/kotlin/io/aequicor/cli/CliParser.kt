@@ -196,65 +196,63 @@ object CliParser {
         val subcommand = args.firstOrNull()
             ?: return CliParseResult.Invalid("Missing replay command. Expected run, start, or save.")
         return when (subcommand) {
-            "start" -> {
-                val options = OptionCursor(args.drop(1))
-                val duration = options.requireValue("--duration")
-                    ?: return CliParseResult.Invalid("replay start requires --duration.")
-                val json = options.has("--json")
-                options.unconsumedOption()?.let {
-                    CliParseResult.Invalid("Unknown option for replay start: $it")
-                } ?: CliParseResult.Parsed(CliCommand.ReplayStart(duration = duration, json = json))
-            }
+            "start" -> parseReplayCapture(args.drop(1), commandName = "start").toDaemonStart()
             "save" -> {
                 val options = OptionCursor(args.drop(1))
+                val endpointPath = options.requireValue("--endpoint")
+                    ?: return CliParseResult.Invalid("replay save requires --endpoint.")
                 val outputPath = options.requireValue("--output")
                     ?: return CliParseResult.Invalid("replay save requires --output.")
                 val json = options.has("--json")
                 options.unconsumedOption()?.let {
                     CliParseResult.Invalid("Unknown option for replay save: $it")
-                } ?: CliParseResult.Parsed(CliCommand.ReplaySave(outputPath = outputPath, json = json))
+                } ?: CliParseResult.Parsed(
+                    CliCommand.ReplaySave(endpointPath = endpointPath, outputPath = outputPath, json = json),
+                )
             }
-            "run" -> parseReplayRun(args.drop(1))
+            "run" -> parseReplayCapture(args.drop(1), commandName = "run")
             else -> CliParseResult.Invalid("Unknown replay command: $subcommand")
         }
     }
 
-    private fun parseReplayRun(args: List<String>): CliParseResult {
+    private fun parseReplayCapture(args: List<String>, commandName: String): CliParseResult {
         val targetName = args.firstOrNull()
-            ?: return CliParseResult.Invalid("replay run requires a source: screen, monitor, region, window, or app.")
+            ?: return CliParseResult.Invalid(
+                "replay $commandName requires a source: screen, monitor, region, window, or app.",
+            )
         val options = OptionCursor(args.drop(1))
         val target = when (targetName) {
             "screen" -> RecordTarget.Screen
             "monitor" -> {
                 val id = options.requireValue("--id")
-                    ?: return CliParseResult.Invalid("replay run monitor requires --id.")
+                    ?: return CliParseResult.Invalid("replay $commandName monitor requires --id.")
                 RecordTarget.Monitor(id)
             }
             "region" -> {
                 val x = options.requireInt("--x")
-                    ?: return CliParseResult.Invalid("replay run region requires integer --x.")
+                    ?: return CliParseResult.Invalid("replay $commandName region requires integer --x.")
                 val y = options.requireInt("--y")
-                    ?: return CliParseResult.Invalid("replay run region requires integer --y.")
+                    ?: return CliParseResult.Invalid("replay $commandName region requires integer --y.")
                 val width = options.requireInt("--width")
-                    ?: return CliParseResult.Invalid("replay run region requires integer --width.")
+                    ?: return CliParseResult.Invalid("replay $commandName region requires integer --width.")
                 val height = options.requireInt("--height")
-                    ?: return CliParseResult.Invalid("replay run region requires integer --height.")
+                    ?: return CliParseResult.Invalid("replay $commandName region requires integer --height.")
                 RecordTarget.Region(x = x, y = y, width = width, height = height)
             }
             "window" -> {
                 val id = options.requireValue("--id")
-                    ?: return CliParseResult.Invalid("replay run window requires --id.")
+                    ?: return CliParseResult.Invalid("replay $commandName window requires --id.")
                 RecordTarget.Window(id)
             }
             "app", "application" -> {
                 val id = options.requireValue("--id") ?: options.requireValue("--pid")
-                    ?: return CliParseResult.Invalid("replay run app requires --id or --pid.")
+                    ?: return CliParseResult.Invalid("replay $commandName app requires --id or --pid.")
                 RecordTarget.Application(id)
             }
             else -> return CliParseResult.Invalid("Unknown replay source: $targetName")
         }
         val bufferDuration = options.requireValue("--buffer")
-            ?: return CliParseResult.Invalid("replay run requires --buffer, for example 5m.")
+            ?: return CliParseResult.Invalid("replay $commandName requires --buffer, for example 5m.")
         val runDuration = if (options.contains("--run-for")) {
             options.requireValue("--run-for")
                 ?: return CliParseResult.Invalid("--run-for requires a positive duration such as 30m.")
@@ -262,7 +260,7 @@ object CliParser {
             null
         }
         val outputPath = options.requireValue("--output")
-            ?: return CliParseResult.Invalid("replay run requires --output.")
+            ?: return CliParseResult.Invalid("replay $commandName requires --output.")
         val fps = if (options.contains("--fps")) {
             options.requireInt("--fps") ?: return CliParseResult.Invalid("--fps must be an integer.")
         } else {
@@ -289,7 +287,7 @@ object CliParser {
                 null
             }
         if (microphoneGainPercent != null && microphone == null) {
-            return CliParseResult.Invalid("--mic-gain requires --mic for replay run.")
+                return CliParseResult.Invalid("--mic-gain requires --mic for replay $commandName.")
         }
         val systemAudioEndpoint = if (options.contains("--system-audio-endpoint")) {
             options.requireValue("--system-audio-endpoint")
@@ -317,7 +315,7 @@ object CliParser {
         val json = options.has("--json")
 
         return options.unconsumedOption()?.let {
-            CliParseResult.Invalid("Unknown option for replay run $targetName: $it")
+            CliParseResult.Invalid("Unknown option for replay $commandName $targetName: $it")
         } ?: CliParseResult.Parsed(
             CliCommand.ReplayRun(
                 target = target,
@@ -337,6 +335,20 @@ object CliParser {
                 ),
             ),
         )
+    }
+
+    private fun CliParseResult.toDaemonStart(): CliParseResult = when (this) {
+        is CliParseResult.Invalid -> this
+        is CliParseResult.Parsed -> {
+            val run = command as? CliCommand.ReplayRun ?: return this
+            when {
+                run.options.runDuration != null ->
+                    CliParseResult.Invalid("replay start does not accept --run-for; stop it through the control endpoint.")
+                run.options.controlEndpointPath == null ->
+                    CliParseResult.Invalid("replay start requires --control-endpoint.")
+                else -> CliParseResult.Parsed(CliCommand.ReplayStart(run.target, run.options))
+            }
+        }
     }
 
     private fun parseExportFrames(args: List<String>): CliParseResult {

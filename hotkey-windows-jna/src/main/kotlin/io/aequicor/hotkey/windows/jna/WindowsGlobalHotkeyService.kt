@@ -7,7 +7,7 @@ import io.aequicor.hotkey.GlobalHotkeyGesture
 import io.aequicor.hotkey.GlobalHotkeyKey
 import io.aequicor.hotkey.GlobalHotkeyModifier
 import io.aequicor.hotkey.GlobalHotkeyService
-import io.aequicor.hotkey.defaultDesktopGlobalHotkeys
+import io.aequicor.hotkey.GlobalHotkeyServiceFactory
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -18,12 +18,12 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class WindowsGlobalHotkeyServiceFactory(
     private val osName: String = System.getProperty("os.name").orEmpty(),
-) {
-    val isSupported: Boolean
+) : GlobalHotkeyServiceFactory {
+    override val isSupported: Boolean
         get() = osName.lowercase().startsWith("windows")
 
-    fun create(
-        bindings: List<GlobalHotkeyBinding> = defaultDesktopGlobalHotkeys,
+    override fun create(
+        bindings: List<GlobalHotkeyBinding>,
     ): GlobalHotkeyService {
         check(isSupported) { "Global hotkeys are not supported on $osName." }
         return WindowsGlobalHotkeyService(

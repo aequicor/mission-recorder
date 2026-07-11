@@ -1,3 +1,6 @@
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.Sync
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -19,6 +22,8 @@ dependencies {
     implementation(project(":capture-windows-jna"))
     implementation(project(":compose-ui"))
     implementation(project(":hotkey-core"))
+    implementation(project(":hotkey-linux-x11"))
+    implementation(project(":hotkey-macos-carbon"))
     implementation(project(":hotkey-windows-jna"))
     implementation(project(":media-desktop-ffmpeg"))
     implementation(project(":replay-buffer"))
@@ -73,6 +78,18 @@ val guiRunRequested = gradle.startParameter.taskNames.any { requested ->
         requested == ":desktop-app:run"
 }
 
-tasks.matching { task -> task.name == "run" }.configureEach {
+val stableRunClasspathDirectory = layout.buildDirectory.dir("compose/stable-run-classpath")
+val prepareStableRunClasspath = tasks.register<Sync>("prepareStableRunClasspath") {
+    group = "compose desktop"
+    description = "Copies the GUI runtime classpath so concurrent builds cannot replace JARs used by the running app."
+    from(tasks.named("jar"))
+    from(configurations.named("runtimeClasspath"))
+    into(stableRunClasspathDirectory)
+    duplicatesStrategy = DuplicatesStrategy.FAIL
+}
+
+tasks.withType<JavaExec>().matching { task -> task.name == "run" }.configureEach {
+    dependsOn(prepareStableRunClasspath)
+    classpath = files(stableRunClasspathDirectory.map { directory -> directory.asFileTree })
     enabled = guiRunRequested
 }

@@ -66,7 +66,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.minutes
@@ -334,19 +336,26 @@ internal class DesktopRecorderViewModel(
     }
 
     fun shutdown(onComplete: () -> Unit) {
-        scope.launch {
-            stopPreviewAndJoin()
-            runCatching { recordingEngine.cancel() }
-            runCatching { replayEngine.stop() }
-            audioMuteController.clear()
-            preferenceUpdates.trySend(mutableState.value.toRecorderPreferences(encoderSettings))
-            currentProfileSnapshot()?.let(::queueProfileSnapshot)
-            preferenceUpdates.close()
-            profileUpdates.close()
-            runCatching { preferenceJob.join() }
-            runCatching { profileJob.join() }
-            onComplete()
+        val completed = AtomicBoolean(false)
+        fun completeOnce() {
+            if (completed.compareAndSet(false, true)) {
+                onComplete()
+            }
         }
+        scope.launch {
+            withTimeoutOrNull(SHUTDOWN_TIMEOUT_MILLIS) {
+                stopPreviewAndJoin()
+                runCatching { recordingEngine.cancel() }
+                runCatching { replayEngine.stop() }
+                audioMuteController.clear()
+                preferenceUpdates.trySend(mutableState.value.toRecorderPreferences(encoderSettings))
+                currentProfileSnapshot()?.let(::queueProfileSnapshot)
+                preferenceUpdates.close()
+                profileUpdates.close()
+                runCatching { preferenceJob.join() }
+                runCatching { profileJob.join() }
+            }
+        }.invokeOnCompletion { completeOnce() }
     }
 
     private fun selectSource(sourceId: String) {
@@ -1123,6 +1132,7 @@ internal class DesktopRecorderViewModel(
                     replayRetainedMilliseconds = 0,
                     replayVideoFrames = 0,
                     replayAudioFrames = 0,
+                    replayDroppedFrames = 0,
                     lastReplayPath = null,
                     errorMessage = null,
                 )
@@ -1370,6 +1380,7 @@ internal class DesktopRecorderViewModel(
                     replayRetainedMilliseconds = 0,
                     replayVideoFrames = 0,
                     replayAudioFrames = 0,
+                    replayDroppedFrames = 0,
                     microphoneLevel = 0f,
                     systemAudioLevel = 0f,
                 )
@@ -1383,12 +1394,14 @@ internal class DesktopRecorderViewModel(
                     replayRetainedMilliseconds = replayState.stats.retainedDuration.inWholeMilliseconds,
                     replayVideoFrames = replayState.stats.videoFrameCount,
                     replayAudioFrames = replayState.stats.audioFrameCount,
+                    replayDroppedFrames = replayState.stats.droppedVideoFrameCount,
                 )
                 is ReplayCaptureState.Stopping -> current.copy(
                     replayStatus = ReplayUiStatus.Stopping,
                     replayRetainedMilliseconds = replayState.stats.retainedDuration.inWholeMilliseconds,
                     replayVideoFrames = replayState.stats.videoFrameCount,
                     replayAudioFrames = replayState.stats.audioFrameCount,
+                    replayDroppedFrames = replayState.stats.droppedVideoFrameCount,
                     microphoneLevel = 0f,
                     systemAudioLevel = 0f,
                 )
@@ -1397,6 +1410,7 @@ internal class DesktopRecorderViewModel(
                     replayRetainedMilliseconds = replayState.stats.retainedDuration.inWholeMilliseconds,
                     replayVideoFrames = replayState.stats.videoFrameCount,
                     replayAudioFrames = replayState.stats.audioFrameCount,
+                    replayDroppedFrames = replayState.stats.droppedVideoFrameCount,
                     errorMessage = replayState.message,
                     microphoneLevel = 0f,
                     systemAudioLevel = 0f,
@@ -1471,6 +1485,7 @@ private fun RecorderUiState.withReplayStats(
     replayRetainedMilliseconds = state.stats.retainedDuration.inWholeMilliseconds,
     replayVideoFrames = state.stats.videoFrameCount,
     replayAudioFrames = state.stats.audioFrameCount,
+    replayDroppedFrames = state.stats.droppedVideoFrameCount,
 )
 
 private fun CaptureSource.toUiModel(): RecorderSourceUi = RecorderSourceUi(
@@ -1578,7 +1593,8 @@ private fun VideoFrame.toDesktopPreviewFrame(): DesktopPreviewFrame {
 }
 
 private const val PREVIEW_OUTPUT_PLACEHOLDER = "preview-does-not-create-output.mp4"
+private const val SHUTDOWN_TIMEOUT_MILLIS = 3_000L
 private const val MAX_PREVIEW_FRAME_RATE = 15
-private const val MAX_PREVIEW_WIDTH = 960
-private const val MAX_PREVIEW_HEIGHT = 540
+private const val MAX_PREVIEW_WIDTH = 1920
+private const val MAX_PREVIEW_HEIGHT = 1080
 private const val PREVIEW_BYTES_PER_PIXEL = 4

@@ -16,7 +16,7 @@ import io.aequicor.capture.core.VideoCodec
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration.Companion.seconds
 
-const val CURRENT_SETTINGS_SCHEMA_VERSION: Int = 1
+const val CURRENT_SETTINGS_SCHEMA_VERSION: Int = 2
 
 @Serializable
 data class MissionRecorderSettings(
@@ -131,7 +131,7 @@ data class EncoderProfileSettings(
     val container: ContainerFormatSetting = ContainerFormatSetting.Mp4,
     val videoCodec: VideoCodecSetting = VideoCodecSetting.H264,
     val audioCodec: AudioCodecSetting = AudioCodecSetting.Aac,
-    val videoBitrateBitsPerSecond: Int = 8_000_000,
+    val videoBitrateBitsPerSecond: Int = 24_000_000,
     val audioBitrateBitsPerSecond: Int = 192_000,
     val keyframeIntervalSeconds: Int = 2,
     val hardwareAcceleration: HardwareAccelerationSetting = HardwareAccelerationSetting.Auto,

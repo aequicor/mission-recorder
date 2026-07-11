@@ -68,6 +68,7 @@ class FfmpegSegmentedReplayBufferTest {
         assertEquals(firstOutput.toString(), firstResult.output.path)
         assertTrue(firstResult.videoFrames >= FRAME_RATE)
         assertTrue(firstResult.audioFrames > 0)
+        assertEquals(0, firstResult.droppedFrames)
         assertTrue(inspectReplay(firstOutput) >= 100)
         assertTrue(segmentFiles(storage).size <= MAX_EXPECTED_SEGMENTS)
 
@@ -81,6 +82,7 @@ class FfmpegSegmentedReplayBufferTest {
         val secondResult = buffer.save(secondOutput.toString())
 
         assertTrue(secondResult.videoFrames >= FRAME_RATE)
+        assertEquals(0, secondResult.droppedFrames)
         assertTrue(inspectReplay(secondOutput) >= 180)
 
         buffer.close()

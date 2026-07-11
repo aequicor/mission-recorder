@@ -464,17 +464,17 @@ class MissionRecorderScreenTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {
             MissionRecorderScreen(
-                state = RecorderUiState(videoBitrateMbps = 8),
+                state = RecorderUiState(videoBitrateMbps = 41),
                 onAction = actions::add,
             )
         }
 
         onNodeWithTag("video-bitrate")
             .performScrollTo()
-            .assertRangeInfoEquals(ProgressBarRangeInfo(8f, 2f..30f, 27))
-            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(16f) }
+            .assertRangeInfoEquals(ProgressBarRangeInfo(41f, 2f..80f, 77))
+            .performSemanticsAction(SemanticsActions.SetProgress) { setProgress -> setProgress(42f) }
 
-        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetVideoBitrateMbps(16)), actions)
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetVideoBitrateMbps(42)), actions)
     }
 
     @Test

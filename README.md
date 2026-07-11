@@ -58,8 +58,9 @@
 - В основном Audio-разделе runtime solo позволяет временно оставить только микрофон или системный звук во время recording/replay; solo не изменяет сохранённые mute-флаги и очищается при смене источника.
 - Позиция мини-панели сохраняется в локальном settings JSON при закрытии и при следующем явном открытии зажимается внутри ближайшего доступного монитора, включая конфигурации с отрицательными координатами.
 - Запись можно приостановить и продолжить из главного окна или мини-панели: capture devices остаются открытыми, кадры во время паузы не кодируются, а общая pause duration вычитается из video/audio timestamps и длительности MP4.
-- На Windows меню позволяет явно включить системные hotkeys: `Ctrl+Shift+F9` запускает/останавливает запись, `Ctrl+Shift+F10` переключает pause/resume, `Ctrl+Shift+F11` сохраняет активный replay buffer. Регистрация не запускает capture и полностью снимается при выключении или закрытии приложения.
+- На Windows, macOS и Linux/X11 меню позволяет явно включить системные hotkeys: `Ctrl+Shift+F9` запускает/останавливает запись, `Ctrl+Shift+F10` переключает pause/resume, `Ctrl+Shift+F11` сохраняет активный replay buffer. Регистрация не запускает capture и полностью снимается при выключении или закрытии приложения; Wayland не подменяется XWayland-регистрацией.
 - CLI поддерживает foreground replay: `replay run ... --buffer N --output replay.mp4` работает до `Ctrl+C` и сохраняет накопленный snapshot; опциональный `--run-for N` задает дедлайн, а `--control-endpoint PATH` включает локальные `status`, отдельный `save` без остановки и финальный `stop` для automation.
+- `replay start` запускает тот же pipeline отдельным локальным процессом, требует явный control endpoint, проверяет состояние `replay-buffering` и возвращает PID; `replay save --endpoint ...` сохраняет snapshot без остановки daemon-а.
 - CLI-запись может работать без `--duration` до `Ctrl+C`; JVM shutdown hook запрашивает stop и ждёт финализации локального MP4.
 - CLI-запись поддерживает явный локальный `--control-endpoint`: отдельные команды `control status|pause|resume|stop` управляют той же сессией через loopback и одноразовый токен. Сценарий описан в [docs/cli-control.md](docs/cli-control.md).
 - `settings init/validate/show` подключены к CLI и работают с локальным JSON-файлом настроек.
@@ -81,11 +82,12 @@
 - текущий production output desktop backend-а - MP4; WebM пока не подключен;
 - GUI позволяет выбирать video bitrate 2-30 Mbps, но codec/container selector не показывается: production backend пока честно поддерживает только MP4/H.264 и AAC.
 - bounded A/V drift correction покрыта детерминированными slow/fast-clock тестами, но многочасовая проверка на реальных Java Sound/WASAPI устройствах еще не выполнена;
-- replay daemon еще не подключен; Windows global hotkey готов в GUI, но adapters для macOS/Linux и фоновый процесс без открытого GUI остаются.
+- CLI replay daemon запускается явной командой `replay start ... --control-endpoint ...`, подтверждает готовность через локальный tokenized protocol и затем управляется командами `control status`, `replay save`/`control save` и `control stop`; скрытый автозапуск отсутствует.
 - Pause/resume доступны в Compose GUI, доменном controller и opt-in локальном CLI control channel. Тот же versioned loopback protocol управляет foreground replay через `status`, `control save --output ...` и `stop`; replay pause/resume явно отклоняются.
-- Compose transport bar и `control status --json` показывают средний фактический FPS и оценку пропущенных видеокадров; паузы исключаются из media timeline и drop-расчета.
+- Compose transport bar и `control status --json` показывают средний фактический FPS и оценку пропущенных видеокадров; паузы исключаются из media timeline и drop-расчета, а replay-метрики относятся к текущему окну последних `N` минут.
 - профили настроек можно создавать, проверять и использовать из CLI и Compose GUI; скрытые codec/container поля пока остаются доступны только через локальный JSON.
 - Always-on-top, восстановление окна после live-смены monitor layout/DPI и compact layout требуют ручного visual smoke на целевых desktop-платформах; автоматические geometry-тесты покрывают reopen после отключения монитора, отрицательные координаты и промежутки между экранами.
+- macOS Carbon hotkeys покрыты fake-native lifecycle тестами, но фактическую доставку событий через Carbon Event Dispatcher еще нужно проверить на реальном Mac вместе с DMG.
 - macOS production wiring использует native screen preflight/request и microphone TCC status; system audio пока unsupported. Linux portal gateway еще не реализован: JVM gateway работает fail-closed на Wayland и неизвестной session, разрешая AWT/Xlib capture только для подтверждённого X11.
 
 ## Возможности

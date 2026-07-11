@@ -163,6 +163,82 @@ class MissionRecorderCliTest {
     }
 
     @Test
+    fun startsInjectedReplayDaemonAsJson() = runTest {
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        val cli = MissionRecorderCli(
+            captureSourceRepository = StaticCaptureSourceRepository(emptyList()),
+            audioSourceRepository = EmptyTestAudioSourceRepository,
+            replayDaemonCommandBackend = object : ReplayDaemonCommandBackend {
+                override suspend fun start(command: CliCommand.ReplayStart): ReplayDaemonCommandResult =
+                    ReplayDaemonCommandResult.Started(
+                        processId = 42,
+                        endpointPath = "replay.control.json",
+                        outputPath = "final.mp4",
+                    )
+            },
+        )
+
+        val code = cli.run(
+            arrayOf(
+                "replay", "start", "screen", "--buffer", "5m", "--output", "final.mp4",
+                "--control-endpoint", "replay.control.json", "--json",
+            ),
+            stdout,
+            stderr,
+        )
+
+        assertEquals(CliExitCode.Success.code, code)
+        assertEquals(
+            """{"replayDaemon":{"state":"started","processId":42,"endpointPath":"replay.control.json","outputPath":"final.mp4"}}""" + "\n",
+            stdout.toString(),
+        )
+        assertEquals("", stderr.toString())
+    }
+
+    @Test
+    fun replaySaveUsesLocalControlBackend() = runTest {
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        var received: CliCommand.Control? = null
+        val cli = MissionRecorderCli(
+            captureSourceRepository = StaticCaptureSourceRepository(emptyList()),
+            audioSourceRepository = EmptyTestAudioSourceRepository,
+            recordingControlCommandBackend = object : RecordingControlCommandBackend {
+                override suspend fun control(command: CliCommand.Control): RecordingControlCommandResult {
+                    received = command
+                    return RecordingControlCommandResult.Completed(
+                        action = command.action,
+                        status = RecordingControlStatus("replay-buffering", "snapshot.mp4", 1_000, 30, 0),
+                        message = "Replay snapshot saved.",
+                    )
+                }
+            },
+        )
+
+        val code = cli.run(
+            arrayOf(
+                "replay", "save", "--endpoint", "replay.control.json", "--output", "snapshot.mp4",
+            ),
+            stdout,
+            stderr,
+        )
+
+        assertEquals(CliExitCode.Success.code, code)
+        assertEquals(
+            CliCommand.Control(
+                RecordingControlAction.Save,
+                endpointPath = "replay.control.json",
+                outputPath = "snapshot.mp4",
+                json = false,
+            ),
+            received,
+        )
+        assertTrue(stdout.toString().contains("Replay snapshot saved."))
+        assertEquals("", stderr.toString())
+    }
+
+    @Test
     fun runsInjectedExportFramesBackend() = runTest {
         val stdout = StringBuilder()
         val stderr = StringBuilder()
