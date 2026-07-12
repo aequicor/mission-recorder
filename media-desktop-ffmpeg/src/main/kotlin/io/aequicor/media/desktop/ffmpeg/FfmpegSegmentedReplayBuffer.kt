@@ -17,7 +17,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC
-import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P
 import org.bytedeco.javacv.FFmpegFrameGrabber
@@ -174,7 +173,7 @@ class FfmpegSegmentedReplayBuffer(
             setOption("segment_wrap", current.maxSegments.toString())
             setOption("segment_start_number", current.nextSegmentIndex.toString())
             setOption("reset_timestamps", "1")
-            videoCodec = AV_CODEC_ID_H264
+            configureOpenH264BitrateControl()
             pixelFormat = AV_PIX_FMT_YUV420P
             frameRate = current.session.settings.frameRate.toDouble()
             videoBitrate = current.session.settings.encoder.videoBitrateBitsPerSecond
@@ -256,7 +255,7 @@ class FfmpegSegmentedReplayBuffer(
             audioFormat?.channelCount ?: 0,
         ).apply {
             format = "mp4"
-            videoCodec = AV_CODEC_ID_H264
+            configureOpenH264BitrateControl()
             pixelFormat = AV_PIX_FMT_YUV420P
             frameRate = snapshot.session.settings.frameRate.toDouble()
             videoBitrate = snapshot.session.settings.encoder.videoBitrateBitsPerSecond

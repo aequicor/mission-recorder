@@ -22,11 +22,13 @@ import java.awt.Point
 import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.Robot
+import java.awt.Transparency
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
+import java.awt.image.DataBufferInt
+import java.awt.image.SinglePixelPackedSampleModel
 import kotlin.math.max
 import kotlin.time.Duration.Companion.nanoseconds
-import kotlin.time.Duration.Companion.seconds
 
 class AwtVideoCaptureAdapter internal constructor(
     private val screenGrabberFactory: () -> ScreenGrabber,
@@ -48,8 +50,9 @@ class AwtVideoCaptureAdapter internal constructor(
 
         val rectangle = captureRectangle(settings.captureSource)
         val screenGrabber = screenGrabberFactory()
-        val interval = (1.seconds / max(settings.frameRate, 1))
+        val intervalNanoseconds = NANOS_PER_SECOND / max(settings.frameRate, 1)
         val startedAt = nanoTime()
+        var nextFrameDeadline = startedAt
 
         while (currentCoroutineContext().isActive) {
             val image = screenGrabber.capture(rectangle)
@@ -69,7 +72,14 @@ class AwtVideoCaptureAdapter internal constructor(
                     pixelData = image.toRgbaBytes(),
                 ),
             )
-            delay(interval.inWholeNanoseconds.nanoseconds)
+            nextFrameDeadline += intervalNanoseconds
+            val remainingNanoseconds = nextFrameDeadline - nanoTime()
+            if (remainingNanoseconds > 0) {
+                delay(remainingNanoseconds.nanoseconds)
+            } else if (remainingNanoseconds < -intervalNanoseconds) {
+                val missedIntervals = (-remainingNanoseconds) / intervalNanoseconds
+                nextFrameDeadline += missedIntervals * intervalNanoseconds
+            }
         }
     }
 
@@ -164,16 +174,36 @@ private inline fun <T : java.awt.Graphics> T.use(block: (T) -> Unit) {
 
 private fun BufferedImage.toRgbaBytes(): ByteArray {
     val bytes = ByteArray(width * height * 4)
-    var offset = 0
-    for (y in 0 until height) {
-        for (x in 0 until width) {
-            val argb = getRGB(x, y)
-            bytes[offset] = ((argb shr 16) and 0xff).toByte()
-            bytes[offset + 1] = ((argb shr 8) and 0xff).toByte()
-            bytes[offset + 2] = (argb and 0xff).toByte()
-            bytes[offset + 3] = ((argb shr 24) and 0xff).toByte()
-            offset += 4
-        }
+    val packedPixels = packedArgbPixels()
+    if (packedPixels != null) {
+        copyArgbToRgba(packedPixels, bytes, colorModel.transparency == Transparency.OPAQUE)
+        return bytes
     }
+    copyArgbToRgba(getRGB(0, 0, width, height, null, 0, width), bytes, forceOpaque = false)
     return bytes
 }
+
+private fun BufferedImage.packedArgbPixels(): IntArray? {
+    val buffer = raster.dataBuffer as? DataBufferInt ?: return null
+    val sampleModel = raster.sampleModel as? SinglePixelPackedSampleModel ?: return null
+    if (buffer.numBanks != 1 || buffer.offset != 0 || sampleModel.scanlineStride != width) {
+        return null
+    }
+    if (raster.sampleModelTranslateX != 0 || raster.sampleModelTranslateY != 0) {
+        return null
+    }
+    return buffer.data.takeIf { pixels -> pixels.size >= width * height }
+}
+
+private fun copyArgbToRgba(argbPixels: IntArray, bytes: ByteArray, forceOpaque: Boolean) {
+    var offset = 0
+    argbPixels.forEach { argb ->
+        bytes[offset] = ((argb shr 16) and 0xff).toByte()
+        bytes[offset + 1] = ((argb shr 8) and 0xff).toByte()
+        bytes[offset + 2] = (argb and 0xff).toByte()
+        bytes[offset + 3] = if (forceOpaque) 0xff.toByte() else ((argb shr 24) and 0xff).toByte()
+        offset += 4
+    }
+}
+
+private const val NANOS_PER_SECOND = 1_000_000_000L

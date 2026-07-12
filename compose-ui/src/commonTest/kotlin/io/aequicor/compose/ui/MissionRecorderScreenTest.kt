@@ -1,8 +1,5 @@
 package io.aequicor.compose.ui
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
@@ -60,32 +57,21 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun previewButtonHoistsExplicitStartAndStopActions() = runComposeUiTest {
-        val actions = mutableListOf<RecorderUiAction>()
-        var previewActive by mutableStateOf(false)
+    fun previewDoesNotRequireAnExplicitStartButton() = runComposeUiTest {
         setContent {
             MissionRecorderScreen(
                 state = RecorderUiState(
                     sources = listOf(RecorderSourceUi("screen:test", "Test screen", RecorderSourceKind.Screen)),
                     selectedSourceId = "screen:test",
                     outputPath = "recordings/test.mp4",
-                    previewStatus = if (previewActive) PreviewUiStatus.Active else PreviewUiStatus.Idle,
+                    previewStatus = PreviewUiStatus.Active,
                 ),
-                onAction = { action ->
-                    actions += action
-                    previewActive = action == RecorderUiAction.StartPreview
-                },
+                onAction = {},
             )
         }
 
-        onNodeWithTag("toggle-preview").assertIsEnabled().performClick()
-        waitForIdle()
-        onNodeWithTag("toggle-preview").assertIsEnabled().performClick()
-
-        assertEquals(
-            listOf(RecorderUiAction.StartPreview, RecorderUiAction.StopPreview),
-            actions,
-        )
+        onAllNodesWithTag("toggle-preview").assertCountEquals(0)
+        onAllNodesWithTag("preview-image").assertCountEquals(0)
     }
 
     @Test
@@ -534,6 +520,21 @@ class MissionRecorderScreenTest {
             ),
             actions,
         )
+    }
+
+    @Test
+    fun opensSavedRecordingFolderFromStatusNotice() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(lastOutputPath = "recordings/finished.mp4"),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("open-saved-recording-folder").assertIsEnabled().performClick()
+
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.OpenRecordingsFolder), actions)
     }
 
     @Test

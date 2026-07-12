@@ -32,6 +32,8 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.kotlinxCoroutines)
     implementation(libs.kotlinxCoroutinesSwing)
+    implementation(libs.jna)
+    implementation(libs.jnaPlatform)
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinxCoroutinesTest)
 }

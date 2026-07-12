@@ -123,7 +123,7 @@ data class RecorderUiState(
         get() = isRecording || isPaused
 
     val isBusy: Boolean
-        get() = hasBlockingOperation || isPreviewRunning
+        get() = hasBlockingOperation
 
     private val hasBlockingOperation: Boolean
         get() = status == RecorderStatus.Preparing ||
@@ -158,7 +158,10 @@ data class RecorderUiState(
             replayDurationMinutes > 0
 
     val canStartPreview: Boolean
-        get() = !isBusy && !isRefreshingSources && selectedSourceId != null
+        get() = previewStatus == PreviewUiStatus.Idle &&
+            !hasBlockingOperation &&
+            !isRefreshingSources &&
+            selectedSourceId != null
 
     val canStopPreview: Boolean
         get() = isPreviewRunning

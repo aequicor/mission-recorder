@@ -12,7 +12,6 @@ import io.aequicor.capture.core.audioOutputFormat
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC
-import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P
 import org.bytedeco.javacv.FFmpegFrameRecorder
@@ -139,28 +138,66 @@ class FfmpegMediaEncoder : MediaEncoder {
         context.encodedHeight = firstFrame.height.roundUpToEven()
         context.rgbaFrameBuffer = RgbaFrameBuffer(context.encodedWidth, context.encodedHeight)
         val audioFormat = context.settings.audioOutputFormat()
-        val recorder = FFmpegFrameRecorder(
+        val failures = mutableListOf<String>()
+        h264EncoderCandidates(context.settings.encoder.hardwareAcceleration).forEach { encoderName ->
+            val recorder = createRecorder(context, audioFormat?.channelCount ?: 0, encoderName)
+            try {
+                recorder.start()
+                return recorder
+            } catch (failure: Throwable) {
+                failures += "$encoderName: ${failure.message ?: "unavailable"}"
+                runCatching { recorder.release() }
+                runCatching { Files.deleteIfExists(context.temporary) }
+            }
+        }
+        throw encoderFailed("No H.264 encoder could be started. ${failures.joinToString("; ")}")
+    }
+
+    private fun createRecorder(context: EncoderContext, audioChannelsCount: Int, encoderName: String) =
+        FFmpegFrameRecorder(
             context.temporary.toFile(),
             context.encodedWidth,
             context.encodedHeight,
-            audioFormat?.channelCount ?: 0,
+            audioChannelsCount,
         ).apply {
             format = "mp4"
-            videoCodec = AV_CODEC_ID_H264
+            videoCodecName = encoderName
             pixelFormat = AV_PIX_FMT_YUV420P
             frameRate = context.settings.frameRate.toDouble()
             videoBitrate = context.settings.encoder.videoBitrateBitsPerSecond
             gopSize = context.settings.frameRate * context.settings.encoder.keyframeIntervalSeconds
+            configureH264Options(encoderName)
             setInterleaved(true)
-            if (audioFormat != null) {
+            context.settings.audioOutputFormat()?.let { audioFormat ->
                 audioCodec = AV_CODEC_ID_AAC
                 audioBitrate = context.settings.encoder.audioBitrateBitsPerSecond
                 sampleRate = audioFormat.sampleRate
                 audioChannels = audioFormat.channelCount
             }
         }
-        recorder.start()
-        return recorder
+
+    private fun FFmpegFrameRecorder.configureH264Options(encoderName: String) {
+        when (encoderName) {
+            "h264_nvenc" -> {
+                setVideoOption("preset", "p5")
+                setVideoOption("rc", "vbr")
+                setVideoOption("cq", "18")
+            }
+            "h264_qsv" -> {
+                setVideoOption("preset", "medium")
+            }
+            "h264_mf" -> {
+                setVideoOption("rate_control", "pc_vbr")
+                setVideoOption("scenario", "display_remoting")
+                setVideoOption("quality", "90")
+                setVideoOption("hw_encoding", "true")
+            }
+            "h264_videotoolbox" -> setVideoOption("realtime", "false")
+            "libopenh264" -> {
+                setVideoOption("rc_mode", "bitrate")
+                setVideoOption("allow_skip_frames", "true")
+            }
+        }
     }
 
     private fun cleanup(context: EncoderContext) {

@@ -51,13 +51,13 @@ import io.aequicor.capture.platform.VideoCaptureRoute
 import io.aequicor.capture.windows.jna.WindowsCaptureAdapterFactory
 import io.aequicor.compose.ui.MissionRecorderScreen
 import io.aequicor.compose.ui.MiniRecorderController
+import io.aequicor.compose.ui.PreviewUiStatus
+import io.aequicor.compose.ui.RecorderUiAction
 import io.aequicor.compose.ui.StoryboardMode
 import io.aequicor.compose.resources.Res
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.global_hotkeys
 import io.aequicor.compose.resources.mini_controller_title
-import io.aequicor.compose.resources.show_mini_controller
-import io.aequicor.compose.resources.view_menu
 import io.aequicor.media.desktop.ffmpeg.FfmpegMediaEncoder
 import io.aequicor.media.desktop.ffmpeg.FfmpegSegmentedReplayBuffer
 import io.aequicor.media.desktop.ffmpeg.FfmpegStoryboardExporter
@@ -74,6 +74,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.withContext
 import java.awt.Dimension
+import java.awt.Frame
 import java.awt.GraphicsEnvironment
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
@@ -118,6 +119,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     val hotkeyFactory = remember { DesktopGlobalHotkeyServiceFactory() }
     var closing by remember { mutableStateOf(false) }
     var showMiniController by remember { mutableStateOf(false) }
+    var mainWindow by remember { mutableStateOf<java.awt.Window?>(null) }
     var globalHotkeysEnabled by remember { mutableStateOf(startupSettings.globalHotkeysEnabled) }
     val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
     val miniWindowState = rememberWindowState(
@@ -125,8 +127,6 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         height = 92.dp,
         position = WindowPosition(Alignment.TopEnd),
     )
-    val viewMenuLabel = stringResource(Res.string.view_menu)
-    val showMiniControllerLabel = stringResource(Res.string.show_mini_controller)
     val globalHotkeysLabel = stringResource(Res.string.global_hotkeys)
     val miniControllerTitle = stringResource(Res.string.mini_controller_title)
 
@@ -144,6 +144,18 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
         profileCatalogResult.exceptionOrNull()?.let { failure ->
             viewModel.reportPlatformError(failure.message ?: "Could not load recording profiles.")
+        }
+    }
+
+    LaunchedEffect(state.selectedSourceId, state.frameRate) {
+        if (state.previewStatus != PreviewUiStatus.Idle) {
+            viewModel.onAction(RecorderUiAction.StopPreview)
+        }
+    }
+
+    LaunchedEffect(state.canStartPreview) {
+        if (state.canStartPreview) {
+            viewModel.onAction(RecorderUiAction.StartPreview)
         }
     }
 
@@ -200,14 +212,9 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         icon = applicationIcon,
     ) {
         MenuBar {
-            Menu(viewMenuLabel) {
+            Menu(globalHotkeysLabel) {
                 CheckboxItem(
-                    text = showMiniControllerLabel,
-                    checked = showMiniController,
-                    onCheckedChange = { checked -> showMiniController = checked },
-                )
-                CheckboxItem(
-                    text = globalHotkeysLabel,
+                    text = "Ctrl+Shift+F9 / F10 / F11",
                     checked = globalHotkeysEnabled,
                     enabled = hotkeyFactory.isSupported,
                     onCheckedChange = { checked -> globalHotkeysEnabled = checked },
@@ -215,7 +222,27 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             }
         }
         LaunchedEffect(window) {
+            mainWindow = window
             window.minimumSize = Dimension(760, 620)
+            excludeWindowFromCapture(window)
+        }
+        DisposableEffect(window) {
+            val windowListener = object : WindowAdapter() {
+                override fun windowIconified(event: WindowEvent) {
+                    showMiniController = true
+                }
+
+                override fun windowDeiconified(event: WindowEvent) {
+                    showMiniController = false
+                }
+            }
+            window.addWindowListener(windowListener)
+            onDispose {
+                window.removeWindowListener(windowListener)
+                if (mainWindow === window) {
+                    mainWindow = null
+                }
+            }
         }
         MissionRecorderScreen(
             state = state,
@@ -226,7 +253,17 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
 
     if (showMiniController) {
         Window(
-            onCloseRequest = { showMiniController = false },
+            onCloseRequest = {
+                showMiniController = false
+                mainWindow?.let { window ->
+                    if (window is Frame) {
+                        window.extendedState = window.extendedState and Frame.ICONIFIED.inv()
+                    }
+                    window.isVisible = true
+                    window.toFront()
+                    window.requestFocus()
+                }
+            },
             state = miniWindowState,
             title = miniControllerTitle,
             icon = applicationIcon,
@@ -235,6 +272,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         ) {
             LaunchedEffect(window) {
                 restoreMiniControllerPosition(window, desktopUiSettings)
+                excludeWindowFromCapture(window)
             }
             DisposableEffect(window) {
                 val focusListener = object : WindowAdapter() {

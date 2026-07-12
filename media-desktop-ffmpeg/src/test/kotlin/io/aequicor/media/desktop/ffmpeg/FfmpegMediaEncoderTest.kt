@@ -4,6 +4,7 @@ import io.aequicor.capture.core.AudioFrame
 import io.aequicor.capture.core.AudioCaptureAdapter
 import io.aequicor.capture.core.AudioSource
 import io.aequicor.capture.core.AudioSourceId
+import io.aequicor.capture.core.HardwareAccelerationMode
 import io.aequicor.capture.core.CaptureSource
 import io.aequicor.capture.core.CaptureSourceId
 import io.aequicor.capture.core.MediaTimestamp
@@ -47,6 +48,22 @@ import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FfmpegMediaEncoderTest {
+    @Test
+    fun selectsHardwareEncodersBeforeSoftwareFallback() {
+        assertEquals(
+            listOf("h264_nvenc", "h264_qsv", "h264_mf", "libopenh264"),
+            h264EncoderCandidates(HardwareAccelerationMode.Auto, osName = "Windows 11"),
+        )
+        assertEquals(
+            listOf("libopenh264"),
+            h264EncoderCandidates(HardwareAccelerationMode.Disabled, osName = "Windows 11"),
+        )
+        assertEquals(
+            listOf("h264_videotoolbox"),
+            h264EncoderCandidates(HardwareAccelerationMode.Required, osName = "Mac OS X"),
+        )
+    }
+
     @Test
     fun preservesRgbaChannelOrderInsteadOfTreatingArgbAlphaAsRed() = runTest {
         val output = Files.createTempDirectory("mission-recorder-color-test").resolve("colors.mp4")

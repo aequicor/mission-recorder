@@ -139,8 +139,6 @@ import io.aequicor.compose.resources.resume
 import io.aequicor.compose.resources.save_replay
 import io.aequicor.compose.resources.saved_to
 import io.aequicor.compose.resources.selected_source
-import io.aequicor.compose.resources.start_preview
-import io.aequicor.compose.resources.stop_preview
 import io.aequicor.compose.resources.preview_preparing
 import io.aequicor.compose.resources.preview_image_description
 import io.aequicor.compose.resources.select_area
@@ -422,14 +420,6 @@ private fun AppHeader(state: RecorderUiState, onAction: (RecorderUiAction) -> Un
         } else {
             StatusIndicator(state.status)
         }
-        Spacer(Modifier.width(8.dp))
-        val refreshDescription = stringResource(Res.string.refresh_sources)
-        IconButton(
-            onClick = { onAction(RecorderUiAction.RefreshSources) },
-            enabled = !state.isBusy && !state.isRefreshingSources,
-        ) {
-            MaterialSymbol(Symbols.Refresh, refreshDescription)
-        }
     }
 }
 
@@ -667,7 +657,22 @@ private fun SourcePane(
     modifier: Modifier,
 ) {
     Column(modifier = modifier.background(MaterialTheme.colorScheme.surface).padding(20.dp)) {
-        SectionTitle(stringResource(Res.string.capture_source))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionTitle(stringResource(Res.string.capture_source))
+            Spacer(Modifier.weight(1f))
+            val refreshDescription = stringResource(Res.string.refresh_sources)
+            RecorderTooltipIconButton(
+                label = refreshDescription,
+                enabled = !state.isBusy && !state.isRefreshingSources,
+                onClick = { onAction(RecorderUiAction.RefreshSources) },
+                modifier = Modifier.testTag("refresh-sources"),
+            ) {
+                MaterialSymbol(Symbols.Refresh, refreshDescription)
+            }
+        }
         Spacer(Modifier.height(14.dp))
         if (state.isRefreshingSources) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -815,32 +820,6 @@ private fun PreviewPane(
                         )
                     }
                 }
-                OutlinedButton(
-                    onClick = {
-                        onAction(
-                            if (state.canStopPreview) RecorderUiAction.StopPreview else RecorderUiAction.StartPreview,
-                        )
-                    },
-                    enabled = state.canStopPreview || state.canStartPreview,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(14.dp).testTag("toggle-preview"),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color(0xDD171A1D),
-                        contentColor = Color.White,
-                    ),
-                ) {
-                    MaterialSymbol(
-                        symbol = if (state.canStopPreview) Symbols.Stop else Symbols.Play,
-                        description = null,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (state.canStopPreview) {
-                            stringResource(Res.string.stop_preview)
-                        } else {
-                            stringResource(Res.string.start_preview)
-                        },
-                    )
-                }
             }
         }
     }
@@ -862,12 +841,11 @@ private fun SettingsPane(
             Spacer(Modifier.height(18.dp))
         }
         state.lastOutputPath?.let { outputPath ->
-            Text(
+            SavedPathNotice(
                 text = stringResource(Res.string.saved_to, outputPath),
-                style = MaterialTheme.typography.bodySmall,
-                color = SuccessGreen,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+                openFolderLabel = stringResource(Res.string.open_recordings_folder),
+                testTag = "open-saved-recording-folder",
+                onOpenFolder = { onAction(RecorderUiAction.OpenRecordingsFolder) },
             )
             Spacer(Modifier.height(18.dp))
         }
@@ -1093,6 +1071,42 @@ private fun SettingsPane(
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Spacer(Modifier.height(22.dp))
         StoryboardControls(state = state, onAction = onAction)
+    }
+}
+
+@Composable
+private fun SavedPathNotice(
+    text: String,
+    openFolderLabel: String,
+    testTag: String,
+    onOpenFolder: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = SuccessGreen,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(6.dp))
+        RecorderTooltipIconButton(
+            label = openFolderLabel,
+            enabled = true,
+            onClick = onOpenFolder,
+            modifier = Modifier.size(34.dp).testTag(testTag),
+        ) {
+            MaterialSymbol(
+                symbol = Symbols.FolderOpen,
+                description = openFolderLabel,
+                color = SuccessGreen,
+                size = 20.sp,
+            )
+        }
     }
 }
 

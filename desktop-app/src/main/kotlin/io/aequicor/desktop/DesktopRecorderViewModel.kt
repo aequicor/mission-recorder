@@ -612,7 +612,8 @@ internal class DesktopRecorderViewModel(
     }
 
     private fun openRecordingsFolder() {
-        val outputPath = mutableState.value.outputPath.trim()
+        val current = mutableState.value
+        val outputPath = (current.lastOutputPath ?: current.outputPath).trim()
         if (outputPath.isBlank()) {
             return
         }
@@ -988,7 +989,6 @@ internal class DesktopRecorderViewModel(
         )
 
         scope.launch {
-            stopPreviewAndJoin()
             mutableState.update {
                 it.copy(
                     status = RecorderStatus.Preparing,
@@ -1002,6 +1002,7 @@ internal class DesktopRecorderViewModel(
                     lastStoryboardPath = null,
                 )
             }
+            stopPreviewAndJoin(clearFrame = false)
             permissionError(settings)?.let { message ->
                 mutableState.update {
                     it.copy(status = RecorderStatus.Failed, errorMessage = message)
@@ -1125,7 +1126,6 @@ internal class DesktopRecorderViewModel(
             encoder = encoderSettings,
         )
         scope.launch {
-            stopPreviewAndJoin()
             mutableState.update {
                 it.copy(
                     replayStatus = ReplayUiStatus.Preparing,
@@ -1137,6 +1137,7 @@ internal class DesktopRecorderViewModel(
                     errorMessage = null,
                 )
             }
+            stopPreviewAndJoin(clearFrame = false)
             permissionError(settings)?.let { message ->
                 mutableState.update {
                     it.copy(replayStatus = ReplayUiStatus.Failed, errorMessage = message)
@@ -1184,7 +1185,7 @@ internal class DesktopRecorderViewModel(
             audioSources = emptyList(),
             outputPath = PREVIEW_OUTPUT_PLACEHOLDER,
             frameRate = minOf(snapshot.frameRate, MAX_PREVIEW_FRAME_RATE),
-            captureCursor = snapshot.captureCursor,
+            captureCursor = false,
             encoder = encoderSettings,
         )
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -1237,13 +1238,15 @@ internal class DesktopRecorderViewModel(
         clearPreviewState()
     }
 
-    private suspend fun stopPreviewAndJoin() {
+    private suspend fun stopPreviewAndJoin(clearFrame: Boolean = true) {
         previewJob.getAndSet(null)?.cancelAndJoin()
-        clearPreviewState()
+        clearPreviewState(clearFrame)
     }
 
-    private fun clearPreviewState() {
-        mutablePreviewFrame.value = null
+    private fun clearPreviewState(clearFrame: Boolean = true) {
+        if (clearFrame) {
+            mutablePreviewFrame.value = null
+        }
         mutableState.update { current ->
             if (current.previewStatus == PreviewUiStatus.Idle) current
             else current.copy(previewStatus = PreviewUiStatus.Idle)

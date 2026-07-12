@@ -133,6 +133,7 @@ class DesktopRecorderViewModelTest {
         assertEquals(PreviewUiStatus.Active, viewModel.state.value.previewStatus)
         assertEquals(15, assertNotNull(preview.settings).frameRate)
         assertTrue(assertNotNull(preview.settings).audioSources.isEmpty())
+        assertFalse(assertNotNull(preview.settings).captureCursor)
         assertEquals(
             listOf(255.toByte(), 0.toByte(), 0.toByte(), 255.toByte()),
             assertNotNull(viewModel.previewFrame.value).rgbaPixels.take(4),
@@ -143,8 +144,8 @@ class DesktopRecorderViewModelTest {
 
         assertTrue(preview.cancelled)
         assertEquals(PreviewUiStatus.Idle, viewModel.state.value.previewStatus)
-        assertEquals(null, viewModel.previewFrame.value)
-        assertNotNull(recording.startedSettings)
+        assertNotNull(viewModel.previewFrame.value)
+        assertTrue(assertNotNull(recording.startedSettings).captureCursor)
     }
 
     @Test

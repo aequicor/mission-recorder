@@ -111,9 +111,30 @@ internal fun validateDesktopFfmpegSettings(settings: RecordingSettings) {
     if (settings.encoder.audioCodec != AudioCodec.Aac) {
         throw encoderFailed("Desktop FFmpeg media path currently supports AAC audio only.")
     }
-    if (settings.encoder.hardwareAcceleration == HardwareAccelerationMode.Required) {
-        throw encoderFailed("Required hardware acceleration is not available in the current FFmpeg media path.")
+}
+
+internal fun h264EncoderCandidates(
+    mode: HardwareAccelerationMode,
+    osName: String = System.getProperty("os.name").orEmpty(),
+): List<String> {
+    val hardwareEncoders = when {
+        osName.startsWith("Windows", ignoreCase = true) ->
+            listOf("h264_nvenc", "h264_qsv", "h264_mf")
+        osName.startsWith("Mac", ignoreCase = true) ->
+            listOf("h264_videotoolbox")
+        else -> listOf("h264_nvenc", "h264_qsv")
     }
+    return when (mode) {
+        HardwareAccelerationMode.Auto -> hardwareEncoders + SOFTWARE_H264_ENCODER
+        HardwareAccelerationMode.Disabled -> listOf(SOFTWARE_H264_ENCODER)
+        HardwareAccelerationMode.Required -> hardwareEncoders
+    }
+}
+
+internal fun FFmpegFrameRecorder.configureOpenH264BitrateControl() {
+    videoCodecName = SOFTWARE_H264_ENCODER
+    setVideoOption("rc_mode", "bitrate")
+    setVideoOption("allow_skip_frames", "true")
 }
 
 internal fun validateAudioFrame(frame: AudioFrame) {
@@ -156,3 +177,4 @@ internal fun encoderFailed(message: String): RecordingException =
 internal fun Int.roundUpToEven(): Int = this + (this and 1)
 
 private const val RGBA_BYTES_PER_PIXEL = 4
+private const val SOFTWARE_H264_ENCODER = "libopenh264"
