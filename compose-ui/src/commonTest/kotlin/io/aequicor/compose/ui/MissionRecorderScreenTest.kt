@@ -473,6 +473,24 @@ class MissionRecorderScreenTest {
     }
 
     @Test
+    fun hoistsCaptureBorderVisibilityToggle() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(showCaptureBorder = true),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("show-capture-border").performScrollTo().assertIsEnabled().performClick()
+
+        assertEquals(
+            listOf<RecorderUiAction>(RecorderUiAction.SetShowCaptureBorder(false)),
+            actions,
+        )
+    }
+
+    @Test
     fun hoistsExplicitOutputOverwriteToggle() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {

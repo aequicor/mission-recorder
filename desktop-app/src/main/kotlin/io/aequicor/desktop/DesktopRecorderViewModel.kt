@@ -164,6 +164,7 @@ internal class DesktopRecorderViewModel(
     private val permissionGateway: PermissionGateway = GrantedPermissionGateway,
     initialPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
     initialShowApplicationInRecording: Boolean = false,
+    initialShowCaptureBorder: Boolean = true,
     private val preferencesWriter: DesktopRecorderPreferencesWriter = NoopDesktopRecorderPreferencesWriter,
     initialProfileCatalog: DesktopRecorderProfileCatalog? = null,
     private val profileStore: DesktopRecorderProfileStore = NoopDesktopRecorderProfileStore,
@@ -193,6 +194,7 @@ internal class DesktopRecorderViewModel(
             frameRate = startupPreferences.frameRate,
             captureCursor = startupPreferences.captureCursor,
             showApplicationInRecording = initialShowApplicationInRecording,
+            showCaptureBorder = initialShowCaptureBorder,
             replayDurationMinutes = startupPreferences.replayDurationMinutes,
             storyboardMode = startupPreferences.storyboardMode,
             videoBitrateMbps = startupPreferences.videoBitrateMbps,
@@ -226,6 +228,8 @@ internal class DesktopRecorderViewModel(
 
     val state: StateFlow<RecorderUiState> = mutableState.asStateFlow()
     val previewFrame: StateFlow<DesktopPreviewFrame?> = mutablePreviewFrame.asStateFlow()
+
+    fun captureSource(sourceId: String?): CaptureSource? = sourceId?.let(captureSourcesById::get)
 
     init {
         preferenceJob = scope.launch {
@@ -313,6 +317,9 @@ internal class DesktopRecorderViewModel(
             is RecorderUiAction.SetCaptureCursor -> setCaptureCursor(action.enabled)
             is RecorderUiAction.SetShowApplicationInRecording -> mutableState.update {
                 it.copy(showApplicationInRecording = action.enabled)
+            }
+            is RecorderUiAction.SetShowCaptureBorder -> mutableState.update {
+                it.copy(showCaptureBorder = action.enabled)
             }
             is RecorderUiAction.SetVideoBitrateMbps -> setVideoBitrateMbps(action.megabitsPerSecond)
             is RecorderUiAction.SetStoryboardInputPath -> setStoryboardInputPath(action.path)

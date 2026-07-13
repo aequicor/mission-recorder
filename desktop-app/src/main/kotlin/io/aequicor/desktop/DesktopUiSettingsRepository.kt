@@ -50,6 +50,7 @@ internal class DesktopUiSettingsRepository(
             ),
             globalHotkeysEnabled = settings.desktopUi.globalHotkeysEnabled,
             showApplicationInRecording = settings.desktopUi.showApplicationInRecording,
+            showCaptureBorder = settings.desktopUi.showCaptureBorder,
         )
     }
 
@@ -192,6 +193,11 @@ internal class DesktopUiSettingsRepository(
     fun saveShowApplicationInRecording(enabled: Boolean) = synchronized(lock) {
         val settings = store.loadOrDefault()
         store.save(settings.copy(desktopUi = settings.desktopUi.copy(showApplicationInRecording = enabled)))
+    }
+
+    fun saveShowCaptureBorder(enabled: Boolean) = synchronized(lock) {
+        val settings = store.loadOrDefault()
+        store.save(settings.copy(desktopUi = settings.desktopUi.copy(showCaptureBorder = enabled)))
     }
 
     private fun MissionRecorderSettings.toProfileCatalog(): DesktopRecorderProfileCatalog {

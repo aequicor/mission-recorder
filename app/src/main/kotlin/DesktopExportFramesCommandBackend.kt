@@ -50,7 +50,7 @@ class DesktopExportFramesCommandBackend(
             )
             ExportFramesCommandResult.Completed(
                 outputDirectory = output.toString(),
-                sourceFrames = result.frameCount,
+                sourceFrames = result.sourceFrameCount,
                 exportedFrames = result.frameCount,
                 imageFormat = "png",
             )

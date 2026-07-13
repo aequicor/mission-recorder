@@ -91,6 +91,7 @@ import io.aequicor.compose.resources.audio_frames
 import io.aequicor.compose.resources.audio_gain_percent
 import io.aequicor.compose.resources.capture_source
 import io.aequicor.compose.resources.capture_cursor
+import io.aequicor.compose.resources.show_capture_border
 import io.aequicor.compose.resources.show_application_in_recording
 import io.aequicor.compose.resources.choose_output_file
 import io.aequicor.compose.resources.create_storyboard
@@ -1020,6 +1021,24 @@ private fun SettingsPane(
             valueRange = MIN_VIDEO_BITRATE_MBPS.toFloat()..MAX_VIDEO_BITRATE_MBPS.toFloat(),
             steps = MAX_VIDEO_BITRATE_MBPS - MIN_VIDEO_BITRATE_MBPS - 1,
         )
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.show_capture_border),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(
+                checked = state.showCaptureBorder,
+                onCheckedChange = { enabled ->
+                    onAction(RecorderUiAction.SetShowCaptureBorder(enabled))
+                },
+                modifier = Modifier.testTag("show-capture-border"),
+            )
+        }
         Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),

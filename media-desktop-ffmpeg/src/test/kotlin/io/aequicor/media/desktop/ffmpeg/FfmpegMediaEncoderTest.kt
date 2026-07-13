@@ -119,11 +119,14 @@ class FfmpegMediaEncoderTest {
                 outputPath = output.parent.resolve("color-frames"),
                 layout = StoryboardLayout.SeparatePngFiles,
                 interval = 100.milliseconds,
+                maxFrames = 2,
             ),
         )
+        assertEquals(2, storyboard.sourceFrameCount)
+        assertEquals(1, storyboard.frameCount)
         val exported = assertNotNull(ImageIO.read(storyboard.outputPaths.first().toFile()))
         assertEquals(ENCODED_VIDEO_WIDTH, exported.width)
-        assertEquals(ENCODED_VIDEO_HEIGHT, exported.height)
+        assertTrue(exported.height > ENCODED_VIDEO_HEIGHT)
         val exportedRgb = exported.getRGB(exported.width / 2, exported.height / 2)
         val exportedRed = exportedRgb ushr 16 and 0xff
         val exportedGreen = exportedRgb ushr 8 and 0xff
@@ -230,14 +233,6 @@ class FfmpegMediaEncoderTest {
         inspectVideo(output, expectedAudioChannels = 1)
 
         val exporter = FfmpegStoryboardExporter()
-        assertEquals(
-            640,
-            StoryboardExportSettings(
-                inputVideo = output,
-                outputPath = temporaryDirectory.resolve("unused-storyboard.png"),
-                layout = StoryboardLayout.ContactSheet,
-            ).thumbnailWidth,
-        )
         val separateDirectory = temporaryDirectory.resolve("frames")
         val separate = exporter.export(
             StoryboardExportSettings(
@@ -253,7 +248,7 @@ class FfmpegMediaEncoderTest {
         separate.outputPaths.forEach { framePath ->
             val frame = assertNotNull(ImageIO.read(framePath.toFile()))
             assertEquals(ENCODED_VIDEO_WIDTH, frame.width)
-            assertEquals(ENCODED_VIDEO_HEIGHT, frame.height)
+            assertTrue(frame.height > ENCODED_VIDEO_HEIGHT)
         }
 
         val contactSheetPath = temporaryDirectory.resolve("storyboard.png")
@@ -263,13 +258,13 @@ class FfmpegMediaEncoderTest {
                 outputPath = contactSheetPath,
                 layout = StoryboardLayout.ContactSheet,
                 interval = 200.milliseconds,
-                columns = 3,
             ),
         )
         assertEquals(separate.frameCount, contactSheet.frameCount)
         val sheetImage = assertNotNull(ImageIO.read(contactSheetPath.toFile()))
-        assertTrue(sheetImage.width > VIDEO_WIDTH)
-        assertTrue(sheetImage.height >= VIDEO_HEIGHT)
+        val separateFrame = assertNotNull(ImageIO.read(separate.outputPaths.first().toFile()))
+        assertEquals(ENCODED_VIDEO_WIDTH, sheetImage.width)
+        assertTrue(sheetImage.height > separateFrame.height)
     }
 
     @Test

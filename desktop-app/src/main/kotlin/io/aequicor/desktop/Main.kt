@@ -19,9 +19,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.MenuBar
+import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberWindowState
 import io.aequicor.audio.desktop.javasound.JavaSoundAudioCaptureAdapter
 import io.aequicor.audio.desktop.javasound.JavaSoundAudioSourceRepository
@@ -52,12 +54,16 @@ import io.aequicor.capture.windows.jna.WindowsCaptureAdapterFactory
 import io.aequicor.compose.ui.MissionRecorderScreen
 import io.aequicor.compose.ui.MiniRecorderController
 import io.aequicor.compose.ui.PreviewUiStatus
+import io.aequicor.compose.ui.RecorderStatus
 import io.aequicor.compose.ui.RecorderUiAction
 import io.aequicor.compose.ui.StoryboardMode
 import io.aequicor.compose.resources.Res
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.global_hotkeys
 import io.aequicor.compose.resources.mini_controller_title
+import io.aequicor.compose.resources.app_name
+import io.aequicor.compose.resources.tray_exit
+import io.aequicor.compose.resources.tray_open
 import io.aequicor.media.desktop.ffmpeg.FfmpegMediaEncoder
 import io.aequicor.media.desktop.ffmpeg.FfmpegSegmentedReplayBuffer
 import io.aequicor.media.desktop.ffmpeg.FfmpegStoryboardExporter
@@ -72,6 +78,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -99,6 +106,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     val recorderScope = remember { CoroutineScope(SupervisorJob() + Dispatchers.IO) }
     val audioAdapters = remember { createDesktopAudioAdapters() }
     val captureAdapters = remember { createDesktopCaptureAdapters() }
+    val capturePresentation = remember { DesktopCapturePresentation() }
     val desktopUiSettings = remember {
         DesktopUiSettingsRepository(MissionRecorderSettingsStore(desktopSettingsPath()))
     }
@@ -112,6 +120,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             captureAdapters = captureAdapters,
             initialPreferences = startupSettings.recorderPreferences,
             initialShowApplicationInRecording = startupSettings.showApplicationInRecording,
+            initialShowCaptureBorder = startupSettings.showCaptureBorder,
             initialProfileCatalog = profileCatalogResult.getOrNull(),
             profileStore = RepositoryDesktopRecorderProfileStore(desktopUiSettings),
         )
@@ -129,7 +138,9 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     val currentState by rememberUpdatedState(state)
     val hotkeyFactory = remember { DesktopGlobalHotkeyServiceFactory() }
     var closing by remember { mutableStateOf(false) }
+    var showMainWindow by remember { mutableStateOf(true) }
     var showMiniController by remember { mutableStateOf(false) }
+    var compactedForRecording by remember { mutableStateOf(false) }
     var mainWindow by remember { mutableStateOf<java.awt.Window?>(null) }
     var globalHotkeysEnabled by remember { mutableStateOf(startupSettings.globalHotkeysEnabled) }
     val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
@@ -140,11 +151,36 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     )
     val globalHotkeysLabel = stringResource(Res.string.global_hotkeys)
     val miniControllerTitle = stringResource(Res.string.mini_controller_title)
+    val applicationName = stringResource(Res.string.app_name)
+    val trayOpenLabel = stringResource(Res.string.tray_open)
+    val trayExitLabel = stringResource(Res.string.tray_exit)
+
+    val requestExit = {
+        if (!closing) {
+            closing = true
+            showMainWindow = false
+            showMiniController = false
+            scheduleForcedDesktopExit()
+            viewModel.shutdown(::exitApplication)
+        }
+    }
+    val showFromTray = {
+        compactedForRecording = false
+        showMiniController = false
+        showMainWindow = true
+        restoreMainWindow(mainWindow)
+    }
+    val hideToTray = {
+        compactedForRecording = false
+        showMainWindow = false
+        showMiniController = false
+    }
 
     DisposableEffect(Unit) {
         onDispose {
             audioAdapters.close()
             captureAdapters.close()
+            capturePresentation.close()
             recorderScope.cancel()
         }
     }
@@ -218,16 +254,84 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
     }
 
+    LaunchedEffect(state.showCaptureBorder) {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                desktopUiSettings.saveShowCaptureBorder(state.showCaptureBorder)
+            }
+        }.onFailure { failure ->
+            viewModel.reportPlatformError(failure.message ?: "Could not save capture border setting.")
+        }
+    }
+
+    val recordingPresentationActive = state.status == RecorderStatus.Recording ||
+        state.status == RecorderStatus.Paused ||
+        state.status == RecorderStatus.Stopping
+    LaunchedEffect(recordingPresentationActive, state.selectedSourceId) {
+        if (!recordingPresentationActive) {
+            if (compactedForRecording) {
+                compactedForRecording = false
+                showMiniController = false
+                showMainWindow = true
+                restoreMainWindow(mainWindow)
+            }
+            return@LaunchedEffect
+        }
+        val captureSource = viewModel.captureSource(state.selectedSourceId) ?: return@LaunchedEffect
+        val frame = mainWindow as? Frame
+        if (frame != null && frame.extendedState and Frame.ICONIFIED == 0) {
+            compactedForRecording = true
+            showMiniController = true
+            frame.extendedState = frame.extendedState or Frame.ICONIFIED
+        }
+        withContext(Dispatchers.IO) {
+            capturePresentation.activate(captureSource)
+        }
+    }
+
+    LaunchedEffect(recordingPresentationActive, state.selectedSourceId, state.showCaptureBorder) {
+        if (!recordingPresentationActive || !state.showCaptureBorder) {
+            capturePresentation.hide()
+            return@LaunchedEffect
+        }
+        val captureSource = viewModel.captureSource(state.selectedSourceId) ?: return@LaunchedEffect
+        try {
+            while (true) {
+                val bounds = withContext(Dispatchers.IO) {
+                    capturePresentation.bounds(captureSource)
+                }
+                capturePresentation.show(bounds)
+                delay(CAPTURE_INDICATOR_REFRESH_MILLIS)
+            }
+        } finally {
+            capturePresentation.hide()
+        }
+    }
+
+    if (isTraySupported) {
+        Tray(
+            icon = applicationIcon,
+            tooltip = applicationName,
+            onAction = showFromTray,
+        ) {
+            Item(trayOpenLabel, onClick = showFromTray)
+            Separator()
+            Item(trayExitLabel, onClick = requestExit)
+        }
+    }
+
     Window(
         onCloseRequest = {
-            if (!closing) {
-                closing = true
-                showMiniController = false
-                scheduleForcedDesktopExit()
-                viewModel.shutdown(::exitApplication)
+            when (desktopCloseAction(isTraySupported)) {
+                DesktopCloseAction.HideToTray -> hideToTray()
+                DesktopCloseAction.MinimizeToTaskbar -> {
+                    (mainWindow as? Frame)?.let { frame ->
+                        frame.extendedState = frame.extendedState or Frame.ICONIFIED
+                    }
+                }
             }
         },
-        visible = !closing,
+        visible = !closing && showMainWindow,
         state = windowState,
         title = "Mission Recorder",
         icon = applicationIcon,
@@ -274,17 +378,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
 
     if (showMiniController) {
         Window(
-            onCloseRequest = {
-                showMiniController = false
-                mainWindow?.let { window ->
-                    if (window is Frame) {
-                        window.extendedState = window.extendedState and Frame.ICONIFIED.inv()
-                    }
-                    window.isVisible = true
-                    window.toFront()
-                    window.requestFocus()
-                }
-            },
+            onCloseRequest = hideToTray,
             state = miniWindowState,
             title = miniControllerTitle,
             icon = applicationIcon,
@@ -314,12 +408,31 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     }
 }
 
+private fun restoreMainWindow(window: java.awt.Window?) {
+    window ?: return
+    if (window is Frame) {
+        window.extendedState = window.extendedState and Frame.ICONIFIED.inv()
+    }
+    window.isVisible = true
+    window.toFront()
+    window.requestFocus()
+}
+
+internal enum class DesktopCloseAction {
+    HideToTray,
+    MinimizeToTaskbar,
+}
+
+internal fun desktopCloseAction(traySupported: Boolean): DesktopCloseAction =
+    if (traySupported) DesktopCloseAction.HideToTray else DesktopCloseAction.MinimizeToTaskbar
+
 private fun createDesktopRecorderViewModel(
     scope: CoroutineScope,
     audioAdapters: DesktopAudioAdapters,
     captureAdapters: DesktopCaptureAdapters,
     initialPreferences: DesktopRecorderPreferences,
     initialShowApplicationInRecording: Boolean,
+    initialShowCaptureBorder: Boolean,
     initialProfileCatalog: DesktopRecorderProfileCatalog?,
     profileStore: DesktopRecorderProfileStore,
 ): DesktopRecorderViewModel {
@@ -359,6 +472,7 @@ private fun createDesktopRecorderViewModel(
         ),
         initialPreferences = initialPreferences,
         initialShowApplicationInRecording = initialShowApplicationInRecording,
+        initialShowCaptureBorder = initialShowCaptureBorder,
         initialProfileCatalog = initialProfileCatalog,
         profileStore = profileStore,
     )
@@ -578,7 +692,7 @@ private fun saveMiniControllerPosition(
     }.onFailure { error -> reportDesktopUiSettingsFailure("save", error) }
 }
 
-private fun availableScreenBounds() =
+internal fun availableScreenBounds() =
     GraphicsEnvironment.getLocalGraphicsEnvironment()
         .screenDevices
         .map { device -> device.defaultConfiguration.bounds }
@@ -586,6 +700,8 @@ private fun availableScreenBounds() =
 private fun reportDesktopUiSettingsFailure(action: String, error: Throwable) {
     System.err.println("Unable to $action desktop UI settings: ${error.message}")
 }
+
+private const val CAPTURE_INDICATOR_REFRESH_MILLIS = 250L
 
 private class DesktopFfmpegStoryboardExporter(
     private val exporter: StoryboardExporter,

@@ -35,6 +35,7 @@
     <string name="video_bitrate">Битрейт видео</string>
     <string name="megabits_per_second">%1$d Мбит/с</string>
     <string name="capture_cursor">Показывать курсор в видео</string>
+    <string name="show_capture_border">Показывать рамку области записи</string>
     <string name="show_application_in_recording">Показывать Mission Recorder в видео</string>
     <string name="frames_per_second">%1$d FPS</string>
     <string name="output">Файл</string>
@@ -50,6 +51,8 @@
     <string name="show_mini_controller">Панель поверх окон</string>
     <string name="global_hotkeys">Глобальные горячие клавиши</string>
     <string name="mini_controller_title">Управление Mission Recorder</string>
+    <string name="tray_open">Открыть Mission Recorder</string>
+    <string name="tray_exit">Выход</string>
     <string name="record">Запись</string>
     <string name="pause">Пауза</string>
     <string name="resume">Продолжить</string>

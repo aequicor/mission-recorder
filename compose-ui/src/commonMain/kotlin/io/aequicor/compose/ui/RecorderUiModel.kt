@@ -90,6 +90,7 @@ data class RecorderUiState(
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
     val showApplicationInRecording: Boolean = false,
+    val showCaptureBorder: Boolean = true,
     val previewStatus: PreviewUiStatus = PreviewUiStatus.Idle,
     val videoBitrateMbps: Int = DEFAULT_VIDEO_BITRATE_MBPS,
     val status: RecorderStatus = RecorderStatus.Idle,
@@ -222,6 +223,7 @@ sealed interface RecorderUiAction {
     data class SetFrameRate(val frameRate: Int) : RecorderUiAction
     data class SetCaptureCursor(val enabled: Boolean) : RecorderUiAction
     data class SetShowApplicationInRecording(val enabled: Boolean) : RecorderUiAction
+    data class SetShowCaptureBorder(val enabled: Boolean) : RecorderUiAction
     data class SetVideoBitrateMbps(val megabitsPerSecond: Int) : RecorderUiAction
     data class SetStoryboardInputPath(val path: String) : RecorderUiAction
     data class SetStoryboardMode(val mode: StoryboardMode) : RecorderUiAction

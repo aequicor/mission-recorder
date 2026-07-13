@@ -28,6 +28,7 @@ class DesktopExportFramesCommandBackendTest {
                     layout = settings.layout,
                     frameCount = 5,
                     outputPaths = listOf(settings.outputPath),
+                    sourceFrameCount = 8,
                 )
             },
         )
@@ -43,6 +44,7 @@ class DesktopExportFramesCommandBackendTest {
         val result = backend.exportFrames(command)
 
         val completed = assertIs<ExportFramesCommandResult.Completed>(result)
+        assertEquals(8, completed.sourceFrames)
         assertEquals(5, completed.exportedFrames)
         val settings = requireNotNull(received)
         assertEquals(StoryboardLayout.ContactSheet, settings.layout)

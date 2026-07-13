@@ -32,6 +32,7 @@ data class DesktopUiSettings(
     val storyboardLayout: StoryboardLayoutSetting = StoryboardLayoutSetting.SeparatePngFiles,
     val globalHotkeysEnabled: Boolean = false,
     val showApplicationInRecording: Boolean = false,
+    val showCaptureBorder: Boolean = true,
 )
 
 @Serializable
