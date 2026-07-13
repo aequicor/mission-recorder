@@ -35,11 +35,12 @@
 - Добавлен `:capture-desktop-awt` с JVM desktop discovery и capture adapter для screen/monitor/region; указатель мыши рисуется в видеокадре.
 - В Compose GUI область выбирается только явной кнопкой: AWT overlay поддерживает virtual desktop, отрицательные координаты, отмену через Escape/правую кнопку и не запускает запись сам.
 - Центральная панель GUI показывает opt-in live preview выбранного screen/monitor/region/window/application после отдельной кнопки и permission preflight; preview не включает audio, не создаёт файл и останавливается перед recording/replay.
-- Добавлен `:capture-windows-jna`: Windows discovery видимых окон/приложений и isolated capture через `PrintWindow` с GDI fallback; нативные handles остаются внутри adapter-а.
-- На Windows CLI и GUI объединяют AWT screen/monitor/region с native window/application sources; курсор накладывается и на window/app video frames.
+- Добавлен `:capture-windows-jna`: Windows discovery видимых окон/приложений, screen/monitor/region capture через DXGI Desktop Duplication и isolated window capture через `PrintWindow`; при недоступности ускоренного screen capture используется GDI fallback, а нативные handles остаются внутри adapter-а.
+- На Windows CLI и GUI направляют screen/monitor/region/window/application в native adapter; курсор при необходимости накладывается поверх полученного BGRA-кадра.
 - Добавлен `:capture-linux-x11`: EWMH/Xlib discovery окон и приложений по opaque Window/PID ids, прямой `XGetImage` в RGBA, cursor overlay и отдельный single-thread native dispatcher. Adapter включается только в подтверждённой X11-сессии и не используется как неявный XWayland fallback.
 - Добавлен `:capture-macos-coregraphics`: CoreGraphics discovery и window/application capture с рендерингом `CGImage` в контролируемый Retina RGBA context. Native gateway использует `CGPreflightScreenCaptureAccess`/`CGRequestScreenCaptureAccess` и AVFoundation TCC status; app bundle содержит явные Screen Capture и Microphone usage descriptions.
 - Курсор включен по умолчанию, но его можно явно отключить через Video switch в Compose GUI, `--no-cursor` в CLI или `video.captureCursor=false` в локальном profile JSON; то же значение применяется к replay buffer.
+- Окна Mission Recorder по умолчанию исключены из записи на Windows. Переключатель «Показывать Mission Recorder в видео» в секции «Видео» сразу включает их в захват и сохраняет выбор между запусками.
 - Добавлены `:compose-ui` с общим Compose Multiplatform UI и `:desktop-app` с JVM desktop wiring.
 - `:app` больше не зависит от демонстрационного `Printer`.
 - `:app` подключен к CLI runner и desktop backend для AWT video capture с опциональным Java Sound microphone capture.
@@ -49,6 +50,8 @@
 - На Linux `:audio-linux-pulse` обнаруживает monitor sources через `pactl --format=json` и записывает выбранный источник через cancellable `parec` PCM stream. Adapter включается только при наличии обеих команд и работает с PulseAudio либо PipeWire через `pipewire-pulse` compatibility layer.
 - `export-frames` читает MP4 и создает отдельные PNG либо один контактный лист; legacy-экспорт `.mrec` сохранен.
 - GUI всегда записывает MP4. Раскадровка запускается отдельной кнопкой после записи и имеет переключатель «отдельные PNG / один PNG»: отдельные кадры сохраняют разрешение видео, а контактный лист использует ячейки шириной до 640 px с качественным масштабированием.
+- Захват видео использует ограниченный буфер на один кадр, поэтому подготовка следующего кадра не ждёт завершения кодирования текущего; планировщик учитывает время самого захвата, а программный H.264 не выбрасывает кадры для удержания битрейта.
+- При доступном NVIDIA NVENC desktop MP4 использует совместимый с системными Windows-плеерами H.264 High YUV 4:2:0 и quality-target CQ 14; остальные H.264 backend-ы сохраняют тот же широко поддерживаемый chroma format.
 - Путь MP4 можно вводить вручную или выбрать явной кнопкой через нативный desktop save dialog; диалог не запускает запись и добавляет `.mp4`, если расширение не указано.
 - В Output есть отдельная кнопка открытия каталога текущего `outputPath` в Проводнике/Finder/file manager; отсутствующий локальный каталог создаётся перед открытием.
 - GUI явно запускает replay buffer на 1-60 минут, показывает накопленную длительность и сохраняет последние минуты в MP4 без остановки буферизации.
@@ -67,7 +70,7 @@
 - `record profile --settings ...` использует локальный профиль настроек для source/video/audio/encoder/replay defaults.
 - Desktop GUI атомарно сохраняет FPS, cursor visibility, H.264 video bitrate, replay duration, storyboard layout и полный encoder snapshot в выбранном profile/settings, а также восстанавливает ранее включенные opt-in global hotkeys; mini-window position хранится в том же локальном JSON.
 - В header Compose GUI доступен редактор именованных профилей: выбор применяет source, microphone/system audio, video, encoder, replay и output snapshot целиком; создание копирует текущую конфигурацию, изменения сохраняются атомарно, удаление требует подтверждения и последний профиль удалить нельзя.
-- После завершения MP4 GUI сохраняет фактический файл в `lastOutputPath` для отдельной раскадровки и сразу вычисляет следующий output из `directory/fileNamePattern` активного профиля, поэтому последовательные записи не пытаются перезаписать предыдущую.
+- После завершения MP4 GUI сохраняет фактический файл в `lastOutputPath`, подставляет его в редактируемое поле видеофайла для отдельной раскадровки и сразу вычисляет следующий output из `directory/fileNamePattern` активного профиля, поэтому последовательные записи не пытаются перезаписать предыдущую.
 - В Output доступен отдельный редактор каталога и `.mp4`-шаблона имени с подстановками `{timestamp}` и `{profile}`; Apply обновляет предпросмотр следующего пути и атомарно сохраняет policy активного профиля.
 - Явный Output toggle управляет `output.overwrite` выбранного профиля и общими `RecordingSettings`: без opt-in существующий target отклоняется, а при включении старый MP4 заменяется только после успешного завершения нового временного файла; cancel/failure сохраняет прежний файл.
 - Прямой CLI record имеет тот же явный opt-in через `--overwrite`; отсутствие флага сохраняет profile policy и никогда не включает замену неявно.
@@ -77,6 +80,7 @@
 - system audio реализован для активных Windows output devices через WASAPI и Linux PulseAudio/PipeWire monitor sources через `pactl`/`parec`; app/PID filtering пока не подключен;
 - protected/DRM audio не обходится и может отсутствовать в loopback потоке;
 - window/application capture реализован на Windows и Linux/X11; на X11 obscured regions без backing store могут быть неопределёнными, а protected/elevated/hardware surfaces на Windows могут возвращать пустой кадр;
+- DXGI Desktop Duplication ускоряет Windows screen/monitor/region capture только в пределах одного output; область, пересекающая несколько мониторов, использует GDI fallback;
 - Windows Graphics Capture backend, Wayland portal capture, ScreenCaptureKit replacement для deprecated CoreGraphics image API и Android adapters еще не подключены;
 - GUI region overlay покрыт автоматическими тестами геометрии, но live-сценарии с несколькими мониторами и разным DPI еще требуют проверки на реальном оборудовании;
 - текущий production output desktop backend-а - MP4; WebM пока не подключен;

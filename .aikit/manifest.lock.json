@@ -1,0 +1,49 @@
+{
+  "lockVersion": "1",
+  "aikitVersion": "1.0.1",
+  "generatedAt": "",
+  "applications": [
+    {
+      "id": "root",
+      "path": ".",
+      "targets": {
+        "codex": {
+          "bundle": "my-bundle@0.4.1",
+          "source": "remote",
+          "resolvedSha": "3c8b19604ccfdfa0e3302db3d760df316eb9a76a",
+          "files": [
+            {
+              "path": "AGENTS.md",
+              "sha256": "8594d9ce3f873567a25227033ed917e0fc9ca9f2882fea19919a9fb23deb4082"
+            },
+            {
+              "path": ".codex/agents/code-reviewer.toml",
+              "sha256": "ad22985ca6e2882e6d2e65e424904223f10ce94dd63cf61f4641ff69b7016f72"
+            },
+            {
+              "path": ".codex/prompts/review.md",
+              "sha256": "95b7f082d7189415677698bca4b75851a1e618515bbcc7af1874eee69f0e4def"
+            },
+            {
+              "path": ".codex/prompts/security-audit.md",
+              "sha256": "b5296d81821d26deec6adbf92867222a3778806f62ce703bd32432978224da4a"
+            },
+            {
+              "path": ".codex/prompts/remember.md",
+              "sha256": "0a3bceedb04261160cb73bae529453277050bfcea91360b14cd2705f4e55beb4"
+            },
+            {
+              "path": ".codex/prompts/generate.md",
+              "sha256": "39ae9d08df9d216bc38551df93ea453a1609aba57dc850a6f2bb2669928b8a6e"
+            },
+            {
+              "path": ".codex/config.toml",
+              "sha256": "6762f599e8c3c1d2c77571515af8477bc752010f702ce0f38705b1f00c99d7bf"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "manifestRef": ".aikit/manifest.json"
+}

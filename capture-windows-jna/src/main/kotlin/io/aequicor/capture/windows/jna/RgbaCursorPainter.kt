@@ -43,6 +43,31 @@ internal object RgbaCursorPainter {
         }
     }
 
+    fun drawBgra(
+        bgraPixels: ByteArray,
+        frameWidth: Int,
+        frameHeight: Int,
+        hotspotX: Int,
+        hotspotY: Int,
+    ) {
+        for (cursorY in 0 until HEIGHT) {
+            val frameY = hotspotY + cursorY
+            if (frameY !in 0 until frameHeight) continue
+            for (cursorX in 0 until WIDTH) {
+                val frameX = hotspotX + cursorX
+                if (frameX !in 0 until frameWidth) continue
+                val source = cursorPixels[cursorY * WIDTH + cursorX]
+                val alpha = source ushr 24 and 0xff
+                if (alpha == 0) continue
+                val destination = (frameY * frameWidth + frameX) * CHANNELS
+                bgraPixels[destination] = blend(source and 0xff, bgraPixels[destination], alpha)
+                bgraPixels[destination + 1] = blend(source ushr 8 and 0xff, bgraPixels[destination + 1], alpha)
+                bgraPixels[destination + 2] = blend(source ushr 16 and 0xff, bgraPixels[destination + 2], alpha)
+                bgraPixels[destination + 3] = 0xff.toByte()
+            }
+        }
+    }
+
     private fun blend(source: Int, destination: Byte, alpha: Int): Byte {
         val destinationValue = destination.toInt() and 0xff
         return ((source * alpha + destinationValue * (0xff - alpha)) / 0xff).toByte()

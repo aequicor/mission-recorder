@@ -72,6 +72,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.Frame
@@ -108,13 +111,21 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             audioAdapters = audioAdapters,
             captureAdapters = captureAdapters,
             initialPreferences = startupSettings.recorderPreferences,
+            initialShowApplicationInRecording = startupSettings.showApplicationInRecording,
             initialProfileCatalog = profileCatalogResult.getOrNull(),
             profileStore = RepositoryDesktopRecorderProfileStore(desktopUiSettings),
         )
     }
     val state by viewModel.state.collectAsState()
-    val previewFrame by viewModel.previewFrame.collectAsState()
-    val previewImage = remember(previewFrame) { previewFrame?.toImageBitmap() }
+    val previewImage = remember(viewModel, recorderScope) {
+        viewModel.previewFrame
+            .map { frame -> frame?.toImageBitmap() }
+            .stateIn(
+                scope = recorderScope,
+                started = SharingStarted.Eagerly,
+                initialValue = null,
+            )
+    }.collectAsState()
     val currentState by rememberUpdatedState(state)
     val hotkeyFactory = remember { DesktopGlobalHotkeyServiceFactory() }
     var closing by remember { mutableStateOf(false) }
@@ -197,6 +208,16 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
     }
 
+    LaunchedEffect(state.showApplicationInRecording) {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                desktopUiSettings.saveShowApplicationInRecording(state.showApplicationInRecording)
+            }
+        }.onFailure { failure ->
+            viewModel.reportPlatformError(failure.message ?: "Could not save capture visibility setting.")
+        }
+    }
+
     Window(
         onCloseRequest = {
             if (!closing) {
@@ -221,10 +242,10 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
                 )
             }
         }
-        LaunchedEffect(window) {
+        LaunchedEffect(window, state.showApplicationInRecording) {
             mainWindow = window
             window.minimumSize = Dimension(760, 620)
-            excludeWindowFromCapture(window)
+            setWindowVisibleInCapture(window, state.showApplicationInRecording)
         }
         DisposableEffect(window) {
             val windowListener = object : WindowAdapter() {
@@ -272,7 +293,9 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         ) {
             LaunchedEffect(window) {
                 restoreMiniControllerPosition(window, desktopUiSettings)
-                excludeWindowFromCapture(window)
+            }
+            LaunchedEffect(window, state.showApplicationInRecording) {
+                setWindowVisibleInCapture(window, state.showApplicationInRecording)
             }
             DisposableEffect(window) {
                 val focusListener = object : WindowAdapter() {
@@ -296,6 +319,7 @@ private fun createDesktopRecorderViewModel(
     audioAdapters: DesktopAudioAdapters,
     captureAdapters: DesktopCaptureAdapters,
     initialPreferences: DesktopRecorderPreferences,
+    initialShowApplicationInRecording: Boolean,
     initialProfileCatalog: DesktopRecorderProfileCatalog?,
     profileStore: DesktopRecorderProfileStore,
 ): DesktopRecorderViewModel {
@@ -334,6 +358,7 @@ private fun createDesktopRecorderViewModel(
             linuxSystemAudioAvailable = audioAdapters.systemAudioSupported,
         ),
         initialPreferences = initialPreferences,
+        initialShowApplicationInRecording = initialShowApplicationInRecording,
         initialProfileCatalog = initialProfileCatalog,
         profileStore = profileStore,
     )
@@ -435,7 +460,9 @@ private fun createDesktopCaptureAdapters(): DesktopCaptureAdapters {
         videoCaptureAdapter = RoutingVideoCaptureAdapter(
             routes = listOf(
                 VideoCaptureRoute(
-                    matches = { source -> source is CaptureSource.Window || source is CaptureSource.Application },
+                    matches = { source ->
+                        windowsAdapters != null || source is CaptureSource.Window || source is CaptureSource.Application
+                    },
                     adapter = nativeVideoAdapter,
                 ),
             ),
@@ -443,6 +470,7 @@ private fun createDesktopCaptureAdapters(): DesktopCaptureAdapters {
         ),
         permissionGateway = macAdapters?.permissionGateway,
         closeAction = {
+            windowsAdapters?.close()
             linuxAdapters?.close()
             macAdapters?.close()
         },

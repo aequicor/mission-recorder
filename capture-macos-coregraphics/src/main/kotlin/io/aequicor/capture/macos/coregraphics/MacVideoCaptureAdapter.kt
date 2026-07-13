@@ -19,7 +19,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.nanoseconds
-import kotlin.time.Duration.Companion.seconds
 
 internal class MacVideoCaptureAdapter(
     private val windowSystem: MacWindowSystem,
@@ -28,8 +27,9 @@ internal class MacVideoCaptureAdapter(
 ) : VideoCaptureAdapter {
     override fun frames(settings: RecordingSettings): Flow<VideoFrame> = flow {
         val selection = settings.captureSource.toMacSelection()
-        val interval = 1.seconds / max(settings.frameRate, 1)
+        val intervalNanoseconds = NANOS_PER_SECOND / max(settings.frameRate, 1)
         val startedAt = nanoTime()
+        var nextFrameDeadline = startedAt
         var selected: MacWindowDescriptor? = null
         var outputWidth = 0
         var outputHeight = 0
@@ -63,7 +63,14 @@ internal class MacVideoCaptureAdapter(
                     pixelData = pixels,
                 ),
             )
-            delay(interval.inWholeNanoseconds.nanoseconds)
+            nextFrameDeadline += intervalNanoseconds
+            val remainingNanoseconds = nextFrameDeadline - nanoTime()
+            if (remainingNanoseconds > 0) {
+                delay(remainingNanoseconds.nanoseconds)
+            } else if (remainingNanoseconds < -intervalNanoseconds) {
+                val missedIntervals = (-remainingNanoseconds) / intervalNanoseconds
+                nextFrameDeadline += missedIntervals * intervalNanoseconds
+            }
         }
     }.flowOn(dispatcher)
 
@@ -123,3 +130,5 @@ private fun ByteArray.fitInto(sourceWidth: Int, sourceHeight: Int, targetWidth: 
 }
 
 private fun sourceUnavailable(message: String) = RecordingException(RecordingError.SourceUnavailable(message))
+
+private const val NANOS_PER_SECOND = 1_000_000_000L

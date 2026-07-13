@@ -49,6 +49,7 @@ internal class DesktopUiSettingsRepository(
                 encoderSettings = profile.encoder.toEncoderSettings(),
             ),
             globalHotkeysEnabled = settings.desktopUi.globalHotkeysEnabled,
+            showApplicationInRecording = settings.desktopUi.showApplicationInRecording,
         )
     }
 
@@ -186,6 +187,11 @@ internal class DesktopUiSettingsRepository(
     fun saveGlobalHotkeysEnabled(enabled: Boolean) = synchronized(lock) {
         val settings = store.loadOrDefault()
         store.save(settings.copy(desktopUi = settings.desktopUi.copy(globalHotkeysEnabled = enabled)))
+    }
+
+    fun saveShowApplicationInRecording(enabled: Boolean) = synchronized(lock) {
+        val settings = store.loadOrDefault()
+        store.save(settings.copy(desktopUi = settings.desktopUi.copy(showApplicationInRecording = enabled)))
     }
 
     private fun MissionRecorderSettings.toProfileCatalog(): DesktopRecorderProfileCatalog {

@@ -13,6 +13,8 @@ import io.aequicor.capture.core.VideoFrame
 import io.aequicor.capture.core.VideoCodec
 import org.bytedeco.javacv.FFmpegFrameRecorder
 import org.bytedeco.javacv.Frame
+import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGRA
+import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA
 import java.awt.image.BufferedImage
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -22,6 +24,7 @@ import java.nio.ShortBuffer
 internal class RgbaFrameBuffer(
     private val width: Int,
     private val height: Int,
+    private val pixelFormat: PixelFormat,
 ) : AutoCloseable {
     private val frame = Frame(width, height, Frame.DEPTH_UBYTE, RGBA_BYTES_PER_PIXEL)
     private val pixels = (frame.image[0] as ByteBuffer).duplicate()
@@ -36,6 +39,9 @@ internal class RgbaFrameBuffer(
 
     fun copyFrom(source: VideoFrame): Frame {
         source.validateVideoFrame()
+        require(source.pixelFormat == pixelFormat) {
+            "Pixel format changed while reusing the FFmpeg input buffer."
+        }
         require(source.width <= width && source.height <= height)
         if (sourceWidth == 0 && sourceHeight == 0) {
             sourceWidth = source.width
@@ -91,8 +97,8 @@ internal fun Frame.bgraToBufferedImage(): BufferedImage {
 }
 
 internal fun VideoFrame.validateVideoFrame() {
-    if (pixelFormat != PixelFormat.Rgba8888) {
-        throw encoderFailed("Desktop FFmpeg encoder expects RGBA8888 video frames.")
+    if (pixelFormat != PixelFormat.Rgba8888 && pixelFormat != PixelFormat.Bgra8888) {
+        throw encoderFailed("Desktop FFmpeg encoder expects RGBA8888 or BGRA8888 video frames.")
     }
     if (width <= 0 || height <= 0 || strideBytes < width * RGBA_BYTES_PER_PIXEL) {
         throw encoderFailed("Video frame dimensions or stride are invalid.")
@@ -102,6 +108,12 @@ internal fun VideoFrame.validateVideoFrame() {
     if (pixels == null || pixels.size.toLong() < requiredBytes) {
         throw encoderFailed("Video frame does not contain enough RGBA pixel data.")
     }
+}
+
+internal fun PixelFormat.toFfmpegPixelFormat(): Int = when (this) {
+    PixelFormat.Rgba8888 -> AV_PIX_FMT_RGBA
+    PixelFormat.Bgra8888 -> AV_PIX_FMT_BGRA
+    PixelFormat.Nv12 -> throw encoderFailed("Desktop FFmpeg encoder does not accept NV12 input frames.")
 }
 
 internal fun validateDesktopFfmpegSettings(settings: RecordingSettings) {
@@ -134,7 +146,7 @@ internal fun h264EncoderCandidates(
 internal fun FFmpegFrameRecorder.configureOpenH264BitrateControl() {
     videoCodecName = SOFTWARE_H264_ENCODER
     setVideoOption("rc_mode", "bitrate")
-    setVideoOption("allow_skip_frames", "true")
+    setVideoOption("allow_skip_frames", "false")
 }
 
 internal fun validateAudioFrame(frame: AudioFrame) {

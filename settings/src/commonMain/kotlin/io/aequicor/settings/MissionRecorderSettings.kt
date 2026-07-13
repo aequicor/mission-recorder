@@ -31,6 +31,7 @@ data class DesktopUiSettings(
     val miniController: MiniControllerSettings = MiniControllerSettings(),
     val storyboardLayout: StoryboardLayoutSetting = StoryboardLayoutSetting.SeparatePngFiles,
     val globalHotkeysEnabled: Boolean = false,
+    val showApplicationInRecording: Boolean = false,
 )
 
 @Serializable

@@ -1,7 +1,8 @@
 package io.aequicor.capture.core
 
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -79,6 +80,38 @@ class RecordingControllerTest {
         assertEquals(1, stopped.state.metrics.audioFrames)
         assertEquals(1, encoder.videoFrames.size)
         assertEquals(1, encoder.audioFrames.size)
+    }
+
+    @Test
+    fun capturesAheadWhileTheEncoderWritesTheCurrentFrame() = runTest {
+        var emittedFrames = 0
+        val encoder = BlockingFirstFrameMediaEncoder()
+        val controller = RecordingController(
+            videoCaptureAdapter = object : VideoCaptureAdapter {
+                override fun frames(settings: RecordingSettings): Flow<VideoFrame> = flow {
+                    repeat(3) { index ->
+                        emit(defaultVideoFrame().copy(timestamp = MediaTimestamp(index * 33_333_333L)))
+                        emittedFrames += 1
+                    }
+                    awaitCancellation()
+                }
+            },
+            audioCaptureAdapter = FakeAudioCaptureAdapter(),
+            mediaEncoder = encoder,
+            scope = backgroundScope,
+            clock = FakeMediaClock(),
+            sessionIdFactory = FixedSessionIdFactory(),
+        )
+
+        controller.start(defaultSettings())
+        runCurrent()
+
+        assertEquals(2, emittedFrames)
+        assertEquals(1, encoder.startedFrames)
+
+        encoder.releaseFirstFrame.complete(Unit)
+        runCurrent()
+        controller.stop()
     }
 
     @Test
@@ -381,6 +414,28 @@ private class FakeMediaEncoder : MediaEncoder {
     override suspend fun cancel(session: RecordingSession?) {
         cancelled = true
     }
+}
+
+private class BlockingFirstFrameMediaEncoder : MediaEncoder {
+    val releaseFirstFrame = CompletableDeferred<Unit>()
+    var startedFrames = 0
+        private set
+
+    override suspend fun open(session: RecordingSession, settings: RecordingSettings) = Unit
+
+    override suspend fun writeVideoFrame(frame: VideoFrame) {
+        startedFrames += 1
+        if (startedFrames == 1) {
+            releaseFirstFrame.await()
+        }
+    }
+
+    override suspend fun writeAudioFrame(frame: AudioFrame) = Unit
+
+    override suspend fun finish(session: RecordingSession, metrics: RecordingMetrics): RecordingOutput =
+        RecordingOutput(session.settings.outputPath)
+
+    override suspend fun cancel(session: RecordingSession?) = Unit
 }
 
 private class FakeMediaClock(

@@ -21,6 +21,9 @@ recordings/
 *.mrec/
 hs_err_pid*.log
 
+### AI-Kit ###
+.aikit/cache/
+
 ### Eclipse ###
 .apt_generated
 .classpath

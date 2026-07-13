@@ -89,6 +89,7 @@ data class RecorderUiState(
     val showOutputNamingDialog: Boolean = false,
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
+    val showApplicationInRecording: Boolean = false,
     val previewStatus: PreviewUiStatus = PreviewUiStatus.Idle,
     val videoBitrateMbps: Int = DEFAULT_VIDEO_BITRATE_MBPS,
     val status: RecorderStatus = RecorderStatus.Idle,
@@ -101,6 +102,7 @@ data class RecorderUiState(
     val isSelectingRegion: Boolean = false,
     val isChoosingOutputFile: Boolean = false,
     val lastOutputPath: String? = null,
+    val storyboardInputPath: String = lastOutputPath.orEmpty(),
     val storyboardMode: StoryboardMode = StoryboardMode.SeparatePngFiles,
     val isExportingStoryboard: Boolean = false,
     val lastStoryboardPath: String? = null,
@@ -149,7 +151,7 @@ data class RecorderUiState(
         get() = !hasBlockingOperation && !isRefreshingSources && selectedSourceId != null && outputPath.isNotBlank()
 
     val canExportStoryboard: Boolean
-        get() = !isBusy && !isRefreshingSources && !lastOutputPath.isNullOrBlank()
+        get() = !isBusy && !isRefreshingSources && storyboardInputPath.isNotBlank()
 
     val canStartReplay: Boolean
         get() = !hasBlockingOperation &&
@@ -219,7 +221,9 @@ sealed interface RecorderUiAction {
     data class ApplyOutputNaming(val directory: String, val fileNamePattern: String) : RecorderUiAction
     data class SetFrameRate(val frameRate: Int) : RecorderUiAction
     data class SetCaptureCursor(val enabled: Boolean) : RecorderUiAction
+    data class SetShowApplicationInRecording(val enabled: Boolean) : RecorderUiAction
     data class SetVideoBitrateMbps(val megabitsPerSecond: Int) : RecorderUiAction
+    data class SetStoryboardInputPath(val path: String) : RecorderUiAction
     data class SetStoryboardMode(val mode: StoryboardMode) : RecorderUiAction
     data class SetReplayDurationMinutes(val minutes: Int) : RecorderUiAction
     data object SelectRegion : RecorderUiAction

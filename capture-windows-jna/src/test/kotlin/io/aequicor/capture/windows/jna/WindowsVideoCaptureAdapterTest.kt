@@ -6,8 +6,11 @@ import io.aequicor.capture.core.PixelFormat
 import io.aequicor.capture.core.RecordingError
 import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.Executors
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -17,7 +20,7 @@ import kotlin.test.assertTrue
 
 class WindowsVideoCaptureAdapterTest {
     @Test
-    fun convertsNativeBgraPixelsToOpaqueRgba() = runBlocking {
+    fun passesNativeBgraPixelsWithoutPerPixelConversion() = runBlocking {
         val selectedWindow = window(handle = 1, processId = 42, title = "Editor", width = 2, height = 1)
         val system = FakeWindowsWindowSystem(
             windows = listOf(selectedWindow),
@@ -28,12 +31,12 @@ class WindowsVideoCaptureAdapterTest {
                 ),
             ),
         )
-        val frame = WindowsVideoCaptureAdapter(system, incrementingNanoTime())
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
             .frames(settings(windowSource(selectedWindow), captureCursor = false))
             .first()
 
-        assertEquals(PixelFormat.Rgba8888, frame.pixelFormat)
-        assertContentEquals(byteArrayOf(30, 20, 10, -1, 60, 50, 40, -1), frame.pixelData)
+        assertEquals(PixelFormat.Bgra8888, frame.pixelFormat)
+        assertContentEquals(byteArrayOf(10, 20, 30, 0, 40, 50, 60, 0), frame.pixelData)
     }
 
     @Test
@@ -48,7 +51,7 @@ class WindowsVideoCaptureAdapterTest {
             cursor = WindowsPoint(105, 205),
         )
 
-        val frame = WindowsVideoCaptureAdapter(system, incrementingNanoTime())
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
             .frames(settings(windowSource(selectedWindow), captureCursor = true))
             .first()
 
@@ -72,7 +75,7 @@ class WindowsVideoCaptureAdapterTest {
             },
         )
 
-        WindowsVideoCaptureAdapter(system, incrementingNanoTime())
+        WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
             .frames(
                 settings(
                     CaptureSource.Application(
@@ -96,13 +99,35 @@ class WindowsVideoCaptureAdapterTest {
         )
 
         val exception = assertFailsWith<RecordingException> {
-            WindowsVideoCaptureAdapter(system, incrementingNanoTime())
+            WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
                 .frames(settings(source, captureCursor = false))
                 .first()
         }
 
         assertIs<RecordingError.SourceUnavailable>(exception.error)
         Unit
+    }
+
+    @Test
+    fun keepsDesktopCaptureLifecycleOnInjectedThread() {
+        val system = FakeWindowsWindowSystem(windows = emptyList())
+        Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "windows-capture-test") }
+            .asCoroutineDispatcher()
+            .use { dispatcher ->
+                runBlocking {
+                    WindowsVideoCaptureAdapter(system, dispatcher, incrementingNanoTime())
+                        .frames(
+                            settings(
+                                CaptureSource.Screen(CaptureSourceId("screen:all"), "All screens"),
+                                captureCursor = false,
+                            ),
+                        )
+                        .first()
+                }
+            }
+
+        assertEquals(1, system.screenCaptureThreads.size)
+        assertTrue(system.screenCaptureThreads.single().startsWith("windows-capture-test"))
     }
 }
 
@@ -113,6 +138,7 @@ internal class FakeWindowsWindowSystem(
     },
     private val cursor: WindowsPoint? = null,
 ) : WindowsWindowSystem {
+    val screenCaptureThreads = mutableSetOf<String>()
     var lastCapturedHandle: Long? = null
         private set
 
@@ -123,6 +149,20 @@ internal class FakeWindowsWindowSystem(
     override fun captureWindow(handle: Long): WindowsCapturedFrame {
         lastCapturedHandle = handle
         return frames[handle] ?: throw WindowsCaptureFailure("No fake frame for $handle.")
+    }
+
+    override fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture {
+        screenCaptureThreads += Thread.currentThread().name
+        return object : WindowsScreenCapture {
+            override fun capture(): WindowsCapturedFrame {
+                screenCaptureThreads += Thread.currentThread().name
+                return WindowsCapturedFrame(bounds, solidBgra(bounds))
+            }
+
+            override fun close() {
+                screenCaptureThreads += Thread.currentThread().name
+            }
+        }
     }
 
     override fun cursorPosition(): WindowsPoint? = cursor

@@ -8,73 +8,94 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.isActive
+import java.awt.GraphicsEnvironment
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.time.Duration.Companion.nanoseconds
-import kotlin.time.Duration.Companion.seconds
 
 class WindowsVideoCaptureAdapter internal constructor(
     private val windowSystem: WindowsWindowSystem,
+    private val dispatcher: CoroutineDispatcher,
     private val nanoTime: () -> Long = System::nanoTime,
 ) : VideoCaptureAdapter {
     override fun frames(settings: RecordingSettings): Flow<VideoFrame> = flow {
         val selection = settings.captureSource.toWindowsSelection()
-        val interval = 1.seconds / max(settings.frameRate, 1)
+        val intervalNanoseconds = NANOS_PER_SECOND / max(settings.frameRate, 1)
         val startedAt = nanoTime()
+        var nextFrameDeadline = startedAt
         var selectedWindow: WindowsWindowDescriptor? = null
         var outputWidth = 0
         var outputHeight = 0
+        val screenCapture = (selection as? WindowsSelection.Desktop)
+            ?.let { desktop -> windowSystem.openScreenCapture(desktop.bounds, settings.frameRate) }
 
-        while (currentCoroutineContext().isActive) {
-            selectedWindow = resolveWindow(selection, selectedWindow)
-            val captured = capture(selectedWindow, settings.captureSource.displayName)
-            captured.validate()
-            var rgbaPixels = captured.bgraPixels.toOpaqueRgba()
-            if (settings.captureCursor) {
-                windowSystem.cursorPosition()
-                    ?.takeIf(captured.bounds::contains)
-                    ?.let { cursor ->
-                        RgbaCursorPainter.draw(
-                            rgbaPixels = rgbaPixels,
-                            frameWidth = captured.bounds.width,
-                            frameHeight = captured.bounds.height,
-                            hotspotX = cursor.x - captured.bounds.x,
-                            hotspotY = cursor.y - captured.bounds.y,
-                        )
-                    }
-            }
+        try {
+            while (currentCoroutineContext().isActive) {
+                val captured = if (screenCapture != null) {
+                    screenCapture.capture()
+                } else {
+                    selectedWindow = resolveWindow(selection, selectedWindow)
+                    capture(requireNotNull(selectedWindow), settings.captureSource.displayName)
+                }
+                captured.validate()
+                var bgraPixels = captured.bgraPixels
+                if (settings.captureCursor) {
+                    windowSystem.cursorPosition()
+                        ?.takeIf(captured.bounds::contains)
+                        ?.let { cursor ->
+                            RgbaCursorPainter.drawBgra(
+                                bgraPixels = bgraPixels,
+                                frameWidth = captured.bounds.width,
+                                frameHeight = captured.bounds.height,
+                                hotspotX = cursor.x - captured.bounds.x,
+                                hotspotY = cursor.y - captured.bounds.y,
+                            )
+                        }
+                }
 
-            if (outputWidth == 0 || outputHeight == 0) {
-                outputWidth = captured.bounds.width
-                outputHeight = captured.bounds.height
-            } else if (captured.bounds.width != outputWidth || captured.bounds.height != outputHeight) {
-                rgbaPixels = rgbaPixels.fitInto(
-                    sourceWidth = captured.bounds.width,
-                    sourceHeight = captured.bounds.height,
-                    targetWidth = outputWidth,
-                    targetHeight = outputHeight,
+                if (outputWidth == 0 || outputHeight == 0) {
+                    outputWidth = captured.bounds.width
+                    outputHeight = captured.bounds.height
+                } else if (captured.bounds.width != outputWidth || captured.bounds.height != outputHeight) {
+                    bgraPixels = bgraPixels.fitInto(
+                        sourceWidth = captured.bounds.width,
+                        sourceHeight = captured.bounds.height,
+                        targetWidth = outputWidth,
+                        targetHeight = outputHeight,
+                    )
+                }
+
+                emit(
+                    VideoFrame(
+                        timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                        width = outputWidth,
+                        height = outputHeight,
+                        pixelFormat = PixelFormat.Bgra8888,
+                        strideBytes = outputWidth * RGBA_CHANNEL_COUNT,
+                        sourceId = settings.captureSource.id,
+                        pixelData = bgraPixels,
+                    ),
                 )
+                nextFrameDeadline += intervalNanoseconds
+                val remainingNanoseconds = nextFrameDeadline - nanoTime()
+                if (remainingNanoseconds > 0) {
+                    delay(remainingNanoseconds.nanoseconds)
+                } else if (remainingNanoseconds < -intervalNanoseconds) {
+                    val missedIntervals = (-remainingNanoseconds) / intervalNanoseconds
+                    nextFrameDeadline += missedIntervals * intervalNanoseconds
+                }
             }
-
-            emit(
-                VideoFrame(
-                    timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
-                    width = outputWidth,
-                    height = outputHeight,
-                    pixelFormat = PixelFormat.Rgba8888,
-                    strideBytes = outputWidth * RGBA_CHANNEL_COUNT,
-                    sourceId = settings.captureSource.id,
-                    pixelData = rgbaPixels,
-                ),
-            )
-            delay(interval.inWholeNanoseconds.nanoseconds)
+        } finally {
+            screenCapture?.close()
         }
-    }
+    }.flowOn(dispatcher)
 
     private fun resolveWindow(
         selection: WindowsSelection,
@@ -88,6 +109,7 @@ class WindowsVideoCaptureAdapter internal constructor(
                 .filter { window -> window.processId == selection.processId }
                 .takeIf(List<WindowsWindowDescriptor>::isNotEmpty)
                 ?.primaryWindow()
+        is WindowsSelection.Desktop -> null
     } ?: throw sourceUnavailable("The selected window or application is no longer available.")
 
     private fun capture(window: WindowsWindowDescriptor, displayName: String): WindowsCapturedFrame =
@@ -103,26 +125,33 @@ class WindowsVideoCaptureAdapter internal constructor(
 private sealed interface WindowsSelection {
     data class Window(val handle: Long) : WindowsSelection
     data class Application(val processId: Long) : WindowsSelection
+    data class Desktop(val bounds: WindowsWindowBounds) : WindowsSelection
 }
 
 private fun CaptureSource.toWindowsSelection(): WindowsSelection = when (this) {
     is CaptureSource.Window -> WindowsCaptureSourceIds.parseWindow(id.value)?.let(WindowsSelection::Window)
     is CaptureSource.Application -> WindowsCaptureSourceIds.parseApplication(id.value)?.let(WindowsSelection::Application)
-    else -> null
-} ?: throw sourceUnavailable("Windows capture requires a Windows window or application source id.")
+    is CaptureSource.Screen -> allScreensBounds()?.let(WindowsSelection::Desktop)
+    is CaptureSource.Monitor -> monitorBounds(index)?.let(WindowsSelection::Desktop)
+    is CaptureSource.Region -> WindowsSelection.Desktop(
+        WindowsWindowBounds(region.x, region.y, region.width, region.height),
+    )
+} ?: throw sourceUnavailable("The selected Windows capture area is unavailable.")
 
-private fun ByteArray.toOpaqueRgba(): ByteArray {
-    val result = ByteArray(size)
-    var offset = 0
-    while (offset + 3 < size) {
-        result[offset] = this[offset + 2]
-        result[offset + 1] = this[offset + 1]
-        result[offset + 2] = this[offset]
-        result[offset + 3] = 0xff.toByte()
-        offset += RGBA_CHANNEL_COUNT
-    }
-    return result
-}
+private fun allScreensBounds(): WindowsWindowBounds? = GraphicsEnvironment
+    .getLocalGraphicsEnvironment()
+    .screenDevices
+    .map { device -> device.defaultConfiguration.bounds }
+    .reduceOrNull { combined, bounds -> combined.union(bounds) }
+    ?.let { bounds -> WindowsWindowBounds(bounds.x, bounds.y, bounds.width, bounds.height) }
+
+private fun monitorBounds(index: Int): WindowsWindowBounds? = GraphicsEnvironment
+    .getLocalGraphicsEnvironment()
+    .screenDevices
+    .getOrNull(index)
+    ?.defaultConfiguration
+    ?.bounds
+    ?.let { bounds -> WindowsWindowBounds(bounds.x, bounds.y, bounds.width, bounds.height) }
 
 private fun WindowsCapturedFrame.validate() {
     val expectedBytes = bounds.width.toLong() * bounds.height * RGBA_CHANNEL_COUNT
@@ -162,3 +191,4 @@ private fun sourceUnavailable(message: String): RecordingException =
     RecordingException(RecordingError.SourceUnavailable(message))
 
 private const val RGBA_CHANNEL_COUNT = 4
+private const val NANOS_PER_SECOND = 1_000_000_000L

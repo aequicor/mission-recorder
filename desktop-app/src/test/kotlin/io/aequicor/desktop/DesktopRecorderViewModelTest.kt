@@ -149,7 +149,7 @@ class DesktopRecorderViewModelTest {
     }
 
     @Test
-    fun keepsPreviewLargeEnoughForAFullWidthQhdWorkspace() = runTest {
+    fun preservesNativeResolutionForAFullWidthQhdPreview() = runTest {
         val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
         val viewModel = DesktopRecorderViewModel(
             scope = backgroundScope,
@@ -168,8 +168,8 @@ class DesktopRecorderViewModelTest {
         runCurrent()
 
         val preview = assertNotNull(viewModel.previewFrame.value)
-        assertEquals(1920, preview.width)
-        assertEquals(804, preview.height)
+        assertEquals(3440, preview.width)
+        assertEquals(1440, preview.height)
     }
 
     @Test
@@ -826,22 +826,24 @@ class DesktopRecorderViewModelTest {
         assertTrue(engine.stopCalled)
         assertEquals(RecorderStatus.Completed, viewModel.state.value.status)
         assertEquals("recordings/test.mp4", viewModel.state.value.lastOutputPath)
+        assertEquals("recordings/test.mp4", viewModel.state.value.storyboardInputPath)
         assertTrue(storyboardExporter.requests.isEmpty())
 
+        viewModel.onAction(RecorderUiAction.SetStoryboardInputPath(" videos/source.mp4 "))
         viewModel.onAction(RecorderUiAction.SetStoryboardMode(StoryboardMode.ContactSheet))
         viewModel.onAction(RecorderUiAction.ExportStoryboard)
         runCurrent()
 
         assertEquals(
             DesktopStoryboardExportRequest(
-                inputVideoPath = "recordings/test.mp4",
-                outputPath = Path.of("recordings", "test-storyboard.png").toString(),
+                inputVideoPath = "videos/source.mp4",
+                outputPath = Path.of("videos", "source-storyboard.png").toString(),
                 mode = StoryboardMode.ContactSheet,
             ),
             storyboardExporter.requests.single(),
         )
         assertEquals(
-            Path.of("recordings", "test-storyboard.png").toString(),
+            Path.of("videos", "source-storyboard.png").toString(),
             viewModel.state.value.lastStoryboardPath,
         )
     }

@@ -18,7 +18,6 @@ import kotlinx.coroutines.isActive
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.time.Duration.Companion.nanoseconds
-import kotlin.time.Duration.Companion.seconds
 
 internal class X11VideoCaptureAdapter(
     private val windowSystem: X11WindowSystem,
@@ -27,8 +26,9 @@ internal class X11VideoCaptureAdapter(
 ) : VideoCaptureAdapter {
     override fun frames(settings: RecordingSettings): Flow<VideoFrame> = flow {
         val selection = settings.captureSource.toX11Selection()
-        val interval = 1.seconds / max(settings.frameRate, 1)
+        val intervalNanoseconds = NANOS_PER_SECOND / max(settings.frameRate, 1)
         val startedAt = nanoTime()
+        var nextFrameDeadline = startedAt
         var selectedWindow: X11WindowDescriptor? = null
         var outputWidth = 0
         var outputHeight = 0
@@ -68,7 +68,14 @@ internal class X11VideoCaptureAdapter(
                     pixelData = pixels,
                 ),
             )
-            delay(interval.inWholeNanoseconds.nanoseconds)
+            nextFrameDeadline += intervalNanoseconds
+            val remainingNanoseconds = nextFrameDeadline - nanoTime()
+            if (remainingNanoseconds > 0) {
+                delay(remainingNanoseconds.nanoseconds)
+            } else if (remainingNanoseconds < -intervalNanoseconds) {
+                val missedIntervals = (-remainingNanoseconds) / intervalNanoseconds
+                nextFrameDeadline += missedIntervals * intervalNanoseconds
+            }
         }
     }.flowOn(dispatcher)
 
@@ -140,3 +147,4 @@ private fun ByteArray.fitInto(
 
 private fun sourceUnavailable(message: String) = RecordingException(RecordingError.SourceUnavailable(message))
 private const val RGBA_CHANNELS = 4
+private const val NANOS_PER_SECOND = 1_000_000_000L

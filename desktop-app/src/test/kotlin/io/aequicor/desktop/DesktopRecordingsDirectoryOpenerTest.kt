@@ -12,7 +12,53 @@ import kotlin.test.assertTrue
 
 class DesktopRecordingsDirectoryOpenerTest {
     @Test
-    fun createsAndOpensParentDirectoryOfOutputFile() = runTest {
+    fun opensParentDirectoryWithRecordedFileSelected() = runTest {
+        val root = Files.createTempDirectory("mission-recorder-select-file-test")
+        val output = Files.createFile(root.resolve("recording.mp4"))
+        var selected: Path? = null
+        var opened: Path? = null
+        val opener = AwtDesktopRecordingsDirectoryOpener(
+            isHeadless = { false },
+            isDesktopSupported = { true },
+            isOpenSupported = { true },
+            isBrowseFileDirectorySupported = { true },
+            browseFileDirectory = { selected = it },
+            openDirectory = { opened = it },
+        )
+
+        val result = opener.openForOutput(output.toString())
+
+        val expectedDirectory = output.parent.toAbsolutePath().normalize()
+        assertEquals(
+            expectedDirectory.toString(),
+            assertIs<DesktopDirectoryOpenResult.Opened>(result).directory,
+        )
+        assertEquals(output.toAbsolutePath().normalize(), selected)
+        assertEquals(null, opened)
+    }
+
+    @Test
+    fun selectsRecordedFileWithWindowsExplorerWhenDesktopActionIsUnavailable() = runTest {
+        val root = Files.createTempDirectory("mission-recorder-windows-select-test")
+        val output = Files.createFile(root.resolve("recording.mp4")).toAbsolutePath().normalize()
+        var command: List<String>? = null
+        val opener = AwtDesktopRecordingsDirectoryOpener(
+            isHeadless = { false },
+            isDesktopSupported = { true },
+            isOpenSupported = { true },
+            isBrowseFileDirectorySupported = { false },
+            operatingSystemName = "Windows 11",
+            startProcess = { command = it },
+        )
+
+        val result = opener.openForOutput(output.toString())
+
+        assertIs<DesktopDirectoryOpenResult.Opened>(result)
+        assertEquals(listOf("explorer.exe", "/select,$output"), command)
+    }
+
+    @Test
+    fun createsAndOpensParentDirectoryWhenOutputFileDoesNotExist() = runTest {
         val root = Files.createTempDirectory("mission-recorder-open-folder-test")
         val output = root.resolve("nested").resolve("recording.mp4")
         var opened: Path? = null

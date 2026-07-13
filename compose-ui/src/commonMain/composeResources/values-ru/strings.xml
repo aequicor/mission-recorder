@@ -35,6 +35,7 @@
     <string name="video_bitrate">Битрейт видео</string>
     <string name="megabits_per_second">%1$d Мбит/с</string>
     <string name="capture_cursor">Показывать курсор в видео</string>
+    <string name="show_application_in_recording">Показывать Mission Recorder в видео</string>
     <string name="frames_per_second">%1$d FPS</string>
     <string name="output">Файл</string>
     <string name="output_path">Путь сохранения</string>
@@ -69,6 +70,7 @@
     <string name="dropped_frames">Пропущено %1$d</string>
     <string name="saved_to">Сохранено: %1$s</string>
     <string name="storyboard">Раскадровка</string>
+    <string name="storyboard_input_video">Видеофайл</string>
     <string name="storyboard_separate_png">Отдельные PNG</string>
     <string name="storyboard_contact_sheet">Один PNG</string>
     <string name="create_storyboard">Создать раскадровку</string>

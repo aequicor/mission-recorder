@@ -23,6 +23,14 @@ internal class AwtDesktopRecordingsDirectoryOpener(
     private val isHeadless: () -> Boolean = GraphicsEnvironment::isHeadless,
     private val isDesktopSupported: () -> Boolean = Desktop::isDesktopSupported,
     private val isOpenSupported: () -> Boolean = { Desktop.getDesktop().isSupported(Desktop.Action.OPEN) },
+    private val isBrowseFileDirectorySupported: () -> Boolean = {
+        Desktop.getDesktop().isSupported(Desktop.Action.BROWSE_FILE_DIR)
+    },
+    private val browseFileDirectory: (Path) -> Unit = { output ->
+        Desktop.getDesktop().browseFileDirectory(output.toFile())
+    },
+    private val operatingSystemName: String = System.getProperty("os.name").orEmpty(),
+    private val startProcess: (List<String>) -> Unit = { command -> ProcessBuilder(command).start() },
     private val openDirectory: (Path) -> Unit = { directory -> Desktop.getDesktop().open(directory.toFile()) },
 ) : DesktopRecordingsDirectoryOpener {
     override suspend fun openForOutput(outputPath: String): DesktopDirectoryOpenResult {
@@ -39,6 +47,9 @@ internal class AwtDesktopRecordingsDirectoryOpener(
                     "Output path does not have a parent directory: $output",
                 )
             Files.createDirectories(directory)
+            if (Files.isRegularFile(output) && revealFile(output)) {
+                return@runCatching DesktopDirectoryOpenResult.Opened(directory.toString())
+            }
             if (!isOpenSupported()) {
                 return@runCatching DesktopDirectoryOpenResult.Unavailable(
                     "Opening folders is not supported on this desktop.",
@@ -51,5 +62,21 @@ internal class AwtDesktopRecordingsDirectoryOpener(
                 failure.message ?: "Could not open the recordings folder.",
             )
         }
+    }
+
+    private fun revealFile(output: Path): Boolean {
+        if (isBrowseFileDirectorySupported()) {
+            browseFileDirectory(output)
+            return true
+        }
+        val command = when {
+            operatingSystemName.startsWith("Windows", ignoreCase = true) ->
+                listOf("explorer.exe", "/select,$output")
+            operatingSystemName.startsWith("Mac", ignoreCase = true) ->
+                listOf("open", "-R", output.toString())
+            else -> return false
+        }
+        startProcess(command)
+        return true
     }
 }

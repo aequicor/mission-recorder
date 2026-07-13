@@ -12,7 +12,6 @@ import io.aequicor.capture.core.audioOutputFormat
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC
-import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P
 import org.bytedeco.javacv.FFmpegFrameRecorder
 import java.nio.file.AtomicMoveNotSupportedException
@@ -68,11 +67,17 @@ class FfmpegMediaEncoder : MediaEncoder {
             if (frame.width != current.width || frame.height != current.height) {
                 throw encoderFailed("Video frame dimensions changed during recording.")
             }
-            recorder.timestamp = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND
+            val timestampMicros = monotonicVideoTimestampMicros(
+                requestedTimestampMicros = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND,
+                previousTimestampMicros = current.lastVideoTimestampMicros,
+                frameRate = current.settings.frameRate,
+            )
+            recorder.timestamp = timestampMicros
             recorder.record(
                 requireNotNull(current.rgbaFrameBuffer).copyFrom(frame),
-                AV_PIX_FMT_RGBA,
+                frame.pixelFormat.toFfmpegPixelFormat(),
             )
+            current.lastVideoTimestampMicros = timestampMicros
         } catch (recording: RecordingException) {
             throw recording
         } catch (throwable: Throwable) {
@@ -136,7 +141,11 @@ class FfmpegMediaEncoder : MediaEncoder {
         context.height = firstFrame.height
         context.encodedWidth = firstFrame.width.roundUpToEven()
         context.encodedHeight = firstFrame.height.roundUpToEven()
-        context.rgbaFrameBuffer = RgbaFrameBuffer(context.encodedWidth, context.encodedHeight)
+        context.rgbaFrameBuffer = RgbaFrameBuffer(
+            context.encodedWidth,
+            context.encodedHeight,
+            firstFrame.pixelFormat,
+        )
         val audioFormat = context.settings.audioOutputFormat()
         val failures = mutableListOf<String>()
         h264EncoderCandidates(context.settings.encoder.hardwareAcceleration).forEach { encoderName ->
@@ -162,7 +171,7 @@ class FfmpegMediaEncoder : MediaEncoder {
         ).apply {
             format = "mp4"
             videoCodecName = encoderName
-            pixelFormat = AV_PIX_FMT_YUV420P
+            pixelFormat = h264OutputPixelFormat()
             frameRate = context.settings.frameRate.toDouble()
             videoBitrate = context.settings.encoder.videoBitrateBitsPerSecond
             gopSize = context.settings.frameRate * context.settings.encoder.keyframeIntervalSeconds
@@ -180,8 +189,10 @@ class FfmpegMediaEncoder : MediaEncoder {
         when (encoderName) {
             "h264_nvenc" -> {
                 setVideoOption("preset", "p5")
+                setVideoOption("tune", "hq")
                 setVideoOption("rc", "vbr")
-                setVideoOption("cq", "18")
+                setVideoOption("cq", "14")
+                setVideoOption("profile", "high")
             }
             "h264_qsv" -> {
                 setVideoOption("preset", "medium")
@@ -195,7 +206,7 @@ class FfmpegMediaEncoder : MediaEncoder {
             "h264_videotoolbox" -> setVideoOption("realtime", "false")
             "libopenh264" -> {
                 setVideoOption("rc_mode", "bitrate")
-                setVideoOption("allow_skip_frames", "true")
+                setVideoOption("allow_skip_frames", "false")
             }
         }
     }
@@ -238,6 +249,22 @@ class FfmpegMediaEncoder : MediaEncoder {
         var height: Int = 0,
         var encodedWidth: Int = 0,
         var encodedHeight: Int = 0,
+        var lastVideoTimestampMicros: Long? = null,
     )
 }
+
+internal fun h264OutputPixelFormat(): Int = AV_PIX_FMT_YUV420P
+
+internal fun monotonicVideoTimestampMicros(
+    requestedTimestampMicros: Long,
+    previousTimestampMicros: Long?,
+    frameRate: Int,
+): Long {
+    val requested = requestedTimestampMicros.coerceAtLeast(0)
+    val previous = previousTimestampMicros ?: return requested
+    val minimumFrameInterval = (MICROSECONDS_PER_SECOND + frameRate - 1) / frameRate.coerceAtLeast(1)
+    return maxOf(requested, previous + minimumFrameInterval)
+}
+
 private const val NANOS_PER_MICROSECOND = 1_000L
+private const val MICROSECONDS_PER_SECOND = 1_000_000L

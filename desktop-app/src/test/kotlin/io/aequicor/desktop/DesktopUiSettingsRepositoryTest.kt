@@ -121,11 +121,13 @@ class DesktopUiSettingsRepositoryTest {
         repository.saveMiniControllerPosition(position)
         repository.saveRecorderPreferences(preferences)
         repository.saveGlobalHotkeysEnabled(true)
+        repository.saveShowApplicationInRecording(true)
 
         assertEquals(
             DesktopStartupSettings(
                 recorderPreferences = preferences,
                 globalHotkeysEnabled = true,
+                showApplicationInRecording = true,
             ),
             repository.loadStartupSettings(),
         )

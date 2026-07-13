@@ -6,19 +6,21 @@ import com.sun.jna.win32.StdCallLibrary
 import com.sun.jna.win32.W32APIOptions
 import java.awt.Window
 
-internal fun excludeWindowFromCapture(
+internal fun setWindowVisibleInCapture(
     window: Window,
+    visible: Boolean,
     osName: String = System.getProperty("os.name").orEmpty(),
 ): Boolean {
-    val affinity = captureExclusionAffinity(osName) ?: return false
+    val affinity = captureAffinity(osName, visible) ?: return false
     return runCatching {
         val pointer = Native.getComponentPointer(window)
         CaptureExclusionUser32.INSTANCE.SetWindowDisplayAffinity(HWND(pointer), affinity)
     }.getOrDefault(false)
 }
 
-internal fun captureExclusionAffinity(osName: String): Int? =
-    WDA_EXCLUDEFROMCAPTURE.takeIf { osName.startsWith("Windows", ignoreCase = true) }
+internal fun captureAffinity(osName: String, visible: Boolean): Int? =
+    (if (visible) WDA_NONE else WDA_EXCLUDEFROMCAPTURE)
+        .takeIf { osName.startsWith("Windows", ignoreCase = true) }
 
 private interface CaptureExclusionUser32 : StdCallLibrary {
     fun SetWindowDisplayAffinity(window: HWND, affinity: Int): Boolean
@@ -33,3 +35,4 @@ private interface CaptureExclusionUser32 : StdCallLibrary {
 }
 
 private const val WDA_EXCLUDEFROMCAPTURE = 0x00000011
+private const val WDA_NONE = 0x00000000

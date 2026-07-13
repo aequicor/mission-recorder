@@ -13,9 +13,11 @@
 - финализаторы и сборщик мусора не считаются механизмом владения нативным ресурсом;
 - permission preflight выполняется до открытия capture API и создания output, как описано в [permissions.md](permissions.md).
 
-## Windows: User32 и GDI
+## Windows: Desktop Duplication, User32 и GDI
 
 Реализация находится в `capture-windows-jna`. Обнаруженные `HWND` принадлежат Windows или записываемому приложению. Mission Recorder хранит только opaque id, повторно проверяет окно перед кадром и никогда не вызывает для него `DestroyWindow` или `CloseHandle`.
+
+Захват screen/monitor/region в пределах одного output открывает FFmpeg `ddagrab` на выделенном capture dispatcher-е. `FFmpegFrameGrabber` владеет D3D11 device, `IDXGIOutputDuplication` и промежуточными frames до завершения flow; `close()` парно вызывает `stop()` и `release()`. При ошибке открытия или потере DXGI output adapter закрывает grabber и один раз переключается на GDI screen capture. Область сразу на нескольких outputs использует GDI, потому что один `ddagrab` source не объединяет мониторы.
 
 При захвате одного кадра действуют следующие пары владения:
 

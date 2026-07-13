@@ -9,9 +9,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.yield
 import kotlin.time.Duration.Companion.nanoseconds
 
 class RecordingController(
@@ -175,8 +177,9 @@ class RecordingController(
             }
             coroutineScope {
                 launch {
-                    videoCaptureAdapter.frames(settings).collect { frame ->
+                    videoCaptureAdapter.frames(settings).buffer(capacity = CAPTURE_FRAME_BUFFER_SIZE).collect { frame ->
                         processVideoFrame(active, frame)
+                        yield()
                     }
                 }
                 if (settings.audioSources.isNotEmpty()) {
@@ -328,6 +331,8 @@ class RecordingController(
         }
     }
 }
+
+private const val CAPTURE_FRAME_BUFFER_SIZE = 1
 
 private fun VideoFrame.withPauseOffset(offsetNanoseconds: Long): VideoFrame =
     copy(timestamp = timestamp.minusOffset(offsetNanoseconds))

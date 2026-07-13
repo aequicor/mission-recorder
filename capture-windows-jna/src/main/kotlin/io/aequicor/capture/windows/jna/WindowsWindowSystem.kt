@@ -39,7 +39,13 @@ internal interface WindowsWindowSystem {
 
     fun captureWindow(handle: Long): WindowsCapturedFrame
 
+    fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture
+
     fun cursorPosition(): WindowsPoint?
+}
+
+internal interface WindowsScreenCapture : AutoCloseable {
+    fun capture(): WindowsCapturedFrame
 }
 
 internal object WindowsCaptureSourceIds {

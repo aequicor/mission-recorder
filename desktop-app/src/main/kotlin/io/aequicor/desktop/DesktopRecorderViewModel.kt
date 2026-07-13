@@ -70,7 +70,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
-import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.minutes
 
 internal interface DesktopRecordingEngine {
@@ -164,6 +163,7 @@ internal class DesktopRecorderViewModel(
     private val audioMuteController: AudioMuteController = NoopAudioMuteController,
     private val permissionGateway: PermissionGateway = GrantedPermissionGateway,
     initialPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
+    initialShowApplicationInRecording: Boolean = false,
     private val preferencesWriter: DesktopRecorderPreferencesWriter = NoopDesktopRecorderPreferencesWriter,
     initialProfileCatalog: DesktopRecorderProfileCatalog? = null,
     private val profileStore: DesktopRecorderProfileStore = NoopDesktopRecorderProfileStore,
@@ -192,6 +192,7 @@ internal class DesktopRecorderViewModel(
                 ?: DesktopOutputPolicy().fileNamePattern,
             frameRate = startupPreferences.frameRate,
             captureCursor = startupPreferences.captureCursor,
+            showApplicationInRecording = initialShowApplicationInRecording,
             replayDurationMinutes = startupPreferences.replayDurationMinutes,
             storyboardMode = startupPreferences.storyboardMode,
             videoBitrateMbps = startupPreferences.videoBitrateMbps,
@@ -310,7 +311,11 @@ internal class DesktopRecorderViewModel(
             )
             is RecorderUiAction.SetFrameRate -> setFrameRate(action.frameRate)
             is RecorderUiAction.SetCaptureCursor -> setCaptureCursor(action.enabled)
+            is RecorderUiAction.SetShowApplicationInRecording -> mutableState.update {
+                it.copy(showApplicationInRecording = action.enabled)
+            }
             is RecorderUiAction.SetVideoBitrateMbps -> setVideoBitrateMbps(action.megabitsPerSecond)
+            is RecorderUiAction.SetStoryboardInputPath -> setStoryboardInputPath(action.path)
             is RecorderUiAction.SetStoryboardMode -> setStoryboardMode(action.mode)
             is RecorderUiAction.SetReplayDurationMinutes -> setReplayDurationMinutes(action.minutes)
             RecorderUiAction.SelectRegion -> selectRegion()
@@ -633,6 +638,12 @@ internal class DesktopRecorderViewModel(
         if (!mutableState.value.isBusy) {
             mutableState.update { it.copy(storyboardMode = mode) }
             queueRecorderPreferences()
+        }
+    }
+
+    private fun setStoryboardInputPath(path: String) {
+        if (!mutableState.value.isBusy) {
+            mutableState.update { it.copy(storyboardInputPath = path) }
         }
     }
 
@@ -1032,7 +1043,10 @@ internal class DesktopRecorderViewModel(
         if (!snapshot.canExportStoryboard) {
             return
         }
-        val inputVideoPath = snapshot.lastOutputPath ?: return
+        val inputVideoPath = snapshot.storyboardInputPath.trim()
+        if (inputVideoPath.isEmpty()) {
+            return
+        }
         val request = DesktopStoryboardExportRequest(
             inputVideoPath = inputVideoPath,
             outputPath = storyboardOutputPath(inputVideoPath, snapshot.storyboardMode),
@@ -1340,6 +1354,7 @@ internal class DesktopRecorderViewModel(
                     droppedFrames = recordingState.metrics.droppedFrames,
                     effectiveFramesPerSecond = recordingState.metrics.effectiveFramesPerSecond,
                     lastOutputPath = recordingState.outputPath,
+                    storyboardInputPath = recordingState.outputPath,
                     outputPath = nextRecordingOutputPath(current.selectedProfileId),
                     errorMessage = null,
                     microphoneLevel = 0f,
@@ -1568,36 +1583,42 @@ private fun Double?.toGainPercent(): Int = ((this ?: 1.0) * 100.0)
 private fun Int.toAudioGain(): Double = toDouble() / 100.0
 
 private fun VideoFrame.toDesktopPreviewFrame(): DesktopPreviewFrame {
-    require(pixelFormat == PixelFormat.Rgba8888) { "Preview requires RGBA8888 video frames." }
+    require(pixelFormat == PixelFormat.Rgba8888 || pixelFormat == PixelFormat.Bgra8888) {
+        "Preview requires RGBA8888 or BGRA8888 video frames."
+    }
     require(width > 0 && height > 0 && strideBytes >= width * PREVIEW_BYTES_PER_PIXEL) {
         "Preview frame dimensions or stride are invalid."
     }
     val source = requireNotNull(pixelData) { "Preview frame does not contain pixels." }
     val requiredBytes = (height - 1).toLong() * strideBytes + width * PREVIEW_BYTES_PER_PIXEL
     require(requiredBytes <= source.size) { "Preview frame pixel payload is incomplete." }
-    val scale = minOf(
-        1.0,
-        MAX_PREVIEW_WIDTH.toDouble() / width,
-        MAX_PREVIEW_HEIGHT.toDouble() / height,
-    )
-    val targetWidth = (width * scale).roundToInt().coerceAtLeast(1)
-    val targetHeight = (height * scale).roundToInt().coerceAtLeast(1)
-    val target = ByteArray(targetWidth * targetHeight * PREVIEW_BYTES_PER_PIXEL)
-    repeat(targetHeight) { targetY ->
-        val sourceY = (targetY.toLong() * height / targetHeight).toInt().coerceAtMost(height - 1)
-        repeat(targetWidth) { targetX ->
-            val sourceX = (targetX.toLong() * width / targetWidth).toInt().coerceAtMost(width - 1)
-            val sourceOffset = sourceY * strideBytes + sourceX * PREVIEW_BYTES_PER_PIXEL
-            val targetOffset = (targetY * targetWidth + targetX) * PREVIEW_BYTES_PER_PIXEL
-            source.copyInto(target, targetOffset, sourceOffset, sourceOffset + PREVIEW_BYTES_PER_PIXEL)
+    val rowBytes = width * PREVIEW_BYTES_PER_PIXEL
+    val target = ByteArray(rowBytes * height)
+    repeat(height) { y ->
+        val sourceRowOffset = y * strideBytes
+        val targetRowOffset = y * rowBytes
+        if (pixelFormat == PixelFormat.Rgba8888) {
+            source.copyInto(
+                destination = target,
+                destinationOffset = targetRowOffset,
+                startIndex = sourceRowOffset,
+                endIndex = sourceRowOffset + rowBytes,
+            )
+        } else {
+            repeat(width) { x ->
+                val sourceOffset = sourceRowOffset + x * PREVIEW_BYTES_PER_PIXEL
+                val targetOffset = targetRowOffset + x * PREVIEW_BYTES_PER_PIXEL
+                target[targetOffset] = source[sourceOffset + 2]
+                target[targetOffset + 1] = source[sourceOffset + 1]
+                target[targetOffset + 2] = source[sourceOffset]
+                target[targetOffset + 3] = 0xff.toByte()
+            }
         }
     }
-    return DesktopPreviewFrame(targetWidth, targetHeight, target)
+    return DesktopPreviewFrame(width, height, target)
 }
 
 private const val PREVIEW_OUTPUT_PLACEHOLDER = "preview-does-not-create-output.mp4"
 private const val SHUTDOWN_TIMEOUT_MILLIS = 3_000L
 private const val MAX_PREVIEW_FRAME_RATE = 15
-private const val MAX_PREVIEW_WIDTH = 1920
-private const val MAX_PREVIEW_HEIGHT = 1080
 private const val PREVIEW_BYTES_PER_PIXEL = 4

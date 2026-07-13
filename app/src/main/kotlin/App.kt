@@ -183,7 +183,9 @@ private fun createDesktopCaptureAdapters(): DesktopCaptureAdapters {
         videoCaptureAdapter = RoutingVideoCaptureAdapter(
             routes = listOf(
                 VideoCaptureRoute(
-                    matches = { source -> source is CaptureSource.Window || source is CaptureSource.Application },
+                    matches = { source ->
+                        windowsAdapters != null || source is CaptureSource.Window || source is CaptureSource.Application
+                    },
                     adapter = nativeVideoAdapter,
                 ),
             ),

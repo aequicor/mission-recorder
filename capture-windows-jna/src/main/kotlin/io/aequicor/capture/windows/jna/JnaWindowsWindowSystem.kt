@@ -122,6 +122,12 @@ internal class JnaWindowsWindowSystem(
         }
     }
 
+    override fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture {
+        val fallback = { JnaWindowsScreenCapture(bounds, user32, gdi32) }
+        val accelerated = DdaWindowsScreenCapture.openOrNull(bounds, frameRate) ?: return fallback()
+        return FailoverWindowsScreenCapture(accelerated, fallback)
+    }
+
     override fun cursorPosition(): WindowsPoint? {
         val point = POINT()
         return if (user32.GetCursorPos(point)) WindowsPoint(point.x, point.y) else null
@@ -190,6 +196,114 @@ internal class JnaWindowsWindowSystem(
         return runCatching {
             api.DwmGetWindowAttribute(handle, DWMWA_CLOAKED, cloaked, Int.SIZE_BYTES) == S_OK && cloaked.value != 0
         }.getOrDefault(false)
+    }
+}
+
+private class FailoverWindowsScreenCapture(
+    private var current: WindowsScreenCapture,
+    private val fallbackFactory: () -> WindowsScreenCapture,
+) : WindowsScreenCapture {
+    private var usingFallback = false
+
+    override fun capture(): WindowsCapturedFrame = try {
+        current.capture()
+    } catch (failure: WindowsCaptureFailure) {
+        if (usingFallback) {
+            throw failure
+        }
+        current.close()
+        current = fallbackFactory()
+        usingFallback = true
+        current.capture()
+    }
+
+    override fun close() = current.close()
+}
+
+private class JnaWindowsScreenCapture(
+    private val bounds: WindowsWindowBounds,
+    private val user32: User32,
+    private val gdi32: GDI32,
+) : WindowsScreenCapture {
+    private val byteCount = checkedFrameByteCount(bounds.width, bounds.height)
+    private val sourceDc = user32.GetDC(null)
+        .takeUnless(PointerType?::isNullHandle)
+        ?: throw nativeFailure("GetDC")
+    private val memoryDc: HDC
+    private val bitmap: HBITMAP
+    private val previousObject: HANDLE
+    private val pixels: Pointer
+    private var closed = false
+
+    init {
+        var createdMemoryDc: HDC? = null
+        var createdBitmap: HBITMAP? = null
+        var selectedObject: HANDLE? = null
+        try {
+            createdMemoryDc = gdi32.CreateCompatibleDC(sourceDc)
+                .takeUnless(PointerType?::isNullHandle)
+                ?: throw nativeFailure("CreateCompatibleDC")
+            val pixelsReference = PointerByReference()
+            createdBitmap = gdi32.CreateDIBSection(
+                sourceDc,
+                topDownBitmapInfo(bounds.width, bounds.height, byteCount),
+                WinGDI.DIB_RGB_COLORS,
+                pixelsReference,
+                null,
+                0,
+            ).takeUnless(PointerType?::isNullHandle)
+                ?: throw nativeFailure("CreateDIBSection")
+            selectedObject = gdi32.SelectObject(createdMemoryDc, createdBitmap)
+                .takeUnless(PointerType?::isInvalidGdiHandle)
+                ?: throw nativeFailure("SelectObject")
+            memoryDc = createdMemoryDc
+            bitmap = createdBitmap
+            previousObject = selectedObject
+            pixels = pixelsReference.value
+                ?: throw WindowsCaptureFailure("CreateDIBSection returned no pixel buffer.")
+        } catch (failure: Throwable) {
+            if (!createdMemoryDc.isNullHandle() && !selectedObject.isInvalidGdiHandle()) {
+                runCatching { gdi32.SelectObject(createdMemoryDc, selectedObject) }
+            }
+            if (!createdBitmap.isNullHandle()) {
+                runCatching { gdi32.DeleteObject(createdBitmap) }
+            }
+            if (!createdMemoryDc.isNullHandle()) {
+                runCatching { gdi32.DeleteDC(createdMemoryDc) }
+            }
+            runCatching { user32.ReleaseDC(null, sourceDc) }
+            throw failure
+        }
+    }
+
+    override fun capture(): WindowsCapturedFrame {
+        check(!closed) { "Screen capture is closed." }
+        if (!gdi32.BitBlt(
+                memoryDc,
+                0,
+                0,
+                bounds.width,
+                bounds.height,
+                sourceDc,
+                bounds.x,
+                bounds.y,
+                GDI32.SRCCOPY or CAPTUREBLT,
+            )
+        ) {
+            throw nativeFailure("BitBlt")
+        }
+        return WindowsCapturedFrame(bounds, pixels.getByteArray(0, byteCount))
+    }
+
+    override fun close() {
+        if (closed) {
+            return
+        }
+        closed = true
+        runCatching { gdi32.SelectObject(memoryDc, previousObject) }
+        runCatching { gdi32.DeleteObject(bitmap) }
+        runCatching { gdi32.DeleteDC(memoryDc) }
+        runCatching { user32.ReleaseDC(null, sourceDc) }
     }
 }
 

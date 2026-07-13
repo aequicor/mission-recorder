@@ -1,5 +1,9 @@
 package io.aequicor.compose.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
@@ -72,6 +76,26 @@ class MissionRecorderScreenTest {
 
         onAllNodesWithTag("toggle-preview").assertCountEquals(0)
         onAllNodesWithTag("preview-image").assertCountEquals(0)
+    }
+
+    @Test
+    fun displaysFirstPreviewFrameAfterSourceSelection() = runComposeUiTest {
+        val previewImage = mutableStateOf<ImageBitmap?>(null)
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(
+                    sources = listOf(RecorderSourceUi("window:test", "Test window", RecorderSourceKind.Window)),
+                    selectedSourceId = "window:test",
+                    previewStatus = PreviewUiStatus.Active,
+                ),
+                onAction = {},
+                previewImage = previewImage,
+            )
+        }
+
+        previewImage.value = ImageBitmap(width = 1, height = 1)
+
+        onAllNodesWithTag("preview-image").assertCountEquals(1)
     }
 
     @Test
@@ -431,6 +455,24 @@ class MissionRecorderScreenTest {
     }
 
     @Test
+    fun hoistsApplicationVisibilityToggle() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(showApplicationInRecording = false),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("show-application-in-recording").performScrollTo().assertIsEnabled().performClick()
+
+        assertEquals(
+            listOf<RecorderUiAction>(RecorderUiAction.SetShowApplicationInRecording(true)),
+            actions,
+        )
+    }
+
+    @Test
     fun hoistsExplicitOutputOverwriteToggle() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {
@@ -500,21 +542,37 @@ class MissionRecorderScreenTest {
     @Test
     fun exportsStoryboardOnlyFromDedicatedControl() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
+        var state by mutableStateOf(
+            RecorderUiState(
+                outputPath = "recordings/next.mp4",
+                lastOutputPath = "recordings/finished.mp4",
+            ),
+        )
         setContent {
             MissionRecorderScreen(
-                state = RecorderUiState(
-                    outputPath = "recordings/next.mp4",
-                    lastOutputPath = "recordings/finished.mp4",
-                ),
-                onAction = actions::add,
+                state = state,
+                onAction = { action ->
+                    actions += action
+                    state = when (action) {
+                        is RecorderUiAction.SetStoryboardInputPath -> state.copy(storyboardInputPath = action.path)
+                        is RecorderUiAction.SetStoryboardMode -> state.copy(storyboardMode = action.mode)
+                        else -> state
+                    }
+                },
             )
         }
 
+        onNodeWithTag("storyboard-input-video")
+            .performScrollTo()
+            .performTextClearance()
+        onNodeWithTag("storyboard-input-video").performTextInput("recordings/source.mp4")
         onNodeWithTag("storyboard-mode-contact").performScrollTo().performClick()
         onNodeWithTag("export-storyboard").performScrollTo().assertIsEnabled().performClick()
 
         assertEquals(
             listOf(
+                RecorderUiAction.SetStoryboardInputPath(""),
+                RecorderUiAction.SetStoryboardInputPath("recordings/source.mp4"),
                 RecorderUiAction.SetStoryboardMode(StoryboardMode.ContactSheet),
                 RecorderUiAction.ExportStoryboard,
             ),

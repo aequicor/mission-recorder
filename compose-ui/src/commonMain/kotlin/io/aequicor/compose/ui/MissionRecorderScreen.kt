@@ -58,6 +58,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -90,6 +91,7 @@ import io.aequicor.compose.resources.audio_frames
 import io.aequicor.compose.resources.audio_gain_percent
 import io.aequicor.compose.resources.capture_source
 import io.aequicor.compose.resources.capture_cursor
+import io.aequicor.compose.resources.show_application_in_recording
 import io.aequicor.compose.resources.choose_output_file
 import io.aequicor.compose.resources.create_storyboard
 import io.aequicor.compose.resources.creating_storyboard
@@ -159,6 +161,7 @@ import io.aequicor.compose.resources.stop_replay_buffer
 import io.aequicor.compose.resources.stopping
 import io.aequicor.compose.resources.storyboard
 import io.aequicor.compose.resources.storyboard_contact_sheet
+import io.aequicor.compose.resources.storyboard_input_video
 import io.aequicor.compose.resources.storyboard_saved_to
 import io.aequicor.compose.resources.storyboard_separate_png
 import io.aequicor.compose.resources.system_audio
@@ -288,6 +291,38 @@ fun MissionRecorderScreen(
     onAction: (RecorderUiAction) -> Unit,
     previewImage: ImageBitmap? = null,
     modifier: Modifier = Modifier,
+) = MissionRecorderScreen(
+    state = state,
+    onAction = onAction,
+    previewImage = { previewImage },
+    modifier = modifier,
+)
+
+/**
+ * Renders the recorder while containing live preview invalidations to the preview pane.
+ *
+ * The image state is read only where the frame is drawn, so frequent frame updates do not
+ * recompose unrelated controls such as text fields.
+ */
+@Composable
+fun MissionRecorderScreen(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    previewImage: State<ImageBitmap?>,
+    modifier: Modifier = Modifier,
+) = MissionRecorderScreen(
+    state = state,
+    onAction = onAction,
+    previewImage = { previewImage.value },
+    modifier = modifier,
+)
+
+@Composable
+private fun MissionRecorderScreen(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    previewImage: () -> ImageBitmap?,
+    modifier: Modifier,
 ) {
     MissionRecorderTheme {
         if (state.showCreateProfileDialog) {
@@ -589,7 +624,7 @@ private fun OutputNamingDialog(state: RecorderUiState, onAction: (RecorderUiActi
 private fun WideWorkspace(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
-    previewImage: ImageBitmap?,
+    previewImage: () -> ImageBitmap?,
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
         SourcePane(
@@ -623,7 +658,7 @@ private fun WideWorkspace(
 private fun CompactWorkspace(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
-    previewImage: ImageBitmap?,
+    previewImage: () -> ImageBitmap?,
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -764,11 +799,12 @@ private fun SourceRow(
 private fun PreviewPane(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
-    previewImage: ImageBitmap?,
+    previewImage: () -> ImageBitmap?,
     modifier: Modifier,
 ) {
     Column(modifier = modifier.padding(20.dp)) {
         val selected = state.sources.firstOrNull { it.id == state.selectedSourceId }
+        val previewImageDescription = stringResource(Res.string.preview_image_description)
         Text(
             text = stringResource(Res.string.selected_source),
             style = MaterialTheme.typography.labelLarge,
@@ -782,10 +818,11 @@ private fun PreviewPane(
             border = BorderStroke(1.dp, Color(0xFF343A40)),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                if (previewImage != null) {
+                val currentPreviewImage = previewImage()
+                if (currentPreviewImage != null) {
                     Image(
-                        bitmap = previewImage,
-                        contentDescription = stringResource(Res.string.preview_image_description),
+                        bitmap = currentPreviewImage,
+                        contentDescription = previewImageDescription,
                         modifier = Modifier.fillMaxSize().testTag("preview-image"),
                         contentScale = ContentScale.Fit,
                         filterQuality = FilterQuality.High,
@@ -998,6 +1035,24 @@ private fun SettingsPane(
                 onCheckedChange = { enabled -> onAction(RecorderUiAction.SetCaptureCursor(enabled)) },
                 modifier = Modifier.testTag("capture-cursor"),
                 enabled = !state.isBusy,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.show_application_in_recording),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(
+                checked = state.showApplicationInRecording,
+                onCheckedChange = { enabled ->
+                    onAction(RecorderUiAction.SetShowApplicationInRecording(enabled))
+                },
+                modifier = Modifier.testTag("show-application-in-recording"),
             )
         }
 
@@ -1405,6 +1460,15 @@ private fun RecorderTooltipIconButton(
 @Composable
 private fun StoryboardControls(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
     SectionTitle(stringResource(Res.string.storyboard))
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = state.storyboardInputPath,
+        onValueChange = { onAction(RecorderUiAction.SetStoryboardInputPath(it)) },
+        modifier = Modifier.fillMaxWidth().testTag("storyboard-input-video"),
+        enabled = !state.isBusy,
+        singleLine = true,
+        label = { Text(stringResource(Res.string.storyboard_input_video)) },
+    )
     Spacer(Modifier.height(12.dp))
     val options = listOf(
         StoryboardMode.SeparatePngFiles to stringResource(Res.string.storyboard_separate_png),

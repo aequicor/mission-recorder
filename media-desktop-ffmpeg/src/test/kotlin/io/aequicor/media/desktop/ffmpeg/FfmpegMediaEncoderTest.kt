@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.runTest
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGRA
+import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import java.nio.ByteBuffer
 import java.nio.file.Files
@@ -48,6 +49,19 @@ import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FfmpegMediaEncoderTest {
+    @Test
+    fun keepsVideoTimestampsOnDistinctEncoderTicks() {
+        assertEquals(0, monotonicVideoTimestampMicros(0, null, frameRate = 60))
+        assertEquals(16_667, monotonicVideoTimestampMicros(1_000, 0, frameRate = 60))
+        assertEquals(50_000, monotonicVideoTimestampMicros(50_000, 16_667, frameRate = 60))
+        assertEquals(66_667, monotonicVideoTimestampMicros(50_000, 50_000, frameRate = 60))
+    }
+
+    @Test
+    fun usesWidelySupportedH264ChromaFormat() {
+        assertEquals(AV_PIX_FMT_YUV420P, h264OutputPixelFormat())
+    }
+
     @Test
     fun selectsHardwareEncodersBeforeSoftwareFallback() {
         assertEquals(

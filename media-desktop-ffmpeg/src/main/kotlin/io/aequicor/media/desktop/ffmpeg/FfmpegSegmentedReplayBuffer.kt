@@ -17,7 +17,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC
-import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGBA
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.FFmpegFrameRecorder
@@ -84,7 +83,7 @@ class FfmpegSegmentedReplayBuffer(
             recorder.timestamp = timestampMicros
             recorder.record(
                 requireNotNull(current.rgbaFrameBuffer).copyFrom(frame),
-                AV_PIX_FMT_RGBA,
+                frame.pixelFormat.toFfmpegPixelFormat(),
             )
             if (startedNow) {
                 current.pendingAudioFrames.sortedBy { it.timestamp }.forEach { pending ->
@@ -156,7 +155,11 @@ class FfmpegSegmentedReplayBuffer(
         current.encodedWidth = firstFrame.width.roundUpToEven()
         current.encodedHeight = firstFrame.height.roundUpToEven()
         if (current.rgbaFrameBuffer == null) {
-            current.rgbaFrameBuffer = RgbaFrameBuffer(current.encodedWidth, current.encodedHeight)
+            current.rgbaFrameBuffer = RgbaFrameBuffer(
+                current.encodedWidth,
+                current.encodedHeight,
+                firstFrame.pixelFormat,
+            )
         }
         current.generationOriginNanoseconds = firstFrame.timestamp.nanoseconds
         val audioFormat = current.session.settings.audioOutputFormat()
