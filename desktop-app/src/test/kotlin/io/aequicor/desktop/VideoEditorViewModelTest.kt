@@ -85,14 +85,21 @@ class VideoEditorViewModelTest {
     }
 
     @Test
-    fun requestsFullHdBoundedMainPreview() = runTest {
+    fun reusesFullHdSessionForMainPreviewAndRapidSeeking() = runTest {
         val media = FakeEditorMediaService()
         val viewModel = viewModel(media = media)
 
         viewModel.open("recording.mp4")
         runCurrent()
+        viewModel.onAction(VideoEditorAction.Seek(1_000_000L))
+        viewModel.onAction(VideoEditorAction.Seek(2_000_000L))
+        viewModel.onAction(VideoEditorAction.Seek(3_000_000L))
+        runCurrent()
 
-        assertTrue(media.previewRequests.any { it.maxWidth == 1920 && it.maxHeight == 1080 })
+        assertEquals(listOf(PreviewSessionRequest(maxWidth = 1920, maxHeight = 1080)), media.previewSessionRequests)
+        assertEquals(0L, media.previewSessionTimestamps.first())
+        assertEquals(3_000_000L, media.previewSessionTimestamps.last())
+        assertTrue(2_000_000L !in media.previewSessionTimestamps)
     }
 
     @Test
@@ -107,14 +114,20 @@ class VideoEditorViewModelTest {
         advanceTimeBy(100)
         runCurrent()
 
-        assertEquals(listOf(PreviewSessionRequest(maxWidth = 960, maxHeight = 540)), media.previewSessionRequests)
+        assertEquals(
+            listOf(
+                PreviewSessionRequest(maxWidth = 1920, maxHeight = 1080),
+                PreviewSessionRequest(maxWidth = 1920, maxHeight = 1080),
+            ),
+            media.previewSessionRequests,
+        )
         assertTrue(media.previewSessionTimestamps.size >= 3)
         assertTrue(viewModel.state.value.isPlaying)
 
         viewModel.onAction(VideoEditorAction.TogglePlayback)
         runCurrent()
 
-        assertEquals(1, media.closedPreviewSessions)
+        assertEquals(2, media.closedPreviewSessions)
         assertTrue(!viewModel.state.value.isPlaying)
     }
 

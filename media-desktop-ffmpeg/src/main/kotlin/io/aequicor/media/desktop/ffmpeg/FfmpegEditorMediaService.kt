@@ -36,6 +36,8 @@ import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferInt
 import java.nio.Buffer
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.nio.FloatBuffer
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -452,16 +454,22 @@ private class FfmpegEditorPreviewSession(
 }
 
 private class ProjectFrameRenderer(private val project: EditorProject) : AutoCloseable {
-    private val converter = Java2DFrameConverter()
     private val videoSources = mutableMapOf<EditorClipId, VideoFrameCursor>()
     private val images = mutableMapOf<String, BufferedImage>()
+    private var previewCanvas: BufferedImage? = null
 
     fun render(
         timelineMicros: Long,
         outputWidth: Int = project.canvasWidth,
         outputHeight: Int = project.canvasHeight,
-    ): BufferedImage {
-        val canvas = BufferedImage(outputWidth, outputHeight, BufferedImage.TYPE_INT_ARGB)
+    ): BufferedImage = renderInto(
+        canvas = BufferedImage(outputWidth, outputHeight, BufferedImage.TYPE_INT_ARGB),
+        timelineMicros = timelineMicros,
+    )
+
+    private fun renderInto(canvas: BufferedImage, timelineMicros: Long): BufferedImage {
+        val outputWidth = canvas.width
+        val outputHeight = canvas.height
         val graphics = canvas.createGraphics()
         try {
             graphics.scale(
@@ -496,11 +504,12 @@ private class ProjectFrameRenderer(private val project: EditorProject) : AutoClo
         ).coerceAtMost(1.0)
         val outputWidth = (project.canvasWidth * scale).roundToInt().coerceAtLeast(1)
         val outputHeight = (project.canvasHeight * scale).roundToInt().coerceAtLeast(1)
-        return render(
-            timelineMicros = timelineMicros.coerceIn(0L, project.durationMicros),
-            outputWidth = outputWidth,
-            outputHeight = outputHeight,
-        ).toBgraFrame()
+        val canvas = previewCanvas
+            ?.takeIf { it.width == outputWidth && it.height == outputHeight }
+            ?: BufferedImage(outputWidth, outputHeight, BufferedImage.TYPE_INT_ARGB).also {
+                previewCanvas = it
+            }
+        return renderInto(canvas, timelineMicros.coerceIn(0L, project.durationMicros)).toBgraFrame()
     }
 
     private fun renderVideoTrack(graphics: Graphics2D, track: EditorTrack, timelineMicros: Long) {
@@ -554,21 +563,20 @@ private class ProjectFrameRenderer(private val project: EditorProject) : AutoClo
             }
         }
         val source = videoSources.getOrPut(clipId) {
-            VideoFrameCursor(asset.path, converter)
+            VideoFrameCursor(asset.path)
         }
         return source.imageAt(sourceMicros.coerceAtMost(asset.durationMicros))
     }
 
     override fun close() {
         videoSources.values.forEach(VideoFrameCursor::close)
-        converter.close()
     }
 }
 
 private class VideoFrameCursor(
     path: String,
-    private val converter: Java2DFrameConverter,
 ) : AutoCloseable {
+    private val converter = Java2DFrameConverter()
     private val grabber = FFmpegFrameGrabber(Path.of(path).toFile()).apply { start() }
     private var lastRequestedMicros: Long? = null
     private var frameTimestampMicros = Long.MIN_VALUE
@@ -597,7 +605,7 @@ private class VideoFrameCursor(
 
     private fun grabNextFrame(): BufferedImage? {
         val decoded = grabber.grabImage() ?: return null
-        val image = converter.convert(decoded)?.deepCopy() ?: return null
+        val image = converter.convert(decoded) ?: return null
         frameTimestampMicros = max(decoded.timestamp, grabber.timestamp).coerceAtLeast(0L)
         frame = image
         return image
@@ -606,6 +614,7 @@ private class VideoFrameCursor(
     override fun close() {
         runCatching { grabber.stop() }
         runCatching { grabber.release() }
+        converter.close()
     }
 }
 
@@ -790,6 +799,7 @@ private fun BufferedImage.applyEffects(effects: ClipEffects): BufferedImage {
 }
 
 private fun BufferedImage.crop(crop: io.aequicor.editor.NormalizedCrop): BufferedImage {
+    if (crop.left == 0f && crop.top == 0f && crop.right == 1f && crop.bottom == 1f) return this
     val x = (crop.left * width).roundToInt().coerceIn(0, width - 1)
     val y = (crop.top * height).roundToInt().coerceIn(0, height - 1)
     val right = (crop.right * width).roundToInt().coerceIn(x + 1, width)
@@ -809,16 +819,15 @@ private fun BufferedImage.deepCopy(type: Int = BufferedImage.TYPE_INT_ARGB): Buf
 }
 
 private fun BufferedImage.toBgraFrame(): EditorPreviewFrame {
-    val pixels = IntArray(width * height)
-    getRGB(0, 0, width, height, pixels, 0, width)
-    val bgra = ByteArray(pixels.size * 4)
-    pixels.forEachIndexed { index, argb ->
-        val offset = index * 4
-        bgra[offset] = (argb and 0xff).toByte()
-        bgra[offset + 1] = (argb ushr 8 and 0xff).toByte()
-        bgra[offset + 2] = (argb ushr 16 and 0xff).toByte()
-        bgra[offset + 3] = (argb ushr 24 and 0xff).toByte()
+    val pixels = requireNotNull((raster.dataBuffer as? DataBufferInt)?.data) {
+        "Editor preview requires an integer ARGB canvas."
     }
+    val pixelCount = width * height
+    val bgra = ByteArray(pixelCount * 4)
+    ByteBuffer.wrap(bgra)
+        .order(ByteOrder.LITTLE_ENDIAN)
+        .asIntBuffer()
+        .put(pixels, 0, pixelCount)
     return EditorPreviewFrame(width, height, bgra)
 }
 

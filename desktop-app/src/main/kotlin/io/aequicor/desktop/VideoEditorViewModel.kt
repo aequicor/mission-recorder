@@ -26,9 +26,12 @@ import io.aequicor.media.desktop.ffmpeg.EditorMediaProbe
 import io.aequicor.media.desktop.ffmpeg.EditorMediaService
 import io.aequicor.media.desktop.ffmpeg.EditorPreviewAudio
 import io.aequicor.media.desktop.ffmpeg.EditorPreviewFrame
+import io.aequicor.media.desktop.ffmpeg.EditorPreviewSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +39,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
@@ -69,6 +73,8 @@ internal class VideoEditorViewModel(
     private var autosaveJob: Job? = null
     private var cachedAudioProject: EditorProject? = null
     private var cachedAudio: EditorPreviewAudio? = null
+    private var previewProject: EditorProject? = null
+    private var previewRequests: Channel<Long>? = null
 
     val state: StateFlow<VideoEditorUiState> = mutableState.asStateFlow()
     val playheadMicros: StateFlow<Long> = mutablePlayheadMicros.asStateFlow()
@@ -209,6 +215,7 @@ internal class VideoEditorViewModel(
 
     fun requestClose(onClosed: () -> Unit) {
         stopPlayback()
+        stopPreviewRendering()
         exportJob?.cancel()
         frameExportPreparationJob?.cancel()
         scope.launch {
@@ -219,6 +226,7 @@ internal class VideoEditorViewModel(
 
     fun shutdown() {
         stopPlayback()
+        stopPreviewRendering()
         exportJob?.cancel()
         frameExportPreparationJob?.cancel()
         autosaveJob?.cancel()
@@ -627,7 +635,7 @@ internal class VideoEditorViewModel(
     }
 
     private fun seek(timestampMicros: Long) {
-        stopPlayback()
+        if (playbackJob != null) stopPlayback()
         val timestamp = timestampMicros.coerceIn(0L, history.project.durationMicros)
         mutablePlayheadMicros.value = timestamp
         renderPreview(timestamp)
@@ -640,8 +648,7 @@ internal class VideoEditorViewModel(
 
     private fun startPlayback() {
         if (history.project.durationMicros <= 0L || playbackJob != null) return
-        previewJob?.cancel()
-        previewJob = null
+        stopPreviewRendering()
         if (mutablePlayheadMicros.value >= history.project.durationMicros) mutablePlayheadMicros.value = 0L
         val project = history.project
         playbackJob = scope.launch {
@@ -662,8 +669,8 @@ internal class VideoEditorViewModel(
                 val frameIntervalNanos = NANOS_PER_SECOND / project.frameRate
                 val previewSession = mediaService.createPreviewSession(
                     project = project,
-                    maxWidth = PLAYBACK_PREVIEW_WIDTH,
-                    maxHeight = PLAYBACK_PREVIEW_HEIGHT,
+                    maxWidth = EDITOR_PREVIEW_WIDTH,
+                    maxHeight = EDITOR_PREVIEW_HEIGHT,
                 )
                 try {
                     while (isActive) {
@@ -731,24 +738,56 @@ internal class VideoEditorViewModel(
     }
 
     private fun renderPreview(timestampMicros: Long) {
-        previewJob?.cancel()
         if (history.project.durationMicros <= 0L) {
+            stopPreviewRendering()
             mutablePreviewFrame.value = null
             mutableState.update { it.copy(previewStatus = EditorPreviewStatus.Empty) }
             return
         }
         val project = history.project
+        if (previewProject != project || previewJob?.isActive != true) {
+            startPreviewRendering(project)
+        }
+        mutableState.update { it.copy(previewStatus = EditorPreviewStatus.Rendering) }
+        previewRequests?.trySend(timestampMicros.coerceIn(0L, project.durationMicros))
+    }
+
+    private fun startPreviewRendering(project: EditorProject) {
+        stopPreviewRendering()
+        val requests = Channel<Long>(Channel.CONFLATED)
+        previewProject = project
+        previewRequests = requests
         previewJob = scope.launch {
-            mutableState.update { it.copy(previewStatus = EditorPreviewStatus.Rendering) }
+            var session: EditorPreviewSession? = null
             try {
-                mutablePreviewFrame.value = mediaService.renderPreview(project, timestampMicros)
-                mutableState.update { it.copy(previewStatus = EditorPreviewStatus.Ready) }
+                session = mediaService.createPreviewSession(
+                    project = project,
+                    maxWidth = EDITOR_PREVIEW_WIDTH,
+                    maxHeight = EDITOR_PREVIEW_HEIGHT,
+                )
+                for (timestampMicros in requests) {
+                    val frame = session.render(timestampMicros)
+                    if (previewProject == project) {
+                        mutablePreviewFrame.value = frame
+                        mutableState.update { it.copy(previewStatus = EditorPreviewStatus.Ready) }
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                reportFailure(failure)
+                if (previewProject == project) reportFailure(failure)
+            } finally {
+                withContext(NonCancellable) { session?.close() }
             }
         }
+    }
+
+    private fun stopPreviewRendering() {
+        previewProject = null
+        previewRequests?.close()
+        previewRequests = null
+        previewJob?.cancel()
+        previewJob = null
     }
 
     private fun apply(action: EditorAction, render: Boolean = true) {
@@ -791,6 +830,7 @@ internal class VideoEditorViewModel(
 
     private fun afterProjectChanged(render: Boolean) {
         stopPlayback()
+        stopPreviewRendering()
         cachedAudioProject = null
         cachedAudio = null
         mutablePlayheadMicros.value = mutablePlayheadMicros.value.coerceAtMost(history.project.durationMicros)
@@ -802,6 +842,7 @@ internal class VideoEditorViewModel(
     }
 
     private fun replaceProject(project: EditorProject) {
+        stopPreviewRendering()
         history = EditorHistory(project)
         cachedAudioProject = null
         cachedAudio = null
@@ -1055,8 +1096,8 @@ private const val MAX_UNDO_STEPS = 100
 private const val MAX_IMPORTANT_FRAME_THUMBNAILS = 160
 private const val IMPORTANT_FRAME_THUMBNAIL_WIDTH = 240
 private const val IMPORTANT_FRAME_THUMBNAIL_HEIGHT = 135
-private const val PLAYBACK_PREVIEW_WIDTH = 960
-private const val PLAYBACK_PREVIEW_HEIGHT = 540
+private const val EDITOR_PREVIEW_WIDTH = 1920
+private const val EDITOR_PREVIEW_HEIGHT = 1080
 private const val NANOS_PER_SECOND = 1_000_000_000L
 private const val NANOS_PER_MILLISECOND = 1_000_000L
 private const val NANOS_PER_MICROSECOND = 1_000L

@@ -95,6 +95,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.Frame
@@ -278,22 +279,26 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
 
     LaunchedEffect(editorViewModel) {
         var pendingImage: DesktopPreviewImage? = null
-        var retiredImage: DesktopPreviewImage? = null
         try {
             editorViewModel.previewFrame.collect { frame ->
                 withContext(Dispatchers.IO) {
                     pendingImage = frame?.toDesktopPreviewImage()
                 }
-                retiredImage = editorPreviewImageResource.value
+                val retiredImage = editorPreviewImageResource.value
                 editorPreviewImageResource.value = pendingImage
                 pendingImage = null
-                repeat(PREVIEW_IMAGE_RETIREMENT_FRAMES) { withFrameNanos { } }
-                retiredImage?.close()
-                retiredImage = null
+                if (retiredImage != null) {
+                    launch {
+                        try {
+                            repeat(PREVIEW_IMAGE_RETIREMENT_FRAMES) { withFrameNanos { } }
+                        } finally {
+                            retiredImage.close()
+                        }
+                    }
+                }
             }
         } finally {
             pendingImage?.close()
-            retiredImage?.close()
         }
     }
 

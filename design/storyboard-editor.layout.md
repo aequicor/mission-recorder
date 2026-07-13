@@ -55,8 +55,6 @@ Rectangle id preview_background 1064 by 598 position 0 0 gradient (linear from (
 #### Frame: Playback Transport id playback_transport 1064 by 52 position 24 702 color #161C21 stroke #37414B 1 center radius 8
 
 Text id transport_time «07:32.450» key editor.transport.time font «Monospace» bold size 12 line-height 18 width 96 height 36 position 16 8 maxLines 1 text-valign center color #E7ECF0
-Button id mark_important «Важный кадр» key editor.transport.mark font «Sans Serif» semibold size 12 line-height 16 width 152 height 36 position 896 8 maxLines 1 text-align right text-valign center color #F3C64D radius 8 onClick setVariable (importantFrameAdded) to (true)
-Icon id mark_important_icon 18 by 18 position 910 17 svg design/res/icons/star.svg color #F3C64D
 
 ##### Image: id image_2 name «play_arrow.svg» 24 by 24 position 520 14 absolute color #8E99A7 blend screen media (asset res/play_arrow-1.svg)
 
@@ -65,32 +63,68 @@ Icon id mark_important_icon 18 by 18 position 910 17 svg design/res/icons/star.s
 
 ##### Image: id image_3 name «skip_next.svg» 24 by 24 position 566.6666666666667 14 absolute media (asset res/skip_next-1.svg)
 
+##### Group: id group_6 name «Group» 119.61516106273882 by 36 position 641.4343083699544 8 absolute
+
+###### Button: id mark_important characters «+ важный кадр» name «Важный кадр» 89.35389709472656 by 36 position 30.26126396801226 0 absolute color #F3C64D radius 8 size 12 semibold font «Sans Serif» line-height 16 text-align left text-valign center maxLines 1 onClick setVariable (importantFrameAdded) to (true)
+
+###### Image: id image_5 name «video_file.svg» 24 by 24 position 0 6 absolute media (asset res/video_file.svg)
+
 #### Frame: Playback Timeline id playback_timeline 1064 by 90 position 24 766 clip color #161C21 stroke #37414B 1 center radius 8
 
-Rectangle id timeline_track 1032 by 48 position 16 12 radius 7 color #20272D
-Rectangle id timeline_segment_01 142 by 36 position 28 18 radius 4 color #344A5C stroke #4C8CCA 1 center
-Rectangle id timeline_segment_02 126 by 36 position 180 18 radius 4 color #273C4B
-Rectangle id timeline_segment_03 164 by 36 position 316 18 radius 4 color #5A3040
-Rectangle id timeline_segment_04 132 by 36 position 490 18 radius 4 color #2F4B44
-Rectangle id timeline_segment_05 194 by 36 position 632 18 radius 4 color #3C3658
-Rectangle id timeline_segment_06 200 by 36 position 836 18 radius 4 color #36526A
-Rectangle id timeline_marker_01 4 by 48 position 196 12 radius 2 color #F3C64D
-Rectangle id timeline_marker_02 4 by 48 position 492 12 radius 2 color #F3C64D
-Rectangle id timeline_marker_03 4 by 48 position 878 12 radius 2 color #F3C64D
-Rectangle id timeline_playhead 2 by 58 position 372 7 color #FF5B64
-Ellipse id timeline_playhead_handle 12 by 12 position 367 4 color #FF5B64
-Text id timeline_start «00:00» key editor.timeline.start font «Monospace» size 9 line-height 12 width 48 height 12 position 16 68 maxLines 1 color #7F8A93
-Text id timeline_quarter «09:36» key editor.timeline.quarter font «Monospace» size 9 line-height 12 width 48 height 12 position 270 68 maxLines 1 color #7F8A93
-Text id timeline_middle «19:12» key editor.timeline.middle font «Monospace» size 9 line-height 12 width 48 height 12 position 524 68 maxLines 1 color #7F8A93
-Text id timeline_three_quarters «28:48» key editor.timeline.threeQuarters font «Monospace» size 9 line-height 12 width 48 height 12 position 778 68 maxLines 1 color #7F8A93
-Text id timeline_end «38:24» key editor.timeline.end font «Monospace» size 9 line-height 12 width 48 height 12 position 1000 68 maxLines 1 color #7F8A93
+Ellipse id timeline_playhead_handle 12 by 12 position 367 2 color #FF5B64
+
+##### Group: id group_4 name «Group» 1032 by 57.35795372724533 position 16 16 absolute
+
+###### Rectangle: id timeline_track 1032 by 48 position 0 5 absolute color #20272D radius 7
+
+###### Rectangle: id timeline_segment_01 142 by 36 position 12 11 absolute color #344A5C stroke #4C8CCA 1 center radius 4
+
+###### Rectangle: id timeline_segment_02 126 by 36 position 164 11 absolute color #273C4B radius 4
+
+###### Rectangle: id timeline_segment_03 164 by 36 position 300 11 absolute color #5A3040 radius 4
+
+###### Rectangle: id timeline_segment_04 132 by 36 position 474 11 absolute color #2F4B44 radius 4
+
+###### Rectangle: id timeline_segment_05 194 by 36 position 616 11 absolute color #3C3658 radius 4
+
+###### Rectangle: id timeline_segment_06 200 by 36 position 820 11 absolute color #36526A radius 4
+
+###### Rectangle: id timeline_marker_01 4 by 48 position 180 5 absolute color #F3C64D radius 2
+
+###### Rectangle: id timeline_marker_02 4 by 48 position 476 5 absolute color #F3C64D radius 2
+
+###### Rectangle: id timeline_marker_03 4 by 48 position 862 5 absolute color #F3C64D radius 2
+
+###### Rectangle: id timeline_playhead 2 by 62.32659149169922 position 355.89753361046314 -9.254506947185632 absolute color #FF5B64 radius 1
+
+##### Group: id group_5 name «Group» 1032 by 12 position 16 74 absolute
+
+###### Text: id timeline_start characters «00:00» name «00:00» 48 by 12 position 0 0 absolute color #7F8A93 size 9 key editor.timeline.start font «Monospace» line-height 12 maxLines 1
+
+###### Text: id timeline_quarter characters «09:36» name «09:36» 48 by 12 position 254 0 absolute color #7F8A93 size 9 key editor.timeline.quarter font «Monospace» line-height 12 maxLines 1
+
+###### Text: id timeline_middle characters «19:12» name «19:12» 48 by 12 position 508 0 absolute color #7F8A93 size 9 key editor.timeline.middle font «Monospace» line-height 12 maxLines 1
+
+###### Text: id timeline_three_quarters characters «28:48» name «28:48» 48 by 12 position 762 0 absolute color #7F8A93 size 9 key editor.timeline.threeQuarters font «Monospace» line-height 12 maxLines 1
+
+###### Text: id timeline_end characters «38:24» name «38:24» 48 by 12 position 984 0 absolute color #7F8A93 size 9 key editor.timeline.end font «Monospace» line-height 12 maxLines 1
 
 ### Frame: id storyboard_export_panel name «Storyboard And Export Panel» 416 by 866.2420167922974 position 1160 96 color #1A2026 stroke #37414B 1 center radius 12 clip
 
 Text id storyboard_title «Раскадровка» key editor.storyboard.title font «Sans Serif» semibold size 18 line-height 24 width 220 height 24 position 24 20 maxLines 1 text-valign center color #E7ECF0
 Text id storyboard_count «7 из 18 выбрано» key editor.storyboard.count font «Sans Serif» size 12 line-height 18 width 140 height 24 position 252 20 maxLines 1 text-align right text-valign center color #A8B2BA
 
-#### Frame: Storyboard Frame List id storyboard_frame_list 368 by 484 position 24 51.36700886089693 clip overflow (y auto) scroll (direction vertical) color #161C21 stroke #37414B 1 center radius 8
+#### Frame: Storyboard Footer id storyboard_footer 368 by 264 position 24 577.4946778615315 color #1A2026
+
+Text id export_title «Экспорт» key editor.export.title font «Sans Serif» semibold size 18 line-height 24 width 160 height 24 position 0 76 maxLines 1 color #E7ECF0
+Text id export_summary «Выбрано 7 кадров» key editor.export.summary font «Sans Serif» size 12 line-height 18 width 160 height 24 position 208 76 maxLines 1 text-align right text-valign center color #A8B2BA
+Button id export_single_file «Экспорт 1 файлом» key editor.export.singleFile font «Sans Serif» bold size 12 line-height 16 width 180 height 48 position 0 112 maxLines 2 text-align center text-valign center color #4C8CCA radius 8 onClick setVariable (exportMode) to («contactSheet»)
+Button id copy_storyboard_to_clipboard «Сохранить раскадровку в буфер обмена» key editor.export.copyToClipboard font «Sans Serif» semibold size 11 line-height 14 width 180 height 48 position 188 112 maxLines 2 text-align center text-valign center color #A8B2BA stroke #4C8CCA 1 center radius 8 onClick setVariable (exportMode) to («clipboard»)
+Button id export_separate_files «Экспорт нескольких файлов» key editor.export.separateFiles font «Sans Serif» semibold size 13 line-height 18 width 368 height 48 position 0 168 maxLines 1 text-valign center color #A8B2BA stroke #4C8CCA 1 center radius 8 onClick setVariable (exportMode) to («separatePng»)
+Text id export_destination «Исходный размер · Записи / Кадры» key editor.export.destination font «Sans Serif» size 11 line-height 16 width 368 height 16 position 0 232 maxLines 1 text-align center color #A8B2BA
+
+
+#### Frame: Storyboard Frame List id storyboard_frame_list 368 by 588.2491035461426 position 24 51.36700886089693 clip overflow (y auto) scroll (direction vertical) color #161C21 stroke #37414B 1 center radius 8
 
 ##### Frame: Storyboard Row 01 id storyboard_row_01 352 by 88 position 8 8 color #242B32 stroke #4C8CCA 2 center radius 7
 
@@ -138,28 +172,16 @@ Text id row_05_status «Обычный кадр» key editor.storyboard.row05.st
 Rectangle id row_05_checkbox 18 by 18 position 144 58 radius 4 color #161C21 stroke #7F8A93 1 center
 Button id row_05_include «В раскадровке» key editor.storyboard.row05.include font «Sans Serif» size 10 line-height 14 width 132 height 24 position 168 55 maxLines 1 text-valign center color #A8B2BA onClick setVariable (frame05Included) to (true)
 
-#### Frame: Storyboard Footer id storyboard_footer 368 by 264 position 24 577.4946778615315 color #1A2026
-
-Text id export_title «Экспорт» key editor.export.title font «Sans Serif» semibold size 18 line-height 24 width 160 height 24 position 0 76 maxLines 1 color #E7ECF0
-Text id export_summary «Выбрано 7 кадров» key editor.export.summary font «Sans Serif» size 12 line-height 18 width 160 height 24 position 208 76 maxLines 1 text-align right text-valign center color #A8B2BA
-Button id export_single_file «Экспорт 1 файлом» key editor.export.singleFile font «Sans Serif» bold size 12 line-height 16 width 180 height 48 position 0 112 maxLines 2 text-align center text-valign center color #4C8CCA radius 8 onClick setVariable (exportMode) to («contactSheet»)
-Button id copy_storyboard_to_clipboard «Сохранить раскадровку в буфер обмена» key editor.export.copyToClipboard font «Sans Serif» semibold size 11 line-height 14 width 180 height 48 position 188 112 maxLines 2 text-align center text-valign center color #A8B2BA stroke #4C8CCA 1 center radius 8 onClick setVariable (exportMode) to («clipboard»)
-Button id export_separate_files «Экспорт нескольких файлов» key editor.export.separateFiles font «Sans Serif» semibold size 13 line-height 18 width 368 height 48 position 0 168 maxLines 1 text-valign center color #A8B2BA stroke #4C8CCA 1 center radius 8 onClick setVariable (exportMode) to («separatePng»)
-Text id export_destination «Исходный размер · Записи / Кадры» key editor.export.destination font «Sans Serif» size 11 line-height 16 width 368 height 16 position 0 232 maxLines 1 text-align center color #A8B2BA
-
 #### Group: id group_2 name «Group copy» 18 by 18 position 278.7098693847656 23 absolute
 
 Rectangle id row_01_1 18 by 18 position 0 0 absolute color #4C8CCA stroke #79A4CC 1 center radius 4
 
 Text id row_01_checkbox_1 «✓» name «✓» 14 by 16 position 2 0 absolute color #FFFFFF size 12 key editor.storyboard.row01.checked bold font «Sans Serif» line-height 16 text-align center maxLines 1
 
-#### Button: id add_current_frame characters «+ Добавить текущий кадр» name «+ Добавить текущий кадр» 368 by 40 position 24 550.6666666666666 absolute color #F3C64D radius 8 size 12 key editor.storyboard.addCurrent semibold font «Sans Serif» line-height 16 text-valign center maxLines 1 onClick setVariable (importantFrameAdded) to (true)
-
 ## Image: id image_1 name «folder_open.svg» 24 by 24 position 170.71238708496094 289.15679931640625 absolute media (asset res/folder_open.svg)
 
 ## Image: id image_4 name «upload_file.svg» 24 by 24 position 652.7841796875 227.85289001464844 absolute media (asset res/upload_file.svg)
 
-## Image: id image_5 name «video_file.svg» 24 by 24 position 799.5420532226562 246.42984008789062 absolute media (asset res/video_file.svg)
 
 
 
