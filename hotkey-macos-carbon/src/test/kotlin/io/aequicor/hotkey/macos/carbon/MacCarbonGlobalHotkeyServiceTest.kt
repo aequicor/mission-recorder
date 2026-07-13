@@ -2,6 +2,7 @@ package io.aequicor.hotkey.macos.carbon
 
 import io.aequicor.hotkey.GlobalHotkeyAction
 import io.aequicor.hotkey.GlobalHotkeyEvent
+import io.aequicor.hotkey.GlobalHotkeyKey
 import io.aequicor.hotkey.defaultDesktopGlobalHotkeys
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -18,18 +19,26 @@ import kotlin.time.Duration.Companion.seconds
 
 class MacCarbonGlobalHotkeyServiceTest {
     @Test
+    fun mapsCapturedKeyboardKeysToMacKeycodes() {
+        assertEquals(40, GlobalHotkeyKey.K.toMacKeycode())
+        assertEquals(20, GlobalHotkeyKey.Digit3.toMacKeycode())
+        assertEquals(69, GlobalHotkeyKey.NumpadAdd.toMacKeycode())
+    }
+
+    @Test
     fun registersDispatchesOncePerPressAndReleasesNativeResources() = runBlocking {
         val nativeApi = FakeMacCarbonHotkeyNativeApi()
         val service = MacCarbonGlobalHotkeyService(defaultDesktopGlobalHotkeys, nativeApi)
 
         try {
             assertEquals(
-                listOf(
-                    MacRegistration(1, keycode = 101, modifiers = 4_608),
-                    MacRegistration(2, keycode = 109, modifiers = 4_608),
-                    MacRegistration(3, keycode = 103, modifiers = 4_608),
-                    MacRegistration(4, keycode = 100, modifiers = 4_608),
-                ),
+                defaultDesktopGlobalHotkeys.mapIndexed { index, binding ->
+                    MacRegistration(
+                        id = index + 1,
+                        keycode = binding.gesture.key.toMacKeycode(),
+                        modifiers = 4_608,
+                    )
+                },
                 nativeApi.registrations,
             )
             val events = async(start = CoroutineStart.UNDISPATCHED) { service.events.take(2).toList() }
@@ -50,7 +59,7 @@ class MacCarbonGlobalHotkeyServiceTest {
             service.close()
         }
 
-        assertEquals(listOf(4, 3, 2, 1), nativeApi.unregisteredIds)
+        assertEquals(defaultDesktopGlobalHotkeys.indices.map { index -> index + 1 }.reversed(), nativeApi.unregisteredIds)
         assertEquals(1, nativeApi.removeHandlerCalls)
     }
 

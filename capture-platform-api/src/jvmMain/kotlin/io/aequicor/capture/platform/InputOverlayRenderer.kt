@@ -1,5 +1,7 @@
 package io.aequicor.capture.platform
 
+import io.aequicor.capture.core.PixelFormat
+import io.aequicor.capture.core.paintInputEventFrameMarker
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
@@ -19,6 +21,7 @@ public class InputOverlayRenderer(
     private var visibleText: String? = null
     private var visibleUntilNanoseconds: Long = Long.MIN_VALUE
     private var cachedLabel: RenderedLabel? = null
+    private var eventMarkerPending: Boolean = false
 
     init {
         require(visibleDurationNanoseconds > 0) { "Input overlay duration must be positive." }
@@ -30,6 +33,7 @@ public class InputOverlayRenderer(
         if (currentInputs.any { input -> input !in previousInputs }) {
             visibleText = currentInputs.toDisplayText()
             visibleUntilNanoseconds = timestampNanoseconds + visibleDurationNanoseconds
+            eventMarkerPending = true
         }
         previousInputs = currentInputs
         return visibleText?.takeIf { timestampNanoseconds <= visibleUntilNanoseconds }
@@ -55,6 +59,16 @@ public class InputOverlayRenderer(
         text: String,
     ): Unit = draw(pixels, frameWidth, frameHeight, hotspotX, hotspotY, text, blueFirst = true)
 
+    /** Paints and consumes a pending input-event marker over an RGBA8888 frame. */
+    public fun drawPendingEventMarkerRgba(pixels: ByteArray, frameWidth: Int, frameHeight: Int) {
+        drawPendingEventMarker(pixels, frameWidth, frameHeight, blueFirst = false)
+    }
+
+    /** Paints and consumes a pending input-event marker over a BGRA8888 frame. */
+    public fun drawPendingEventMarkerBgra(pixels: ByteArray, frameWidth: Int, frameHeight: Int) {
+        drawPendingEventMarker(pixels, frameWidth, frameHeight, blueFirst = true)
+    }
+
     private fun draw(
         pixels: ByteArray,
         frameWidth: Int,
@@ -75,6 +89,24 @@ public class InputOverlayRenderer(
         val x = labelX(hotspotX, label.width, frameWidth)
         val y = labelY(hotspotY, label.height, frameHeight)
         blendLabel(pixels, frameWidth, frameHeight, x, y, label, blueFirst)
+    }
+
+    private fun drawPendingEventMarker(
+        destination: ByteArray,
+        frameWidth: Int,
+        frameHeight: Int,
+        blueFirst: Boolean,
+    ) {
+        val painted = eventMarkerPending && paintInputEventFrameMarker(
+            pixels = destination,
+            frameWidth = frameWidth,
+            frameHeight = frameHeight,
+            strideBytes = frameWidth * RGBA_CHANNEL_COUNT,
+            pixelFormat = if (blueFirst) PixelFormat.Bgra8888 else PixelFormat.Rgba8888,
+        )
+        if (painted) {
+            eventMarkerPending = false
+        }
     }
 
     private fun render(text: String): RenderedLabel {

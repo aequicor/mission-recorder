@@ -182,6 +182,9 @@ data class RecorderUiState(
     val canResumeRecording: Boolean
         get() = isPaused
 
+    val canMarkImportantFrame: Boolean
+        get() = isRecording
+
     val canToggleMicrophoneMute: Boolean
         get() = selectedMicrophoneId != null
 
@@ -231,6 +234,7 @@ sealed interface RecorderUiAction {
     data class SetStoryboardMode(val mode: StoryboardMode) : RecorderUiAction
     data class SetReplayDurationMinutes(val minutes: Int) : RecorderUiAction
     data object SelectRegion : RecorderUiAction
+    data object SelectRegionAndStartRecording : RecorderUiAction
     data object ChooseOutputFile : RecorderUiAction
     data object OpenRecordingsFolder : RecorderUiAction
     data object RefreshSources : RecorderUiAction
@@ -240,6 +244,7 @@ sealed interface RecorderUiAction {
     data object PauseRecording : RecorderUiAction
     data object ResumeRecording : RecorderUiAction
     data object StopRecording : RecorderUiAction
+    data object MarkImportantFrame : RecorderUiAction
     data object ExportStoryboard : RecorderUiAction
     data object StartReplayBuffer : RecorderUiAction
     data object SaveReplayBuffer : RecorderUiAction

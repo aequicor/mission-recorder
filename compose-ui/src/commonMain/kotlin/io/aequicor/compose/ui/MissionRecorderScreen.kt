@@ -34,6 +34,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -69,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -95,6 +97,7 @@ import io.aequicor.compose.resources.show_capture_border
 import io.aequicor.compose.resources.show_application_in_recording
 import io.aequicor.compose.resources.show_input_overlay
 import io.aequicor.compose.resources.choose_output_file
+import io.aequicor.compose.resources.close
 import io.aequicor.compose.resources.create_storyboard
 import io.aequicor.compose.resources.creating_storyboard
 import io.aequicor.compose.resources.dismiss
@@ -102,9 +105,11 @@ import io.aequicor.compose.resources.dropped_frames
 import io.aequicor.compose.resources.effective_fps
 import io.aequicor.compose.resources.frame_rate
 import io.aequicor.compose.resources.frames_per_second
+import io.aequicor.compose.resources.hide_mini_controller
 import io.aequicor.compose.resources.file_name_pattern
 import io.aequicor.compose.resources.file_name_pattern_hint
 import io.aequicor.compose.resources.configure_hotkeys
+import io.aequicor.compose.resources.keyboard
 import io.aequicor.compose.resources.material_symbols_rounded
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.megabits_per_second
@@ -118,6 +123,7 @@ import io.aequicor.compose.resources.output
 import io.aequicor.compose.resources.output_directory
 import io.aequicor.compose.resources.output_naming
 import io.aequicor.compose.resources.open_recordings_folder
+import io.aequicor.compose.resources.open_in_full
 import io.aequicor.compose.resources.output_path
 import io.aequicor.compose.resources.output_device
 import io.aequicor.compose.resources.overwrite_output
@@ -169,6 +175,7 @@ import io.aequicor.compose.resources.storyboard_saved_to
 import io.aequicor.compose.resources.storyboard_separate_png
 import io.aequicor.compose.resources.system_audio
 import io.aequicor.compose.resources.system_audio_gain
+import io.aequicor.compose.resources.tray_open
 import io.aequicor.compose.resources.unavailable
 import io.aequicor.compose.resources.unmute_microphone
 import io.aequicor.compose.resources.unmute_system_audio
@@ -381,68 +388,82 @@ fun MiniRecorderController(
     onAction: (RecorderUiAction) -> Unit,
     shortcutLabels: RecorderShortcutLabels = RecorderShortcutLabels(),
     modifier: Modifier = Modifier,
+    onExpand: () -> Unit = {},
+    onHide: () -> Unit = {},
 ) {
     MissionRecorderTheme {
         Surface(
             modifier = modifier.fillMaxSize(),
+            shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         ) {
-            Row(
-                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.fillMaxSize().padding(6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                val selectedSource = state.sources.firstOrNull { source -> source.id == state.selectedSourceId }
-                Column(modifier = Modifier.weight(1f)) {
-                    if (state.isReplayActive || state.replayStatus == ReplayUiStatus.Failed) {
-                        ReplayStatusIndicator(state.replayStatus)
-                    } else {
-                        StatusIndicator(state.status)
-                    }
-                    Text(
-                        text = selectedSource?.displayName ?: stringResource(Res.string.no_capture_sources),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
+                MiniWindowButtons(onExpand = onExpand, onHide = onHide)
                 Text(
                     text = formatElapsed(
                         if (state.isReplayActive) state.replayRetainedMilliseconds else state.elapsedMilliseconds,
                     ),
-                    modifier = Modifier.width(72.dp).testTag("mini-elapsed"),
-                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.testTag("mini-elapsed"),
+                    style = MaterialTheme.typography.labelLarge,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                 )
-                Spacer(Modifier.width(4.dp))
-                AudioMuteButton(
-                    muted = state.microphoneMuted,
-                    enabled = state.canToggleMicrophoneMute,
-                    muteLabel = stringResource(Res.string.mute_microphone),
-                    unmuteLabel = stringResource(Res.string.unmute_microphone),
-                    mutedSymbol = Symbols.MicOff,
-                    unmutedSymbol = Symbols.Mic,
-                    testTag = "mini-microphone-mute",
-                    onMutedChange = { muted -> onAction(RecorderUiAction.SetMicrophoneMuted(muted)) },
-                )
-                AudioMuteButton(
-                    muted = state.systemAudioMuted,
-                    enabled = state.canToggleSystemAudioMute,
-                    muteLabel = stringResource(Res.string.mute_system_audio),
-                    unmuteLabel = stringResource(Res.string.unmute_system_audio),
-                    mutedSymbol = Symbols.VolumeOff,
-                    unmutedSymbol = Symbols.VolumeUp,
-                    testTag = "mini-system-audio-mute",
-                    onMutedChange = { muted -> onAction(RecorderUiAction.SetSystemAudioMuted(muted)) },
-                )
-                MiniPauseButton(state = state, onAction = onAction, shortcut = shortcutLabels.pause)
+                if (state.hasActiveRecording) {
+                    MiniPauseButton(state = state, onAction = onAction, shortcut = shortcutLabels.pause)
+                }
                 MiniRecordButton(state = state, onAction = onAction, shortcut = shortcutLabels.recording)
             }
         }
+    }
+}
+
+@Composable
+private fun MiniWindowButtons(onExpand: () -> Unit, onHide: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MiniWindowButton(
+            label = stringResource(Res.string.tray_open),
+            icon = painterResource(Res.drawable.open_in_full),
+            testTag = "mini-expand",
+            onClick = onExpand,
+        )
+        MiniWindowButton(
+            label = stringResource(Res.string.hide_mini_controller),
+            icon = painterResource(Res.drawable.close),
+            testTag = "mini-hide",
+            onClick = onHide,
+        )
+    }
+}
+
+@Composable
+private fun MiniWindowButton(
+    label: String,
+    icon: Painter,
+    testTag: String,
+    onClick: () -> Unit,
+) {
+    RecorderTooltipIconButton(
+        label = label,
+        enabled = true,
+        onClick = onClick,
+        modifier = Modifier.size(28.dp).testTag(testTag),
+    ) {
+        Icon(
+            painter = icon,
+            contentDescription = label,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -552,7 +573,10 @@ private fun ProfileSelector(
             onClick = onConfigureShortcuts,
             modifier = Modifier.testTag("configure-hotkeys"),
         ) {
-            MaterialSymbol(Symbols.Keyboard, configureHotkeysLabel)
+            Icon(
+                painter = painterResource(Res.drawable.keyboard),
+                contentDescription = configureHotkeysLabel,
+            )
         }
     }
 }
@@ -1485,7 +1509,7 @@ private fun MiniRecordButton(
             )
         },
         modifier = Modifier
-            .size(44.dp)
+            .size(40.dp)
             .clip(RoundedCornerShape(6.dp))
             .background(containerColor)
             .testTag("mini-record-toggle"),
@@ -1514,7 +1538,7 @@ private fun MiniPauseButton(
         onClick = {
             onAction(if (state.isPaused) RecorderUiAction.ResumeRecording else RecorderUiAction.PauseRecording)
         },
-        modifier = Modifier.size(40.dp).testTag("mini-pause-toggle"),
+        modifier = Modifier.size(36.dp).testTag("mini-pause-toggle"),
     ) {
         MaterialSymbol(
             symbol = if (state.isPaused) Symbols.Resume else Symbols.Pause,
@@ -2046,7 +2070,6 @@ private object Symbols {
     const val ExpandMore = "\uE5CF"
     const val Folder = "\uE2C7"
     const val FolderOpen = "\uE2C8"
-    const val Keyboard = "\uE312"
     const val Mic = "\uE31D"
     const val MicOff = "\uE02B"
     const val Monitor = "\uEF5B"

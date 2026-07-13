@@ -1,11 +1,14 @@
 package io.aequicor.media.desktop.ffmpeg
 
+import io.aequicor.capture.core.InputEventFrameMarker
 import org.bytedeco.javacv.FFmpegFrameGrabber
+import org.bytedeco.javacv.Frame
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_BGRA
 import java.awt.Color
 import java.awt.Font
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
+import java.nio.ByteBuffer
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -33,6 +36,7 @@ data class StoryboardExportSettings(
     val outputPath: Path,
     val layout: StoryboardLayout,
     val interval: Duration = 1.seconds,
+    /** Maximum number of regularly sampled frames; marked input-event frames are always retained. */
     val maxFrames: Int = 120,
 )
 
@@ -145,17 +149,23 @@ class FfmpegStoryboardExporter : StoryboardExporter {
         var nextTimestampMicros = 0L
         var sourceFrameCount = 0
         var exportedFrameCount = 0
+        var regularFrameCount = 0
         val deduplicator = StoryboardFrameDeduplicator()
         try {
             grabber.start()
-            while (sourceFrameCount < settings.maxFrames) {
+            while (true) {
                 val frame = grabber.grabImage() ?: break
                 val timestamp = grabber.timestamp.coerceAtLeast(0)
-                if (timestamp >= nextTimestampMicros) {
+                val inputEvent = frame.hasInputEventMarker()
+                val regularSample = regularFrameCount < settings.maxFrames && timestamp >= nextTimestampMicros
+                if (regularSample || inputEvent) {
                     val image = frame.bgraToBufferedImage()
                     sourceFrameCount += 1
-                    nextTimestampMicros = timestamp + intervalMicros
-                    if (deduplicator.shouldRetain(image)) {
+                    if (regularSample) {
+                        regularFrameCount += 1
+                        nextTimestampMicros = timestamp + intervalMicros
+                    }
+                    if (inputEvent || deduplicator.shouldRetain(image)) {
                         consume(exportedFrameCount, timestamp, image)
                         exportedFrameCount += 1
                     }
@@ -196,6 +206,68 @@ class FfmpegStoryboardExporter : StoryboardExporter {
             throw StoryboardExportException("PNG writer is not available.")
         }
     }
+}
+
+internal fun Frame.hasInputEventMarker(): Boolean {
+    if (imageDepth != Frame.DEPTH_UBYTE || imageChannels != MARKER_CHANNEL_COUNT || image.isNullOrEmpty()) {
+        return false
+    }
+    val markerWidth = InputEventFrameMarker.COLUMN_COUNT * InputEventFrameMarker.CELL_SIZE_PIXELS
+    val markerHeight = InputEventFrameMarker.ROW_COUNT * InputEventFrameMarker.CELL_SIZE_PIXELS
+    if (
+        imageWidth < InputEventFrameMarker.MARGIN_PIXELS + markerWidth ||
+        imageHeight < InputEventFrameMarker.MARGIN_PIXELS + markerHeight
+    ) {
+        return false
+    }
+    val pixels = (image[0] as? ByteBuffer)?.duplicate() ?: return false
+    var mismatches = 0
+    repeat(InputEventFrameMarker.ROW_COUNT) { row ->
+        repeat(InputEventFrameMarker.COLUMN_COUNT) { column ->
+            val color = markerCellColor(pixels, row, column)
+            val matches = if (InputEventFrameMarker.isAccentCell(row, column)) {
+                color.isMarkerAccent()
+            } else {
+                color.isMarkerBackground()
+            }
+            if (!matches) {
+                mismatches += 1
+            }
+        }
+    }
+    return mismatches <= MAX_MARKER_CELL_MISMATCHES
+}
+
+private fun Frame.markerCellColor(pixels: ByteBuffer, row: Int, column: Int): MarkerColor {
+    val cellX = InputEventFrameMarker.MARGIN_PIXELS + column * InputEventFrameMarker.CELL_SIZE_PIXELS
+    val cellY = InputEventFrameMarker.MARGIN_PIXELS + row * InputEventFrameMarker.CELL_SIZE_PIXELS
+    val sampleOffset = (InputEventFrameMarker.CELL_SIZE_PIXELS - MARKER_SAMPLE_SIZE) / 2
+    var red = 0
+    var green = 0
+    var blue = 0
+    repeat(MARKER_SAMPLE_SIZE) { y ->
+        repeat(MARKER_SAMPLE_SIZE) { x ->
+            val offset = (cellY + sampleOffset + y) * imageStride +
+                (cellX + sampleOffset + x) * MARKER_CHANNEL_COUNT
+            blue += pixels.get(offset).toInt() and 0xff
+            green += pixels.get(offset + 1).toInt() and 0xff
+            red += pixels.get(offset + 2).toInt() and 0xff
+        }
+    }
+    val sampleCount = MARKER_SAMPLE_SIZE * MARKER_SAMPLE_SIZE
+    return MarkerColor(red / sampleCount, green / sampleCount, blue / sampleCount)
+}
+
+private data class MarkerColor(
+    val red: Int,
+    val green: Int,
+    val blue: Int,
+) {
+    fun isMarkerAccent(): Boolean = red >= MIN_MARKER_ACCENT_RED &&
+        red - green >= MIN_MARKER_ACCENT_RED_GREEN_DIFFERENCE &&
+        red - blue >= MIN_MARKER_ACCENT_RED_BLUE_DIFFERENCE
+
+    fun isMarkerBackground(): Boolean = max(red, max(green, blue)) <= MAX_MARKER_BACKGROUND_CHANNEL
 }
 
 private data class StoryboardDecodeResult(
@@ -349,6 +421,13 @@ private fun Throwable.asStoryboardException(
         ?: StoryboardExportException(message ?: fallbackMessage, this)
 
 private const val CELL_GAP = 8
+private const val MARKER_CHANNEL_COUNT = 4
+private const val MARKER_SAMPLE_SIZE = 2
+private const val MAX_MARKER_CELL_MISMATCHES = 3
+private const val MIN_MARKER_ACCENT_RED = 140
+private const val MIN_MARKER_ACCENT_RED_GREEN_DIFFERENCE = 65
+private const val MIN_MARKER_ACCENT_RED_BLUE_DIFFERENCE = 45
+private const val MAX_MARKER_BACKGROUND_CHANNEL = 90
 private const val MAX_TEMPORARY_PATH_ATTEMPTS = 10
 private const val FINGERPRINT_WIDTH = 64
 private const val FINGERPRINT_HEIGHT = 64

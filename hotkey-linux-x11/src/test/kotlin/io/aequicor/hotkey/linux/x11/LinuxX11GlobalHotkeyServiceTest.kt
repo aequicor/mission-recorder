@@ -21,12 +21,19 @@ import kotlin.time.Duration.Companion.seconds
 
 class LinuxX11GlobalHotkeyServiceTest {
     @Test
+    fun mapsCapturedKeyboardKeysToX11Keysyms() {
+        assertEquals(0x6BL, GlobalHotkeyKey.K.toX11Keysym())
+        assertEquals(0x33L, GlobalHotkeyKey.Digit3.toX11Keysym())
+        assertEquals(0xFFABL, GlobalHotkeyKey.NumpadAdd.toX11Keysym())
+    }
+
+    @Test
     fun registersLockVariantsSuppressesRepeatAndUnregistersOnOwningThread() = runBlocking {
         val nativeApi = FakeLinuxX11HotkeyNativeApi()
         val service = LinuxX11GlobalHotkeyService(defaultDesktopGlobalHotkeys, nativeApi)
 
         try {
-            assertEquals(16, nativeApi.grabs.size)
+            assertEquals(defaultDesktopGlobalHotkeys.size * 4, nativeApi.grabs.size)
             assertEquals(
                 listOf(5, 7, 21, 23),
                 nativeApi.grabs.take(4).map(NativeGrab::modifiers),
@@ -65,9 +72,15 @@ class LinuxX11GlobalHotkeyServiceTest {
             LinuxX11GlobalHotkeyService(defaultDesktopGlobalHotkeys, nativeApi)
         }
 
-        assertEquals(defaultDesktopGlobalHotkeys[1], failure.binding)
+        assertEquals(
+            defaultDesktopGlobalHotkeys.first { binding -> binding.gesture.key == GlobalHotkeyKey.F10 },
+            failure.binding,
+        )
         assertEquals(10, failure.nativeErrorCode)
-        assertEquals(nativeApi.grabs.take(4).asReversed(), nativeApi.ungrabs)
+        val failedBindingIndex = defaultDesktopGlobalHotkeys.indexOfFirst { binding ->
+            binding.gesture.key == GlobalHotkeyKey.F10
+        }
+        assertEquals(nativeApi.grabs.take(failedBindingIndex * 4).asReversed(), nativeApi.ungrabs)
         assertTrue(nativeApi.closed)
     }
 
@@ -121,12 +134,7 @@ private class FakeLinuxX11HotkeyNativeApi(
         eventThreadId = Thread.currentThread().threadId()
     }
 
-    override fun keycode(key: GlobalHotkeyKey): Int = when (key) {
-        GlobalHotkeyKey.F8 -> 74
-        GlobalHotkeyKey.F9 -> 75
-        GlobalHotkeyKey.F10 -> 76
-        GlobalHotkeyKey.F11 -> 95
-    }
+    override fun keycode(key: GlobalHotkeyKey): Int = fakeKeycodes[key] ?: key.ordinal + 1
 
     override fun grabKey(keycode: Int, modifiers: Int): Int? {
         grabThreadIds += Thread.currentThread().threadId()
@@ -156,5 +164,13 @@ private class FakeLinuxX11HotkeyNativeApi(
         messages.put(message)
     }
 }
+
+private val fakeKeycodes = mapOf(
+    GlobalHotkeyKey.F8 to 74,
+    GlobalHotkeyKey.F9 to 75,
+    GlobalHotkeyKey.F10 to 76,
+    GlobalHotkeyKey.F11 to 95,
+    GlobalHotkeyKey.F12 to 96,
+)
 
 private data class NativeGrab(val keycode: Int, val modifiers: Int)

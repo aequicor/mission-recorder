@@ -62,6 +62,12 @@ class DesktopGlobalHotkeysTest {
             actions::add,
         )
         routeGlobalHotkey(GlobalHotkeyAction.SelectRegion, ready, actions::add)
+        routeGlobalHotkey(GlobalHotkeyAction.SelectRegionAndStartRecording, ready, actions::add)
+        routeGlobalHotkey(
+            GlobalHotkeyAction.MarkImportantFrame,
+            ready.copy(status = RecorderStatus.Recording),
+            actions::add,
+        )
 
         assertEquals(
             listOf(
@@ -71,6 +77,8 @@ class DesktopGlobalHotkeysTest {
                 RecorderUiAction.StopRecording,
                 RecorderUiAction.SaveReplayBuffer,
                 RecorderUiAction.SelectRegion,
+                RecorderUiAction.SelectRegionAndStartRecording,
+                RecorderUiAction.MarkImportantFrame,
             ),
             actions,
         )

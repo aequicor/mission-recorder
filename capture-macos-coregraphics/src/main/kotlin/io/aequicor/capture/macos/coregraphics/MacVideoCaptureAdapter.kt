@@ -54,13 +54,13 @@ internal class MacVideoCaptureAdapter(
             }
             if (settings.showInputOverlay) {
                 val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
-                if (label != null && cursor != null) {
+                if (label != null) {
                     inputOverlay.drawRgba(
                         pixels = pixels,
                         frameWidth = captured.pixelWidth,
                         frameHeight = captured.pixelHeight,
-                        hotspotX = cursor.x,
-                        hotspotY = cursor.y,
+                        hotspotX = cursor?.x ?: 0,
+                        hotspotY = cursor?.y ?: 0,
                         text = label,
                     )
                 }
@@ -70,6 +70,9 @@ internal class MacVideoCaptureAdapter(
                 outputHeight = captured.pixelHeight
             } else if (captured.pixelWidth != outputWidth || captured.pixelHeight != outputHeight) {
                 pixels = pixels.fitInto(captured.pixelWidth, captured.pixelHeight, outputWidth, outputHeight)
+            }
+            if (settings.showInputOverlay) {
+                inputOverlay.drawPendingEventMarkerRgba(pixels, outputWidth, outputHeight)
             }
             emit(
                 VideoFrame(

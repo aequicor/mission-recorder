@@ -2,6 +2,7 @@ package io.aequicor.hotkey.windows.jna
 
 import io.aequicor.hotkey.GlobalHotkeyAction
 import io.aequicor.hotkey.GlobalHotkeyEvent
+import io.aequicor.hotkey.GlobalHotkeyKey
 import io.aequicor.hotkey.defaultDesktopGlobalHotkeys
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -19,18 +20,26 @@ import kotlin.time.Duration.Companion.seconds
 
 class WindowsGlobalHotkeyServiceTest {
     @Test
+    fun mapsCapturedKeyboardKeysToWindowsVirtualKeys() {
+        assertEquals(0x4B, GlobalHotkeyKey.K.toWindowsVirtualKey())
+        assertEquals(0x33, GlobalHotkeyKey.Digit3.toWindowsVirtualKey())
+        assertEquals(0x6B, GlobalHotkeyKey.NumpadAdd.toWindowsVirtualKey())
+    }
+
+    @Test
     fun registersDispatchesAndUnregistersBindingsOnMessageThread() = runBlocking {
         val nativeApi = FakeWindowsHotkeyNativeApi()
         val service = WindowsGlobalHotkeyService(defaultDesktopGlobalHotkeys, nativeApi)
 
         try {
             assertEquals(
-                listOf(
-                    NativeRegistration(id = 1, modifiers = 0x4006, virtualKey = 0x78),
-                    NativeRegistration(id = 2, modifiers = 0x4006, virtualKey = 0x79),
-                    NativeRegistration(id = 3, modifiers = 0x4006, virtualKey = 0x7A),
-                    NativeRegistration(id = 4, modifiers = 0x4006, virtualKey = 0x77),
-                ),
+                defaultDesktopGlobalHotkeys.mapIndexed { index, binding ->
+                    NativeRegistration(
+                        id = index + 1,
+                        modifiers = 0x4006,
+                        virtualKey = binding.gesture.key.toWindowsVirtualKey(),
+                    )
+                },
                 nativeApi.registrations,
             )
             val event = async(start = CoroutineStart.UNDISPATCHED) { service.events.first() }
@@ -45,7 +54,7 @@ class WindowsGlobalHotkeyServiceTest {
             service.close()
         }
 
-        assertEquals(listOf(4, 3, 2, 1), nativeApi.unregisteredIds)
+        assertEquals(defaultDesktopGlobalHotkeys.indices.map { index -> index + 1 }.reversed(), nativeApi.unregisteredIds)
         assertEquals(nativeApi.messageThreadId, nativeApi.registrationThreadIds.toSet().single())
         assertEquals(nativeApi.messageThreadId, nativeApi.unregistrationThreadIds.toSet().single())
     }

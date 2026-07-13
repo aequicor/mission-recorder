@@ -331,6 +331,8 @@ private fun GlobalHotkeySettings.toBindings(): List<GlobalHotkeyBinding> = listO
     togglePause.toBinding(GlobalHotkeyAction.TogglePause),
     saveReplay.toBinding(GlobalHotkeyAction.SaveReplay),
     selectRegion.toBinding(GlobalHotkeyAction.SelectRegion),
+    markImportantFrame.toBinding(GlobalHotkeyAction.MarkImportantFrame),
+    selectRegionAndStartRecording.toBinding(GlobalHotkeyAction.SelectRegionAndStartRecording),
 )
 
 private fun GlobalHotkeyGestureSettings.toBinding(action: GlobalHotkeyAction): GlobalHotkeyBinding =
@@ -352,10 +354,16 @@ private fun List<GlobalHotkeyBinding>.toSettings(): GlobalHotkeySettings {
     }
     val bindingsByAction = associateBy(GlobalHotkeyBinding::action)
     return GlobalHotkeySettings(
+        selectRegionAndStartRecording = requireNotNull(
+            bindingsByAction[GlobalHotkeyAction.SelectRegionAndStartRecording],
+        ).gesture.toSettings(),
         selectRegion = requireNotNull(bindingsByAction[GlobalHotkeyAction.SelectRegion]).gesture.toSettings(),
         toggleRecording = requireNotNull(bindingsByAction[GlobalHotkeyAction.ToggleRecording]).gesture.toSettings(),
         togglePause = requireNotNull(bindingsByAction[GlobalHotkeyAction.TogglePause]).gesture.toSettings(),
         saveReplay = requireNotNull(bindingsByAction[GlobalHotkeyAction.SaveReplay]).gesture.toSettings(),
+        markImportantFrame = requireNotNull(
+            bindingsByAction[GlobalHotkeyAction.MarkImportantFrame],
+        ).gesture.toSettings(),
     )
 }
 
@@ -378,19 +386,11 @@ private fun GlobalHotkeyModifier.toSettings(): GlobalHotkeyModifierSetting = whe
     GlobalHotkeyModifier.Meta -> GlobalHotkeyModifierSetting.Meta
 }
 
-private fun GlobalHotkeyKeySetting.toDomain(): GlobalHotkeyKey = when (this) {
-    GlobalHotkeyKeySetting.F8 -> GlobalHotkeyKey.F8
-    GlobalHotkeyKeySetting.F9 -> GlobalHotkeyKey.F9
-    GlobalHotkeyKeySetting.F10 -> GlobalHotkeyKey.F10
-    GlobalHotkeyKeySetting.F11 -> GlobalHotkeyKey.F11
-}
+private fun GlobalHotkeyKeySetting.toDomain(): GlobalHotkeyKey =
+    GlobalHotkeyKey.entries.firstOrNull { key -> key.name == value }
+        ?: throw IllegalArgumentException("Unsupported global hotkey key: $value.")
 
-private fun GlobalHotkeyKey.toSettings(): GlobalHotkeyKeySetting = when (this) {
-    GlobalHotkeyKey.F8 -> GlobalHotkeyKeySetting.F8
-    GlobalHotkeyKey.F9 -> GlobalHotkeyKeySetting.F9
-    GlobalHotkeyKey.F10 -> GlobalHotkeyKeySetting.F10
-    GlobalHotkeyKey.F11 -> GlobalHotkeyKeySetting.F11
-}
+private fun GlobalHotkeyKey.toSettings(): GlobalHotkeyKeySetting = GlobalHotkeyKeySetting(name)
 
 private fun uniqueProfileId(name: String, existingIds: Set<String>): String {
     val base = name

@@ -14,5 +14,14 @@ class GlobalHotkeysTest {
             defaultDesktopGlobalHotkeys.size,
             defaultDesktopGlobalHotkeys.map(GlobalHotkeyBinding::gesture).toSet().size,
         )
+        assertEquals(
+            GlobalHotkeyGesture(
+                modifiers = setOf(GlobalHotkeyModifier.Control, GlobalHotkeyModifier.Shift),
+                key = GlobalHotkeyKey.F7,
+            ),
+            defaultDesktopGlobalHotkeys.single {
+                it.action == GlobalHotkeyAction.SelectRegionAndStartRecording
+            }.gesture,
+        )
     }
 }

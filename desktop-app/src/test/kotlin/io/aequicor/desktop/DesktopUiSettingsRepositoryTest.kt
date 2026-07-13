@@ -159,7 +159,7 @@ class DesktopUiSettingsRepositoryTest {
         val bindings = listOf(
             GlobalHotkeyBinding(
                 action = GlobalHotkeyAction.ToggleRecording,
-                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Alt), GlobalHotkeyKey.F10),
+                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Alt), GlobalHotkeyKey.K),
             ),
             GlobalHotkeyBinding(
                 action = GlobalHotkeyAction.TogglePause,
@@ -172,6 +172,14 @@ class DesktopUiSettingsRepositoryTest {
             GlobalHotkeyBinding(
                 action = GlobalHotkeyAction.SelectRegion,
                 gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Shift), GlobalHotkeyKey.F8),
+            ),
+            GlobalHotkeyBinding(
+                action = GlobalHotkeyAction.MarkImportantFrame,
+                gesture = GlobalHotkeyGesture(emptySet(), GlobalHotkeyKey.Numpad1),
+            ),
+            GlobalHotkeyBinding(
+                action = GlobalHotkeyAction.SelectRegionAndStartRecording,
+                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Alt), GlobalHotkeyKey.F7),
             ),
         )
 

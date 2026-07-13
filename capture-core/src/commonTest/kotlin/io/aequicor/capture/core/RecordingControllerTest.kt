@@ -142,6 +142,44 @@ class RecordingControllerTest {
     }
 
     @Test
+    fun marksNextEncodedFrameAsImportant() = runTest {
+        val videoFrames = Channel<VideoFrame>(Channel.UNLIMITED)
+        val encoder = FakeMediaEncoder()
+        val controller = RecordingController(
+            videoCaptureAdapter = ChannelVideoCaptureAdapter(videoFrames),
+            audioCaptureAdapter = FakeAudioCaptureAdapter(),
+            mediaEncoder = encoder,
+            scope = backgroundScope,
+            clock = FakeMediaClock(),
+            sessionIdFactory = FixedSessionIdFactory(),
+        )
+        val frame = VideoFrame(
+            timestamp = MediaTimestamp(100_000_000),
+            width = 64,
+            height = 48,
+            pixelFormat = PixelFormat.Rgba8888,
+            strideBytes = 64 * 4,
+            sourceId = CaptureSourceId("screen-1"),
+            pixelData = ByteArray(64 * 48 * 4) { 0xff.toByte() },
+        )
+
+        assertIs<MarkImportantFrameResult.NotRecording>(controller.markImportantFrame())
+        controller.start(defaultSettings())
+        runCurrent()
+        assertIs<MarkImportantFrameResult.Marked>(controller.markImportantFrame())
+        videoFrames.send(frame)
+        runCurrent()
+
+        val marked = encoder.videoFrames.single()
+        val markerOffset = (
+            (InputEventFrameMarker.MARGIN_PIXELS + InputEventFrameMarker.CELL_SIZE_PIXELS / 2) * marked.strideBytes +
+                (InputEventFrameMarker.MARGIN_PIXELS + InputEventFrameMarker.CELL_SIZE_PIXELS / 2) * 4
+            )
+        assertEquals(InputEventFrameMarker.ACCENT_RED, requireNotNull(marked.pixelData)[markerOffset].toInt() and 0xff)
+        controller.stop()
+    }
+
+    @Test
     fun derivesEffectiveFramesPerSecondFromActiveDuration() {
         val metrics = RecordingMetrics(duration = 2.seconds, videoFrames = 120)
 

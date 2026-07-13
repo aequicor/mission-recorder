@@ -100,7 +100,12 @@ internal class WindowsGlobalHotkeyService(
             nativeApi.initializeMessageQueue()
             threadId.set(nativeApi.currentThreadId())
             bindingById.forEach { (id, binding) ->
-                if (!nativeApi.registerHotkey(id, binding.gesture.toNativeModifiers(), binding.gesture.key.toVirtualKey())) {
+                val registered = nativeApi.registerHotkey(
+                    id,
+                    binding.gesture.toNativeModifiers(),
+                    binding.gesture.key.toWindowsVirtualKey(),
+                )
+                if (!registered) {
                     throw GlobalHotkeyRegistrationException(binding, nativeApi.lastErrorCode())
                 }
                 registeredIds += id
@@ -153,11 +158,101 @@ private fun GlobalHotkeyGesture.toNativeModifiers(): Int =
         }
     }
 
-private fun GlobalHotkeyKey.toVirtualKey(): Int = when (this) {
-    GlobalHotkeyKey.F8 -> VK_F8
-    GlobalHotkeyKey.F9 -> VK_F9
-    GlobalHotkeyKey.F10 -> VK_F10
-    GlobalHotkeyKey.F11 -> VK_F11
+internal fun GlobalHotkeyKey.toWindowsVirtualKey(): Int = when (this) {
+    GlobalHotkeyKey.A,
+    GlobalHotkeyKey.B,
+    GlobalHotkeyKey.C,
+    GlobalHotkeyKey.D,
+    GlobalHotkeyKey.E,
+    GlobalHotkeyKey.F,
+    GlobalHotkeyKey.G,
+    GlobalHotkeyKey.H,
+    GlobalHotkeyKey.I,
+    GlobalHotkeyKey.J,
+    GlobalHotkeyKey.K,
+    GlobalHotkeyKey.L,
+    GlobalHotkeyKey.M,
+    GlobalHotkeyKey.N,
+    GlobalHotkeyKey.O,
+    GlobalHotkeyKey.P,
+    GlobalHotkeyKey.Q,
+    GlobalHotkeyKey.R,
+    GlobalHotkeyKey.S,
+    GlobalHotkeyKey.T,
+    GlobalHotkeyKey.U,
+    GlobalHotkeyKey.V,
+    GlobalHotkeyKey.W,
+    GlobalHotkeyKey.X,
+    GlobalHotkeyKey.Y,
+    GlobalHotkeyKey.Z
+    -> VK_A + ordinal - GlobalHotkeyKey.A.ordinal
+    GlobalHotkeyKey.Digit0,
+    GlobalHotkeyKey.Digit1,
+    GlobalHotkeyKey.Digit2,
+    GlobalHotkeyKey.Digit3,
+    GlobalHotkeyKey.Digit4,
+    GlobalHotkeyKey.Digit5,
+    GlobalHotkeyKey.Digit6,
+    GlobalHotkeyKey.Digit7,
+    GlobalHotkeyKey.Digit8,
+    GlobalHotkeyKey.Digit9
+    -> VK_0 + ordinal - GlobalHotkeyKey.Digit0.ordinal
+    GlobalHotkeyKey.F1,
+    GlobalHotkeyKey.F2,
+    GlobalHotkeyKey.F3,
+    GlobalHotkeyKey.F4,
+    GlobalHotkeyKey.F5,
+    GlobalHotkeyKey.F6,
+    GlobalHotkeyKey.F7,
+    GlobalHotkeyKey.F8,
+    GlobalHotkeyKey.F9,
+    GlobalHotkeyKey.F10,
+    GlobalHotkeyKey.F11,
+    GlobalHotkeyKey.F12
+    -> VK_F1 + ordinal - GlobalHotkeyKey.F1.ordinal
+    GlobalHotkeyKey.Space -> 0x20
+    GlobalHotkeyKey.Tab -> 0x09
+    GlobalHotkeyKey.Enter -> 0x0D
+    GlobalHotkeyKey.Escape -> 0x1B
+    GlobalHotkeyKey.Backspace -> 0x08
+    GlobalHotkeyKey.Insert -> 0x2D
+    GlobalHotkeyKey.Delete -> 0x2E
+    GlobalHotkeyKey.Home -> 0x24
+    GlobalHotkeyKey.End -> 0x23
+    GlobalHotkeyKey.PageUp -> 0x21
+    GlobalHotkeyKey.PageDown -> 0x22
+    GlobalHotkeyKey.ArrowUp -> 0x26
+    GlobalHotkeyKey.ArrowDown -> 0x28
+    GlobalHotkeyKey.ArrowLeft -> 0x25
+    GlobalHotkeyKey.ArrowRight -> 0x27
+    GlobalHotkeyKey.Minus -> 0xBD
+    GlobalHotkeyKey.Equal -> 0xBB
+    GlobalHotkeyKey.LeftBracket -> 0xDB
+    GlobalHotkeyKey.RightBracket -> 0xDD
+    GlobalHotkeyKey.Backslash -> 0xDC
+    GlobalHotkeyKey.Semicolon -> 0xBA
+    GlobalHotkeyKey.Apostrophe -> 0xDE
+    GlobalHotkeyKey.Comma -> 0xBC
+    GlobalHotkeyKey.Period -> 0xBE
+    GlobalHotkeyKey.Slash -> 0xBF
+    GlobalHotkeyKey.Grave -> 0xC0
+    GlobalHotkeyKey.Numpad0,
+    GlobalHotkeyKey.Numpad1,
+    GlobalHotkeyKey.Numpad2,
+    GlobalHotkeyKey.Numpad3,
+    GlobalHotkeyKey.Numpad4,
+    GlobalHotkeyKey.Numpad5,
+    GlobalHotkeyKey.Numpad6,
+    GlobalHotkeyKey.Numpad7,
+    GlobalHotkeyKey.Numpad8,
+    GlobalHotkeyKey.Numpad9
+    -> VK_NUMPAD0 + ordinal - GlobalHotkeyKey.Numpad0.ordinal
+    GlobalHotkeyKey.NumpadAdd -> 0x6B
+    GlobalHotkeyKey.NumpadSubtract -> 0x6D
+    GlobalHotkeyKey.NumpadMultiply -> 0x6A
+    GlobalHotkeyKey.NumpadDivide -> 0x6F
+    GlobalHotkeyKey.NumpadDecimal -> 0x6E
+    GlobalHotkeyKey.NumpadEnter -> 0x0D
 }
 
 private fun GlobalHotkeyGesture.displayName(): String =
@@ -171,7 +266,7 @@ private const val MOD_CONTROL = 0x0002
 private const val MOD_SHIFT = 0x0004
 private const val MOD_WIN = 0x0008
 private const val MOD_NOREPEAT = 0x4000
-private const val VK_F8 = 0x77
-private const val VK_F9 = 0x78
-private const val VK_F10 = 0x79
-private const val VK_F11 = 0x7A
+private const val VK_0 = 0x30
+private const val VK_A = 0x41
+private const val VK_F1 = 0x70
+private const val VK_NUMPAD0 = 0x60

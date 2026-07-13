@@ -39,6 +39,9 @@ data class DesktopUiSettings(
 /** Persisted gestures for desktop global hotkey actions. */
 @Serializable
 data class GlobalHotkeySettings(
+    val selectRegionAndStartRecording: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+        key = GlobalHotkeyKeySetting.F7,
+    ),
     val selectRegion: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
         key = GlobalHotkeyKeySetting.F8,
     ),
@@ -50,6 +53,9 @@ data class GlobalHotkeySettings(
     ),
     val saveReplay: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
         key = GlobalHotkeyKeySetting.F11,
+    ),
+    val markImportantFrame: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+        key = GlobalHotkeyKeySetting.F12,
     ),
 )
 
@@ -72,13 +78,18 @@ enum class GlobalHotkeyModifierSetting {
     Meta,
 }
 
-/** Function keys supported by desktop global hotkey adapters. */
+/** Stable key identifier persisted for a desktop global hotkey. */
 @Serializable
-enum class GlobalHotkeyKeySetting {
-    F8,
-    F9,
-    F10,
-    F11,
+@JvmInline
+value class GlobalHotkeyKeySetting(val value: String) {
+    companion object {
+        val F7: GlobalHotkeyKeySetting = GlobalHotkeyKeySetting("F7")
+        val F8: GlobalHotkeyKeySetting = GlobalHotkeyKeySetting("F8")
+        val F9: GlobalHotkeyKeySetting = GlobalHotkeyKeySetting("F9")
+        val F10: GlobalHotkeyKeySetting = GlobalHotkeyKeySetting("F10")
+        val F11: GlobalHotkeyKeySetting = GlobalHotkeyKeySetting("F11")
+        val F12: GlobalHotkeyKeySetting = GlobalHotkeyKeySetting("F12")
+    }
 }
 
 @Serializable

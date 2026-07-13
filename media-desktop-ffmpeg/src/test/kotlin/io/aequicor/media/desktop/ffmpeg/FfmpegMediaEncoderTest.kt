@@ -21,6 +21,7 @@ import io.aequicor.capture.core.ResumeRecordingResult
 import io.aequicor.capture.core.StopRecordingResult
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.withInputEventFrameMarker
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -158,6 +159,40 @@ class FfmpegMediaEncoderTest {
 
         assertTrue(Files.size(output) > original.size)
         inspectVideo(output, expectedAudioChannels = 0)
+    }
+
+    @Test
+    fun storyboardRetainsMarkedInputFrameAfterRegularSampleLimit() = runTest {
+        val temporaryDirectory = Files.createTempDirectory("mission-recorder-input-storyboard-test")
+        val output = temporaryDirectory.resolve("recording.mp4")
+        val settings = RecordingSettings(
+            captureSource = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen"),
+            outputPath = output.toString(),
+            frameRate = VIDEO_FRAME_RATE,
+        )
+        val session = RecordingSession(RecordingSessionId("input-storyboard-test"), settings, 0)
+        val encoder = FfmpegMediaEncoder()
+
+        encoder.open(session, settings)
+        repeat(VIDEO_FRAME_COUNT * 2) { index ->
+            val frame = solidRgbaFrame(index * FRAME_INTERVAL_NANOS, red = 0, green = 160, blue = 0)
+            encoder.writeVideoFrame(if (index == VIDEO_FRAME_COUNT + 5) frame.withInputEventFrameMarker() else frame)
+        }
+        encoder.finish(session, RecordingMetrics(videoFrames = (VIDEO_FRAME_COUNT * 2).toLong(), duration = 2.seconds))
+
+        val result = FfmpegStoryboardExporter().export(
+            StoryboardExportSettings(
+                inputVideo = output,
+                outputPath = temporaryDirectory.resolve("storyboard"),
+                layout = StoryboardLayout.SeparatePngFiles,
+                interval = 10.seconds,
+                maxFrames = 1,
+            ),
+        )
+
+        assertEquals(2, result.sourceFrameCount)
+        assertEquals(2, result.frameCount)
+        assertEquals(2, result.outputPaths.size)
     }
 
     @Test

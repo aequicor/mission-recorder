@@ -53,6 +53,12 @@ sealed interface ResumeRecordingResult {
     data class NotPaused(val state: RecordingState) : ResumeRecordingResult
 }
 
+/** Result of scheduling the next encoded video frame for unconditional storyboard retention. */
+sealed interface MarkImportantFrameResult {
+    data object Marked : MarkImportantFrameResult
+    data class NotRecording(val state: RecordingState) : MarkImportantFrameResult
+}
+
 sealed interface CancelRecordingResult {
     data class Cancelled(val state: RecordingState.Cancelled) : CancelRecordingResult
     data class NotRecording(val state: RecordingState) : CancelRecordingResult

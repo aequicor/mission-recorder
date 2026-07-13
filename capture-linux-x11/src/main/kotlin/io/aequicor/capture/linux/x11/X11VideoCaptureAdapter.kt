@@ -58,13 +58,13 @@ internal class X11VideoCaptureAdapter(
             }
             if (settings.showInputOverlay) {
                 val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
-                if (label != null && hotspotX != null && hotspotY != null) {
+                if (label != null) {
                     inputOverlay.drawRgba(
                         pixels = pixels,
                         frameWidth = captured.bounds.width,
                         frameHeight = captured.bounds.height,
-                        hotspotX = hotspotX,
-                        hotspotY = hotspotY,
+                        hotspotX = hotspotX ?: 0,
+                        hotspotY = hotspotY ?: 0,
                         text = label,
                     )
                 }
@@ -74,6 +74,9 @@ internal class X11VideoCaptureAdapter(
                 outputHeight = captured.bounds.height
             } else if (captured.bounds.width != outputWidth || captured.bounds.height != outputHeight) {
                 pixels = pixels.fitInto(captured.bounds.width, captured.bounds.height, outputWidth, outputHeight)
+            }
+            if (settings.showInputOverlay) {
+                inputOverlay.drawPendingEventMarkerRgba(pixels, outputWidth, outputHeight)
             }
             emit(
                 VideoFrame(

@@ -24,6 +24,12 @@ internal fun routeGlobalHotkey(
         GlobalHotkeyAction.SelectRegion -> RecorderUiAction.SelectRegion.takeIf {
             !state.isBusy && !state.isRefreshingSources
         }
+        GlobalHotkeyAction.SelectRegionAndStartRecording ->
+            RecorderUiAction.SelectRegionAndStartRecording.takeIf {
+                !state.isBusy && !state.isRefreshingSources && state.outputPath.isNotBlank()
+            }
+        GlobalHotkeyAction.MarkImportantFrame ->
+            RecorderUiAction.MarkImportantFrame.takeIf { state.canMarkImportantFrame }
     }
     uiAction?.let(onAction)
 }

@@ -18,9 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
@@ -64,9 +68,6 @@ import io.aequicor.compose.ui.RecorderUiAction
 import io.aequicor.compose.ui.StoryboardMode
 import io.aequicor.compose.resources.Res
 import io.aequicor.compose.resources.mission_recorder
-import io.aequicor.compose.resources.global_hotkeys
-import io.aequicor.compose.resources.configure_hotkeys
-import io.aequicor.compose.resources.enable_global_hotkeys
 import io.aequicor.compose.resources.mini_controller_title
 import io.aequicor.compose.resources.app_name
 import io.aequicor.compose.resources.tray_exit
@@ -93,6 +94,8 @@ import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.Frame
 import java.awt.GraphicsEnvironment
+import java.awt.MouseInfo
+import java.awt.Point
 import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.nio.file.Path
@@ -148,13 +151,10 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     var showHotkeySettingsDialog by remember { mutableStateOf(false) }
     val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
     val miniWindowState = rememberWindowState(
-        width = 488.dp,
-        height = 92.dp,
+        width = 72.dp,
+        height = 154.dp,
         position = WindowPosition(Alignment.TopEnd),
     )
-    val globalHotkeysLabel = stringResource(Res.string.global_hotkeys)
-    val enableGlobalHotkeysLabel = stringResource(Res.string.enable_global_hotkeys)
-    val configureHotkeysLabel = stringResource(Res.string.configure_hotkeys)
     val miniControllerTitle = stringResource(Res.string.mini_controller_title)
     val applicationName = stringResource(Res.string.app_name)
     val trayOpenLabel = stringResource(Res.string.tray_open)
@@ -372,27 +372,15 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         title = "Mission Recorder",
         icon = applicationIcon,
     ) {
-        MenuBar {
-            Menu(globalHotkeysLabel) {
-                CheckboxItem(
-                    text = enableGlobalHotkeysLabel,
-                    checked = globalHotkeysEnabled,
-                    enabled = hotkeyFactory.isSupported,
-                    onCheckedChange = { checked -> globalHotkeysEnabled = checked },
-                )
-                Separator()
-                Item(
-                    text = configureHotkeysLabel,
-                    onClick = { showHotkeySettingsDialog = true },
-                )
-            }
-        }
         if (showHotkeySettingsDialog) {
             MissionRecorderTheme {
                 DesktopHotkeySettingsDialog(
+                    enabled = globalHotkeysEnabled,
+                    hotkeysSupported = hotkeyFactory.isSupported,
                     bindings = globalHotkeyBindings,
                     onDismissRequest = { showHotkeySettingsDialog = false },
-                    onApply = { bindings ->
+                    onApply = { enabled, bindings ->
+                        globalHotkeysEnabled = enabled
                         globalHotkeyBindings = bindings
                         showHotkeySettingsDialog = false
                     },
@@ -453,14 +441,14 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             state = miniWindowState,
             title = miniControllerTitle,
             icon = applicationIcon,
-            resizable = true,
+            resizable = false,
+            undecorated = true,
+            transparent = true,
             focusable = false,
             alwaysOnTop = true,
         ) {
             LaunchedEffect(window) {
                 restoreMiniControllerPosition(window, desktopUiSettings)
-                window.minimumSize = window.size
-                window.maximumSize = window.size
             }
             LaunchedEffect(window, state.showApplicationInRecording) {
                 setWindowVisibleInCapture(window, state.showApplicationInRecording)
@@ -488,11 +476,44 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
                     saveMiniControllerPosition(window, desktopUiSettings)
                 }
             }
-            MiniRecorderController(
-                state = state,
-                onAction = viewModel::onAction,
-                shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
-            )
+            Box(
+                modifier = Modifier.fillMaxSize().pointerInput(window) {
+                    var pointerOrigin: Point? = null
+                    var windowOrigin: Point? = null
+                    detectDragGestures(
+                        onDragStart = {
+                            pointerOrigin = MouseInfo.getPointerInfo()?.location
+                            windowOrigin = window.location
+                        },
+                        onDragEnd = {
+                            pointerOrigin = null
+                            windowOrigin = null
+                        },
+                        onDragCancel = {
+                            pointerOrigin = null
+                            windowOrigin = null
+                        },
+                        onDrag = onDrag@{ change, _ ->
+                            val pointerStart = pointerOrigin ?: return@onDrag
+                            val windowStart = windowOrigin ?: return@onDrag
+                            val pointer = MouseInfo.getPointerInfo()?.location ?: return@onDrag
+                            change.consume()
+                            window.setLocation(
+                                windowStart.x + pointer.x - pointerStart.x,
+                                windowStart.y + pointer.y - pointerStart.y,
+                            )
+                        },
+                    )
+                },
+            ) {
+                MiniRecorderController(
+                    state = state,
+                    onAction = viewModel::onAction,
+                    shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
+                    onExpand = showFromTray,
+                    onHide = { showMiniController = false },
+                )
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ import io.aequicor.capture.core.EncoderSettings
 import io.aequicor.capture.core.PauseRecordingResult
 import io.aequicor.capture.core.PixelFormat
 import io.aequicor.capture.core.MediaTimestamp
+import io.aequicor.capture.core.MarkImportantFrameResult
 import io.aequicor.capture.core.RecordingMetrics
 import io.aequicor.capture.core.RecordingSession
 import io.aequicor.capture.core.RecordingSessionId
@@ -559,6 +560,10 @@ class DesktopRecorderViewModelTest {
         assertEquals(14_000_000, startedSettings.encoder.videoBitrateBitsPerSecond)
         assertEquals(144_000, startedSettings.encoder.audioBitrateBitsPerSecond)
 
+        viewModel.onAction(RecorderUiAction.MarkImportantFrame)
+        runCurrent()
+        assertEquals(1, engine.markImportantFrameCalls)
+
         viewModel.onAction(RecorderUiAction.PauseRecording)
         runCurrent()
         assertEquals(RecorderStatus.Paused, viewModel.state.value.status)
@@ -817,6 +822,40 @@ class DesktopRecorderViewModelTest {
         assertFalse(viewModel.state.value.isSelectingRegion)
         assertEquals(null, viewModel.state.value.selectedSourceId)
         assertEquals(null, viewModel.state.value.errorMessage)
+    }
+
+    @Test
+    fun startsRecordingAfterHotkeyRegionSelection() = runTest {
+        val region = CaptureRegion(
+            x = 100,
+            y = 200,
+            width = 1280,
+            height = 720,
+            monitorId = CaptureSourceId("monitor:1"),
+            scaleFactor = 1.0,
+            coordinateSpace = CoordinateSpace.LogicalPixels,
+        )
+        val engine = FakeDesktopRecordingEngine()
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(emptyList()),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = engine,
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            captureRegionSelector = CaptureRegionSelector {
+                CaptureRegionSelection.Selected(region)
+            },
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.SelectRegionAndStartRecording)
+        runCurrent()
+
+        val settings = assertNotNull(engine.startedSettings)
+        assertEquals(region, (settings.captureSource as CaptureSource.Region).region)
     }
 
     @Test
@@ -1229,6 +1268,8 @@ private class FakeDesktopRecordingEngine : DesktopRecordingEngine {
         private set
     var resumeCalls: Int = 0
         private set
+    var markImportantFrameCalls: Int = 0
+        private set
 
     override suspend fun start(settings: RecordingSettings): StartRecordingResult {
         startedSettings = settings
@@ -1291,6 +1332,14 @@ private class FakeDesktopRecordingEngine : DesktopRecordingEngine {
         mutableState.value = cancelled
         session = null
         return CancelRecordingResult.Cancelled(cancelled)
+    }
+
+    override suspend fun markImportantFrame(): MarkImportantFrameResult {
+        if (mutableState.value !is RecordingState.Recording) {
+            return MarkImportantFrameResult.NotRecording(mutableState.value)
+        }
+        markImportantFrameCalls += 1
+        return MarkImportantFrameResult.Marked
     }
 
     fun emitMetrics(metrics: RecordingMetrics) {

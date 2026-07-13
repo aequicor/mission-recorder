@@ -29,10 +29,12 @@ object MissionRecorderSettingsValidator {
 
     private fun MutableList<SettingsValidationIssue>.validateGlobalHotkeys(settings: GlobalHotkeySettings) {
         val gestures = listOf(
+            settings.selectRegionAndStartRecording,
             settings.selectRegion,
             settings.toggleRecording,
             settings.togglePause,
             settings.saveReplay,
+            settings.markImportantFrame,
         )
         if (gestures.distinct().size != gestures.size) {
             add(SettingsValidationIssue("desktopUi.globalHotkeys", "Global hotkey gestures must be unique."))

@@ -41,7 +41,7 @@ internal class JnaLinuxX11HotkeyNativeApi(
 
     override fun keycode(key: GlobalHotkeyKey): Int {
         val openedDisplay = requireNotNull(display)
-        val keycode = x11.XKeysymToKeycode(openedDisplay, X11.KeySym(key.keysym())).toInt() and 0xff
+        val keycode = x11.XKeysymToKeycode(openedDisplay, X11.KeySym(key.toX11Keysym())).toInt() and 0xff
         check(keycode != 0) { "X11 could not resolve ${key.name} to a keycode." }
         return keycode
     }
@@ -160,16 +160,106 @@ internal class JnaLinuxX11HotkeyNativeApi(
     }
 }
 
-private fun GlobalHotkeyKey.keysym(): Long = when (this) {
-    GlobalHotkeyKey.F8 -> XK_F8
-    GlobalHotkeyKey.F9 -> XK_F9
-    GlobalHotkeyKey.F10 -> XK_F10
-    GlobalHotkeyKey.F11 -> XK_F11
+internal fun GlobalHotkeyKey.toX11Keysym(): Long = when (this) {
+    GlobalHotkeyKey.A,
+    GlobalHotkeyKey.B,
+    GlobalHotkeyKey.C,
+    GlobalHotkeyKey.D,
+    GlobalHotkeyKey.E,
+    GlobalHotkeyKey.F,
+    GlobalHotkeyKey.G,
+    GlobalHotkeyKey.H,
+    GlobalHotkeyKey.I,
+    GlobalHotkeyKey.J,
+    GlobalHotkeyKey.K,
+    GlobalHotkeyKey.L,
+    GlobalHotkeyKey.M,
+    GlobalHotkeyKey.N,
+    GlobalHotkeyKey.O,
+    GlobalHotkeyKey.P,
+    GlobalHotkeyKey.Q,
+    GlobalHotkeyKey.R,
+    GlobalHotkeyKey.S,
+    GlobalHotkeyKey.T,
+    GlobalHotkeyKey.U,
+    GlobalHotkeyKey.V,
+    GlobalHotkeyKey.W,
+    GlobalHotkeyKey.X,
+    GlobalHotkeyKey.Y,
+    GlobalHotkeyKey.Z
+    -> XK_A + ordinal - GlobalHotkeyKey.A.ordinal
+    GlobalHotkeyKey.Digit0,
+    GlobalHotkeyKey.Digit1,
+    GlobalHotkeyKey.Digit2,
+    GlobalHotkeyKey.Digit3,
+    GlobalHotkeyKey.Digit4,
+    GlobalHotkeyKey.Digit5,
+    GlobalHotkeyKey.Digit6,
+    GlobalHotkeyKey.Digit7,
+    GlobalHotkeyKey.Digit8,
+    GlobalHotkeyKey.Digit9
+    -> XK_0 + ordinal - GlobalHotkeyKey.Digit0.ordinal
+    GlobalHotkeyKey.F1,
+    GlobalHotkeyKey.F2,
+    GlobalHotkeyKey.F3,
+    GlobalHotkeyKey.F4,
+    GlobalHotkeyKey.F5,
+    GlobalHotkeyKey.F6,
+    GlobalHotkeyKey.F7,
+    GlobalHotkeyKey.F8,
+    GlobalHotkeyKey.F9,
+    GlobalHotkeyKey.F10,
+    GlobalHotkeyKey.F11,
+    GlobalHotkeyKey.F12
+    -> XK_F1 + ordinal - GlobalHotkeyKey.F1.ordinal
+    GlobalHotkeyKey.Space -> 0x20L
+    GlobalHotkeyKey.Tab -> 0xFF09L
+    GlobalHotkeyKey.Enter -> 0xFF0DL
+    GlobalHotkeyKey.Escape -> 0xFF1BL
+    GlobalHotkeyKey.Backspace -> 0xFF08L
+    GlobalHotkeyKey.Insert -> 0xFF63L
+    GlobalHotkeyKey.Delete -> 0xFFFFL
+    GlobalHotkeyKey.Home -> 0xFF50L
+    GlobalHotkeyKey.End -> 0xFF57L
+    GlobalHotkeyKey.PageUp -> 0xFF55L
+    GlobalHotkeyKey.PageDown -> 0xFF56L
+    GlobalHotkeyKey.ArrowUp -> 0xFF52L
+    GlobalHotkeyKey.ArrowDown -> 0xFF54L
+    GlobalHotkeyKey.ArrowLeft -> 0xFF51L
+    GlobalHotkeyKey.ArrowRight -> 0xFF53L
+    GlobalHotkeyKey.Minus -> '-'.code.toLong()
+    GlobalHotkeyKey.Equal -> '='.code.toLong()
+    GlobalHotkeyKey.LeftBracket -> '['.code.toLong()
+    GlobalHotkeyKey.RightBracket -> ']'.code.toLong()
+    GlobalHotkeyKey.Backslash -> '\\'.code.toLong()
+    GlobalHotkeyKey.Semicolon -> ';'.code.toLong()
+    GlobalHotkeyKey.Apostrophe -> '\''.code.toLong()
+    GlobalHotkeyKey.Comma -> ','.code.toLong()
+    GlobalHotkeyKey.Period -> '.'.code.toLong()
+    GlobalHotkeyKey.Slash -> '/'.code.toLong()
+    GlobalHotkeyKey.Grave -> '`'.code.toLong()
+    GlobalHotkeyKey.Numpad0,
+    GlobalHotkeyKey.Numpad1,
+    GlobalHotkeyKey.Numpad2,
+    GlobalHotkeyKey.Numpad3,
+    GlobalHotkeyKey.Numpad4,
+    GlobalHotkeyKey.Numpad5,
+    GlobalHotkeyKey.Numpad6,
+    GlobalHotkeyKey.Numpad7,
+    GlobalHotkeyKey.Numpad8,
+    GlobalHotkeyKey.Numpad9
+    -> XK_KP_0 + ordinal - GlobalHotkeyKey.Numpad0.ordinal
+    GlobalHotkeyKey.NumpadAdd -> 0xFFABL
+    GlobalHotkeyKey.NumpadSubtract -> 0xFFADL
+    GlobalHotkeyKey.NumpadMultiply -> 0xFFAAL
+    GlobalHotkeyKey.NumpadDivide -> 0xFFAFL
+    GlobalHotkeyKey.NumpadDecimal -> 0xFFAEL
+    GlobalHotkeyKey.NumpadEnter -> 0xFF8DL
 }
 
 private val X11_ERROR_TRAP_LOCK = Any()
-private const val XK_F8 = 0xFFC5L
-private const val XK_F9 = 0xFFC6L
-private const val XK_F10 = 0xFFC7L
-private const val XK_F11 = 0xFFC8L
+private const val XK_0 = 0x30L
+private const val XK_A = 0x61L
+private const val XK_F1 = 0xFFBEL
+private const val XK_KP_0 = 0xFFB0L
 private const val WAKE_ATOM_NAME = "_MISSION_RECORDER_HOTKEY_WAKE"

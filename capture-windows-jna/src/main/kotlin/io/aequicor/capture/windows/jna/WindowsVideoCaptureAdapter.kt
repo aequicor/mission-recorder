@@ -66,13 +66,13 @@ class WindowsVideoCaptureAdapter internal constructor(
                 }
                 if (settings.showInputOverlay) {
                     val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
-                    if (label != null && hotspotX != null && hotspotY != null) {
+                    if (label != null) {
                         inputOverlay.drawBgra(
                             pixels = bgraPixels,
                             frameWidth = captured.bounds.width,
                             frameHeight = captured.bounds.height,
-                            hotspotX = hotspotX,
-                            hotspotY = hotspotY,
+                            hotspotX = hotspotX ?: 0,
+                            hotspotY = hotspotY ?: 0,
                             text = label,
                         )
                     }
@@ -88,6 +88,9 @@ class WindowsVideoCaptureAdapter internal constructor(
                         targetWidth = outputWidth,
                         targetHeight = outputHeight,
                     )
+                }
+                if (settings.showInputOverlay) {
+                    inputOverlay.drawPendingEventMarkerBgra(bgraPixels, outputWidth, outputHeight)
                 }
 
                 emit(

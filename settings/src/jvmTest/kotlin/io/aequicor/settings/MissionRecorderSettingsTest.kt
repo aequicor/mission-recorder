@@ -270,7 +270,7 @@ class MissionRecorderSettingsTest {
     }
 
     @Test
-    fun addsRegionSelectionShortcutToExistingHotkeySettings() {
+    fun addsMissingShortcutsToExistingHotkeySettings() {
         val settings = defaultSettingsJson.decodeFromString(
             GlobalHotkeySettings.serializer(),
             """
@@ -282,10 +282,12 @@ class MissionRecorderSettingsTest {
             """.trimIndent(),
         )
 
+        assertEquals(GlobalHotkeyKeySetting.F7, settings.selectRegionAndStartRecording.key)
         assertEquals(GlobalHotkeyKeySetting.F8, settings.selectRegion.key)
+        assertEquals(GlobalHotkeyKeySetting.F12, settings.markImportantFrame.key)
         assertEquals(
             setOf(GlobalHotkeyModifierSetting.Control, GlobalHotkeyModifierSetting.Shift),
-            settings.selectRegion.modifiers,
+            settings.selectRegionAndStartRecording.modifiers,
         )
     }
 }

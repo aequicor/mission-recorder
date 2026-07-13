@@ -138,6 +138,19 @@ class RecordingController(
         }
     }
 
+    /** Marks the next encoded frame as important while recording is active. */
+    suspend fun markImportantFrame(): MarkImportantFrameResult = frameGateMutex.withLock {
+        if (state.value !is RecordingState.Recording) {
+            return@withLock MarkImportantFrameResult.NotRecording(state.value)
+        }
+        val marked = metricsMutex.withLock metricsLock@{
+            val current = activeSession ?: return@metricsLock false
+            current.copy(importantFramePending = true).also { activeSession = it }
+            true
+        }
+        if (marked) MarkImportantFrameResult.Marked else MarkImportantFrameResult.NotRecording(state.value)
+    }
+
     suspend fun cancel(): CancelRecordingResult {
         val active = lifecycleMutex.withLock {
             val current = activeSession ?: return@withLock null
@@ -204,9 +217,17 @@ class RecordingController(
             if (current.isPaused || state.value !is RecordingState.Recording) {
                 return@withLock
             }
-            val adjustedFrame = frame.withPauseOffset(current.accumulatedPausedNanoseconds)
+            val adjustedFrame = frame
+                .withPauseOffset(current.accumulatedPausedNanoseconds)
+                .let { adjusted ->
+                    if (current.importantFramePending) adjusted.withInputEventFrameMarker() else adjusted
+                }
             mediaEncoder.writeVideoFrame(adjustedFrame)
-            updateVideoMetrics(active, adjustedFrame.timestamp)
+            updateVideoMetrics(
+                active = active,
+                timestamp = adjustedFrame.timestamp,
+                importantFrameConsumed = current.importantFramePending,
+            )
         }
     }
 
@@ -245,7 +266,11 @@ class RecordingController(
         }
     }
 
-    private suspend fun updateVideoMetrics(active: ActiveSession, timestamp: MediaTimestamp) {
+    private suspend fun updateVideoMetrics(
+        active: ActiveSession,
+        timestamp: MediaTimestamp,
+        importantFrameConsumed: Boolean,
+    ) {
         val updatedSession = metricsMutex.withLock {
             val current = activeSession?.takeIf { it.session.id == active.session.id } ?: return@withLock null
             val droppedFrames = current.estimatedDroppedFrames(timestamp.nanoseconds)
@@ -256,6 +281,7 @@ class RecordingController(
                     droppedFrames = current.metrics.droppedFrames + droppedFrames,
                 ),
                 lastVideoTimestampNanoseconds = timestamp.nanoseconds,
+                importantFramePending = current.importantFramePending && !importantFrameConsumed,
             ).also { activeSession = it }
         } ?: return
         if (state.value is RecordingState.Recording) {
@@ -294,6 +320,7 @@ class RecordingController(
         val pausedAtNanoseconds: Long? = null,
         val accumulatedPausedNanoseconds: Long = 0,
         val lastVideoTimestampNanoseconds: Long? = null,
+        val importantFramePending: Boolean = false,
     ) {
         val isPaused: Boolean
             get() = pausedAtNanoseconds != null

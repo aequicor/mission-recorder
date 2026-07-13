@@ -129,11 +129,97 @@ private fun GlobalHotkeyGesture.toMacModifiers(): Int = modifiers.fold(0) { resu
     }
 }
 
-private fun GlobalHotkeyKey.toMacKeycode(): Int = when (this) {
-    GlobalHotkeyKey.F8 -> MAC_KEYCODE_F8
-    GlobalHotkeyKey.F9 -> MAC_KEYCODE_F9
-    GlobalHotkeyKey.F10 -> MAC_KEYCODE_F10
-    GlobalHotkeyKey.F11 -> MAC_KEYCODE_F11
+internal fun GlobalHotkeyKey.toMacKeycode(): Int = when (this) {
+    GlobalHotkeyKey.A -> 0
+    GlobalHotkeyKey.B -> 11
+    GlobalHotkeyKey.C -> 8
+    GlobalHotkeyKey.D -> 2
+    GlobalHotkeyKey.E -> 14
+    GlobalHotkeyKey.F -> 3
+    GlobalHotkeyKey.G -> 5
+    GlobalHotkeyKey.H -> 4
+    GlobalHotkeyKey.I -> 34
+    GlobalHotkeyKey.J -> 38
+    GlobalHotkeyKey.K -> 40
+    GlobalHotkeyKey.L -> 37
+    GlobalHotkeyKey.M -> 46
+    GlobalHotkeyKey.N -> 45
+    GlobalHotkeyKey.O -> 31
+    GlobalHotkeyKey.P -> 35
+    GlobalHotkeyKey.Q -> 12
+    GlobalHotkeyKey.R -> 15
+    GlobalHotkeyKey.S -> 1
+    GlobalHotkeyKey.T -> 17
+    GlobalHotkeyKey.U -> 32
+    GlobalHotkeyKey.V -> 9
+    GlobalHotkeyKey.W -> 13
+    GlobalHotkeyKey.X -> 7
+    GlobalHotkeyKey.Y -> 16
+    GlobalHotkeyKey.Z -> 6
+    GlobalHotkeyKey.Digit0 -> 29
+    GlobalHotkeyKey.Digit1 -> 18
+    GlobalHotkeyKey.Digit2 -> 19
+    GlobalHotkeyKey.Digit3 -> 20
+    GlobalHotkeyKey.Digit4 -> 21
+    GlobalHotkeyKey.Digit5 -> 23
+    GlobalHotkeyKey.Digit6 -> 22
+    GlobalHotkeyKey.Digit7 -> 26
+    GlobalHotkeyKey.Digit8 -> 28
+    GlobalHotkeyKey.Digit9 -> 25
+    GlobalHotkeyKey.F1 -> 122
+    GlobalHotkeyKey.F2 -> 120
+    GlobalHotkeyKey.F3 -> 99
+    GlobalHotkeyKey.F4 -> 118
+    GlobalHotkeyKey.F5 -> 96
+    GlobalHotkeyKey.F6 -> 97
+    GlobalHotkeyKey.F7 -> 98
+    GlobalHotkeyKey.F8 -> 100
+    GlobalHotkeyKey.F9 -> 101
+    GlobalHotkeyKey.F10 -> 109
+    GlobalHotkeyKey.F11 -> 103
+    GlobalHotkeyKey.F12 -> 111
+    GlobalHotkeyKey.Space -> 49
+    GlobalHotkeyKey.Tab -> 48
+    GlobalHotkeyKey.Enter -> 36
+    GlobalHotkeyKey.Escape -> 53
+    GlobalHotkeyKey.Backspace -> 51
+    GlobalHotkeyKey.Insert -> 114
+    GlobalHotkeyKey.Delete -> 117
+    GlobalHotkeyKey.Home -> 115
+    GlobalHotkeyKey.End -> 119
+    GlobalHotkeyKey.PageUp -> 116
+    GlobalHotkeyKey.PageDown -> 121
+    GlobalHotkeyKey.ArrowUp -> 126
+    GlobalHotkeyKey.ArrowDown -> 125
+    GlobalHotkeyKey.ArrowLeft -> 123
+    GlobalHotkeyKey.ArrowRight -> 124
+    GlobalHotkeyKey.Minus -> 27
+    GlobalHotkeyKey.Equal -> 24
+    GlobalHotkeyKey.LeftBracket -> 33
+    GlobalHotkeyKey.RightBracket -> 30
+    GlobalHotkeyKey.Backslash -> 42
+    GlobalHotkeyKey.Semicolon -> 41
+    GlobalHotkeyKey.Apostrophe -> 39
+    GlobalHotkeyKey.Comma -> 43
+    GlobalHotkeyKey.Period -> 47
+    GlobalHotkeyKey.Slash -> 44
+    GlobalHotkeyKey.Grave -> 50
+    GlobalHotkeyKey.Numpad0 -> 82
+    GlobalHotkeyKey.Numpad1 -> 83
+    GlobalHotkeyKey.Numpad2 -> 84
+    GlobalHotkeyKey.Numpad3 -> 85
+    GlobalHotkeyKey.Numpad4 -> 86
+    GlobalHotkeyKey.Numpad5 -> 87
+    GlobalHotkeyKey.Numpad6 -> 88
+    GlobalHotkeyKey.Numpad7 -> 89
+    GlobalHotkeyKey.Numpad8 -> 91
+    GlobalHotkeyKey.Numpad9 -> 92
+    GlobalHotkeyKey.NumpadAdd -> 69
+    GlobalHotkeyKey.NumpadSubtract -> 78
+    GlobalHotkeyKey.NumpadMultiply -> 67
+    GlobalHotkeyKey.NumpadDivide -> 75
+    GlobalHotkeyKey.NumpadDecimal -> 65
+    GlobalHotkeyKey.NumpadEnter -> 76
 }
 
 private fun GlobalHotkeyGesture.displayName(): String =
@@ -142,7 +228,3 @@ private fun GlobalHotkeyGesture.displayName(): String =
 
 private const val NO_ERROR = 0
 private const val FIRST_HOTKEY_ID = 1
-private const val MAC_KEYCODE_F8 = 100
-private const val MAC_KEYCODE_F9 = 101
-private const val MAC_KEYCODE_F10 = 109
-private const val MAC_KEYCODE_F11 = 103

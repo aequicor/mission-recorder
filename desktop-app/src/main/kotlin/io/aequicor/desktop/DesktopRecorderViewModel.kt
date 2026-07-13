@@ -9,6 +9,7 @@ import io.aequicor.capture.core.CaptureSource
 import io.aequicor.capture.core.CaptureSourceId
 import io.aequicor.capture.core.CancelRecordingResult
 import io.aequicor.capture.core.EncoderSettings
+import io.aequicor.capture.core.MarkImportantFrameResult
 import io.aequicor.capture.core.PauseRecordingResult
 import io.aequicor.capture.core.PixelFormat
 import io.aequicor.capture.core.RecordingController
@@ -80,6 +81,7 @@ internal interface DesktopRecordingEngine {
     suspend fun resume(): ResumeRecordingResult
     suspend fun stop(): StopRecordingResult
     suspend fun cancel(): CancelRecordingResult
+    suspend fun markImportantFrame(): MarkImportantFrameResult
 }
 
 internal class RecordingControllerEngine(
@@ -96,6 +98,8 @@ internal class RecordingControllerEngine(
     override suspend fun stop(): StopRecordingResult = controller.stop()
 
     override suspend fun cancel(): CancelRecordingResult = controller.cancel()
+
+    override suspend fun markImportantFrame(): MarkImportantFrameResult = controller.markImportantFrame()
 }
 
 internal interface DesktopReplayEngine {
@@ -329,7 +333,8 @@ internal class DesktopRecorderViewModel(
             is RecorderUiAction.SetStoryboardInputPath -> setStoryboardInputPath(action.path)
             is RecorderUiAction.SetStoryboardMode -> setStoryboardMode(action.mode)
             is RecorderUiAction.SetReplayDurationMinutes -> setReplayDurationMinutes(action.minutes)
-            RecorderUiAction.SelectRegion -> selectRegion()
+            RecorderUiAction.SelectRegion -> selectRegion(startRecordingAfterSelection = false)
+            RecorderUiAction.SelectRegionAndStartRecording -> selectRegion(startRecordingAfterSelection = true)
             RecorderUiAction.ChooseOutputFile -> chooseOutputFile()
             RecorderUiAction.OpenRecordingsFolder -> openRecordingsFolder()
             RecorderUiAction.RefreshSources -> refreshSources()
@@ -339,6 +344,7 @@ internal class DesktopRecorderViewModel(
             RecorderUiAction.PauseRecording -> pauseRecording()
             RecorderUiAction.ResumeRecording -> resumeRecording()
             RecorderUiAction.StopRecording -> stopRecording()
+            RecorderUiAction.MarkImportantFrame -> markImportantFrame()
             RecorderUiAction.ExportStoryboard -> exportStoryboard()
             RecorderUiAction.StartReplayBuffer -> startReplayBuffer()
             RecorderUiAction.SaveReplayBuffer -> saveReplayBuffer()
@@ -836,14 +842,17 @@ internal class DesktopRecorderViewModel(
         )
     }
 
-    private fun selectRegion() {
+    private fun selectRegion(startRecordingAfterSelection: Boolean) {
         if (mutableState.value.isBusy || mutableState.value.isRefreshingSources) {
             return
         }
         mutableState.update { it.copy(isSelectingRegion = true, errorMessage = null) }
         scope.launch {
             try {
-                applyRegionSelection(captureRegionSelector.selectRegion())
+                applyRegionSelection(
+                    result = captureRegionSelector.selectRegion(),
+                    startRecordingAfterSelection = startRecordingAfterSelection,
+                )
             } catch (cancelled: CancellationException) {
                 mutableState.update { it.copy(isSelectingRegion = false) }
                 throw cancelled
@@ -858,7 +867,10 @@ internal class DesktopRecorderViewModel(
         }
     }
 
-    private fun applyRegionSelection(result: CaptureRegionSelection) {
+    private fun applyRegionSelection(
+        result: CaptureRegionSelection,
+        startRecordingAfterSelection: Boolean,
+    ) {
         when (result) {
             CaptureRegionSelection.Cancelled -> mutableState.update { it.copy(isSelectingRegion = false) }
             is CaptureRegionSelection.Unavailable -> mutableState.update {
@@ -886,6 +898,9 @@ internal class DesktopRecorderViewModel(
                     )
                 }
                 queueRecorderPreferences()
+                if (startRecordingAfterSelection) {
+                    startRecording()
+                }
             }
         }
     }
@@ -1109,6 +1124,18 @@ internal class DesktopRecorderViewModel(
                 is PauseRecordingResult.NotRecording -> mutableState.update {
                     it.copy(errorMessage = "Recording is not active.")
                 }
+            }
+        }
+    }
+
+    private fun markImportantFrame() {
+        if (!mutableState.value.canMarkImportantFrame) {
+            return
+        }
+        scope.launch {
+            when (recordingEngine.markImportantFrame()) {
+                MarkImportantFrameResult.Marked -> Unit
+                is MarkImportantFrameResult.NotRecording -> Unit
             }
         }
     }

@@ -187,8 +187,10 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun miniControllerHoistsRecordAndPerSourceMuteActions() = runComposeUiTest {
+    fun miniControllerHoistsPrimaryRecordingActions() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
+        var expandRequests = 0
+        var hideRequests = 0
         setContent {
             MiniRecorderController(
                 state = RecorderUiState(
@@ -206,18 +208,22 @@ class MissionRecorderScreenTest {
                     elapsedMilliseconds = 65_000,
                 ),
                 onAction = actions::add,
+                onExpand = { expandRequests++ },
+                onHide = { hideRequests++ },
             )
         }
 
-        onNodeWithTag("mini-microphone-mute").assertIsEnabled().performClick()
-        onNodeWithTag("mini-system-audio-mute").assertIsEnabled().performClick()
+        onAllNodesWithTag("mini-microphone-mute").assertCountEquals(0)
+        onAllNodesWithTag("mini-system-audio-mute").assertCountEquals(0)
+        onNodeWithTag("mini-expand").assertIsEnabled().performClick()
+        onNodeWithTag("mini-hide").assertIsEnabled().performClick()
         onNodeWithTag("mini-pause-toggle").assertIsEnabled().performClick()
         onNodeWithTag("mini-record-toggle").assertIsEnabled().performClick()
 
+        assertEquals(1, expandRequests)
+        assertEquals(1, hideRequests)
         assertEquals(
             listOf(
-                RecorderUiAction.SetMicrophoneMuted(true),
-                RecorderUiAction.SetSystemAudioMuted(false),
                 RecorderUiAction.PauseRecording,
                 RecorderUiAction.StopRecording,
             ),
@@ -232,7 +238,7 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun miniControllerDisablesMuteForUnselectedAudioSources() = runComposeUiTest {
+    fun miniControllerHidesPauseWithoutActiveRecording() = runComposeUiTest {
         setContent {
             MiniRecorderController(
                 state = RecorderUiState(
@@ -246,9 +252,7 @@ class MissionRecorderScreenTest {
             )
         }
 
-        onNodeWithTag("mini-microphone-mute").assertIsNotEnabled()
-        onNodeWithTag("mini-system-audio-mute").assertIsNotEnabled()
-        onNodeWithTag("mini-pause-toggle").assertIsNotEnabled()
+        onAllNodesWithTag("mini-pause-toggle").assertCountEquals(0)
         onNodeWithTag("mini-record-toggle").assertIsEnabled()
     }
 
