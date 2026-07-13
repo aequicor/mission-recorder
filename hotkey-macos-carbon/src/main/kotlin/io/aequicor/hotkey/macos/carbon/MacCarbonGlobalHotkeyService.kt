@@ -130,6 +130,7 @@ private fun GlobalHotkeyGesture.toMacModifiers(): Int = modifiers.fold(0) { resu
 }
 
 private fun GlobalHotkeyKey.toMacKeycode(): Int = when (this) {
+    GlobalHotkeyKey.F8 -> MAC_KEYCODE_F8
     GlobalHotkeyKey.F9 -> MAC_KEYCODE_F9
     GlobalHotkeyKey.F10 -> MAC_KEYCODE_F10
     GlobalHotkeyKey.F11 -> MAC_KEYCODE_F11
@@ -141,6 +142,7 @@ private fun GlobalHotkeyGesture.displayName(): String =
 
 private const val NO_ERROR = 0
 private const val FIRST_HOTKEY_ID = 1
+private const val MAC_KEYCODE_F8 = 100
 private const val MAC_KEYCODE_F9 = 101
 private const val MAC_KEYCODE_F10 = 109
 private const val MAC_KEYCODE_F11 = 103

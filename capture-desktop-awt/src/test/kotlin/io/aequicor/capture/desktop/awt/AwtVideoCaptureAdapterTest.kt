@@ -13,6 +13,7 @@ import java.awt.image.BufferedImage
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class AwtVideoCaptureAdapterTest {
@@ -32,6 +33,15 @@ class AwtVideoCaptureAdapterTest {
         val frame = adapter.frames(settings(captureCursor = true)).first()
 
         assertTrue(requireNotNull(frame.pixelData).containsPixelOtherThanWhite())
+    }
+
+    @Test
+    fun drawsHighlightAroundPointerHotspot() = runBlocking {
+        val adapter = adapter(pointer = Point(116, 216))
+
+        val frame = adapter.frames(settings(captureCursor = true)).first()
+
+        assertFalse(requireNotNull(frame.pixelData).isWhitePixel(x = 6, y = 16, width = 32))
     }
 
     @Test
@@ -87,6 +97,12 @@ private fun ByteArray.countPixelsOtherThanWhite(): Int =
     asList()
         .chunked(RGBA_CHANNEL_COUNT)
         .count { pixel -> pixel.any { channel -> channel.toInt() and 0xff != 0xff } }
+
+private fun ByteArray.isWhitePixel(x: Int, y: Int, width: Int): Boolean {
+    val offset = (y * width + x) * RGBA_CHANNEL_COUNT
+    return copyOfRange(offset, offset + RGBA_CHANNEL_COUNT)
+        .all { channel -> channel.toInt() and 0xff == 0xff }
+}
 
 private inline fun <T : java.awt.Graphics> T.use(block: (T) -> Unit) {
     try {

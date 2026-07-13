@@ -134,6 +134,8 @@ data class RecordingSettings(
     val overwriteOutput: Boolean = false,
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
+    /** Whether global keyboard and mouse presses are rendered next to the cursor in video frames. */
+    val showInputOverlay: Boolean = false,
     val replayDuration: Duration? = null,
     val encoder: EncoderSettings = EncoderSettings(),
 )

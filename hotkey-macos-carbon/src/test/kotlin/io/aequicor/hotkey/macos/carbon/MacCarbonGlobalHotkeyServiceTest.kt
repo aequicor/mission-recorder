@@ -28,6 +28,7 @@ class MacCarbonGlobalHotkeyServiceTest {
                     MacRegistration(1, keycode = 101, modifiers = 4_608),
                     MacRegistration(2, keycode = 109, modifiers = 4_608),
                     MacRegistration(3, keycode = 103, modifiers = 4_608),
+                    MacRegistration(4, keycode = 100, modifiers = 4_608),
                 ),
                 nativeApi.registrations,
             )
@@ -49,7 +50,7 @@ class MacCarbonGlobalHotkeyServiceTest {
             service.close()
         }
 
-        assertEquals(listOf(3, 2, 1), nativeApi.unregisteredIds)
+        assertEquals(listOf(4, 3, 2, 1), nativeApi.unregisteredIds)
         assertEquals(1, nativeApi.removeHandlerCalls)
     }
 

@@ -93,6 +93,7 @@ import io.aequicor.compose.resources.capture_source
 import io.aequicor.compose.resources.capture_cursor
 import io.aequicor.compose.resources.show_capture_border
 import io.aequicor.compose.resources.show_application_in_recording
+import io.aequicor.compose.resources.show_input_overlay
 import io.aequicor.compose.resources.choose_output_file
 import io.aequicor.compose.resources.create_storyboard
 import io.aequicor.compose.resources.creating_storyboard
@@ -103,6 +104,7 @@ import io.aequicor.compose.resources.frame_rate
 import io.aequicor.compose.resources.frames_per_second
 import io.aequicor.compose.resources.file_name_pattern
 import io.aequicor.compose.resources.file_name_pattern_hint
+import io.aequicor.compose.resources.configure_hotkeys
 import io.aequicor.compose.resources.material_symbols_rounded
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.megabits_per_second
@@ -188,6 +190,12 @@ private val PreviewBackground = Color(0xFF171A1D)
 private val Graphite = Color(0xFF20272D)
 private val MutedGraphite = Color(0xFF59646D)
 private val Hairline = Color(0xFFD8DDE2)
+
+/** Shortcut labels displayed by recording controls without coupling the UI to a platform hotkey API. */
+data class RecorderShortcutLabels(
+    val recording: String = "Ctrl+Shift+F9",
+    val pause: String = "Ctrl+Shift+F10",
+)
 
 private val MissionRecorderTypography = Typography(
     headlineSmall = TextStyle(
@@ -291,11 +299,15 @@ fun MissionRecorderScreen(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
     previewImage: ImageBitmap? = null,
+    onConfigureShortcuts: (() -> Unit)? = null,
+    shortcutLabels: RecorderShortcutLabels = RecorderShortcutLabels(),
     modifier: Modifier = Modifier,
 ) = MissionRecorderScreen(
     state = state,
     onAction = onAction,
     previewImage = { previewImage },
+    onConfigureShortcuts = onConfigureShortcuts,
+    shortcutLabels = shortcutLabels,
     modifier = modifier,
 )
 
@@ -310,11 +322,15 @@ fun MissionRecorderScreen(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
     previewImage: State<ImageBitmap?>,
+    onConfigureShortcuts: (() -> Unit)? = null,
+    shortcutLabels: RecorderShortcutLabels = RecorderShortcutLabels(),
     modifier: Modifier = Modifier,
 ) = MissionRecorderScreen(
     state = state,
     onAction = onAction,
     previewImage = { previewImage.value },
+    onConfigureShortcuts = onConfigureShortcuts,
+    shortcutLabels = shortcutLabels,
     modifier = modifier,
 )
 
@@ -323,6 +339,8 @@ private fun MissionRecorderScreen(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
     previewImage: () -> ImageBitmap?,
+    onConfigureShortcuts: (() -> Unit)?,
+    shortcutLabels: RecorderShortcutLabels,
     modifier: Modifier,
 ) {
     MissionRecorderTheme {
@@ -337,7 +355,11 @@ private fun MissionRecorderScreen(
         }
         Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(modifier = Modifier.fillMaxSize()) {
-                AppHeader(state = state, onAction = onAction)
+                AppHeader(
+                    state = state,
+                    onAction = onAction,
+                    onConfigureShortcuts = onConfigureShortcuts,
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     if (maxWidth < 860.dp) {
@@ -347,7 +369,7 @@ private fun MissionRecorderScreen(
                     }
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                TransportBar(state = state, onAction = onAction)
+                TransportBar(state = state, onAction = onAction, shortcutLabels = shortcutLabels)
             }
         }
     }
@@ -357,6 +379,7 @@ private fun MissionRecorderScreen(
 fun MiniRecorderController(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
+    shortcutLabels: RecorderShortcutLabels = RecorderShortcutLabels(),
     modifier: Modifier = Modifier,
 ) {
     MissionRecorderTheme {
@@ -416,15 +439,19 @@ fun MiniRecorderController(
                     testTag = "mini-system-audio-mute",
                     onMutedChange = { muted -> onAction(RecorderUiAction.SetSystemAudioMuted(muted)) },
                 )
-                MiniPauseButton(state = state, onAction = onAction)
-                MiniRecordButton(state = state, onAction = onAction)
+                MiniPauseButton(state = state, onAction = onAction, shortcut = shortcutLabels.pause)
+                MiniRecordButton(state = state, onAction = onAction, shortcut = shortcutLabels.recording)
             }
         }
     }
 }
 
 @Composable
-private fun AppHeader(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
+private fun AppHeader(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    onConfigureShortcuts: (() -> Unit)?,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().height(64.dp).background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 20.dp),
@@ -449,7 +476,11 @@ private fun AppHeader(state: RecorderUiState, onAction: (RecorderUiAction) -> Un
             )
         }
         Spacer(Modifier.weight(1f))
-        ProfileSelector(state = state, onAction = onAction)
+        ProfileSelector(
+            state = state,
+            onAction = onAction,
+            onConfigureShortcuts = onConfigureShortcuts,
+        )
         Spacer(Modifier.width(12.dp))
         if (state.isReplayActive || state.replayStatus == ReplayUiStatus.Failed) {
             ReplayStatusIndicator(state.replayStatus)
@@ -460,7 +491,11 @@ private fun AppHeader(state: RecorderUiState, onAction: (RecorderUiAction) -> Un
 }
 
 @Composable
-private fun ProfileSelector(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
+private fun ProfileSelector(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    onConfigureShortcuts: (() -> Unit)?,
+) {
     var expanded by remember { mutableStateOf(false) }
     val selected = state.profiles.firstOrNull { profile -> profile.id == state.selectedProfileId }
     Box {
@@ -508,6 +543,17 @@ private fun ProfileSelector(state: RecorderUiState, onAction: (RecorderUiAction)
         modifier = Modifier.testTag("delete-profile"),
     ) {
         MaterialSymbol(Symbols.Delete, deleteLabel)
+    }
+    if (onConfigureShortcuts != null) {
+        val configureHotkeysLabel = stringResource(Res.string.configure_hotkeys)
+        RecorderTooltipIconButton(
+            label = configureHotkeysLabel,
+            enabled = true,
+            onClick = onConfigureShortcuts,
+            modifier = Modifier.testTag("configure-hotkeys"),
+        ) {
+            MaterialSymbol(Symbols.Keyboard, configureHotkeysLabel)
+        }
     }
 }
 
@@ -1045,6 +1091,23 @@ private fun SettingsPane(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
+                text = stringResource(Res.string.show_input_overlay),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(
+                checked = state.showInputOverlay,
+                onCheckedChange = { enabled -> onAction(RecorderUiAction.SetShowInputOverlay(enabled)) },
+                modifier = Modifier.testTag("show-input-overlay"),
+                enabled = !state.isBusy,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
                 text = stringResource(Res.string.capture_cursor),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1393,7 +1456,11 @@ private fun AudioSoloButton(
 }
 
 @Composable
-private fun MiniRecordButton(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
+private fun MiniRecordButton(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    shortcut: String,
+) {
     val label = when (state.status) {
         RecorderStatus.Preparing -> stringResource(Res.string.starting)
         RecorderStatus.Stopping -> stringResource(Res.string.stopping)
@@ -1410,6 +1477,7 @@ private fun MiniRecordButton(state: RecorderUiState, onAction: (RecorderUiAction
     }
     RecorderTooltipIconButton(
         label = label,
+        shortcut = shortcut,
         enabled = enabled,
         onClick = {
             onAction(
@@ -1432,11 +1500,16 @@ private fun MiniRecordButton(state: RecorderUiState, onAction: (RecorderUiAction
 }
 
 @Composable
-private fun MiniPauseButton(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
+private fun MiniPauseButton(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    shortcut: String,
+) {
     val label = if (state.isPaused) stringResource(Res.string.resume) else stringResource(Res.string.pause)
     val enabled = state.canPauseRecording || state.canResumeRecording
     RecorderTooltipIconButton(
         label = label,
+        shortcut = shortcut,
         enabled = enabled,
         onClick = {
             onAction(if (state.isPaused) RecorderUiAction.ResumeRecording else RecorderUiAction.PauseRecording)
@@ -1456,16 +1529,13 @@ private fun MiniPauseButton(state: RecorderUiState, onAction: (RecorderUiAction)
 @Composable
 private fun RecorderTooltipIconButton(
     label: String,
+    shortcut: String? = null,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-        tooltip = { PlainTooltip { Text(label) } },
-        state = rememberTooltipState(),
-    ) {
+    RecorderTooltipBox(label = label, shortcut = shortcut) {
         IconButton(
             onClick = onClick,
             enabled = enabled,
@@ -1474,6 +1544,24 @@ private fun RecorderTooltipIconButton(
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecorderTooltipBox(
+    label: String,
+    shortcut: String? = null,
+    content: @Composable () -> Unit,
+) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(shortcutTooltipLabel(label, shortcut)) } },
+        state = rememberTooltipState(),
+        content = content,
+    )
+}
+
+internal fun shortcutTooltipLabel(label: String, shortcut: String?): String =
+    if (shortcut == null) label else "$label · $shortcut"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1683,7 +1771,11 @@ private fun FrameRateSelector(
 }
 
 @Composable
-private fun TransportBar(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
+private fun TransportBar(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    shortcutLabels: RecorderShortcutLabels,
+) {
     val displayedElapsed = if (state.isReplayActive) {
         state.replayRetainedMilliseconds
     } else {
@@ -1748,6 +1840,7 @@ private fun TransportBar(state: RecorderUiState, onAction: (RecorderUiAction) ->
         val pauseLabel = if (state.isPaused) stringResource(Res.string.resume) else stringResource(Res.string.pause)
         RecorderTooltipIconButton(
             label = pauseLabel,
+            shortcut = shortcutLabels.pause,
             enabled = state.canPauseRecording || state.canResumeRecording,
             onClick = {
                 onAction(if (state.isPaused) RecorderUiAction.ResumeRecording else RecorderUiAction.PauseRecording)
@@ -1761,22 +1854,31 @@ private fun TransportBar(state: RecorderUiState, onAction: (RecorderUiAction) ->
             )
         }
         Spacer(Modifier.width(8.dp))
-        Button(
-            onClick = {
-                onAction(
-                    if (state.hasActiveRecording) RecorderUiAction.StopRecording else RecorderUiAction.StartRecording,
-                )
-            },
-            modifier = Modifier.testTag("record-toggle").widthIn(min = 132.dp).height(46.dp),
-            enabled = state.hasActiveRecording || state.canStart,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (state.hasActiveRecording) RecordingRed else MaterialTheme.colorScheme.primary,
-            ),
-            shape = RoundedCornerShape(6.dp),
+        RecorderTooltipBox(
+            label = buttonLabel,
+            shortcut = shortcutLabels.recording,
         ) {
-            MaterialSymbol(if (state.hasActiveRecording) Symbols.Stop else Symbols.Record, null, color = Color.White)
-            Spacer(Modifier.width(8.dp))
-            Text(buttonLabel)
+            Button(
+                onClick = {
+                    onAction(
+                        if (state.hasActiveRecording) {
+                            RecorderUiAction.StopRecording
+                        } else {
+                            RecorderUiAction.StartRecording
+                        },
+                    )
+                },
+                modifier = Modifier.testTag("record-toggle").widthIn(min = 132.dp).height(46.dp),
+                enabled = state.hasActiveRecording || state.canStart,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (state.hasActiveRecording) RecordingRed else MaterialTheme.colorScheme.primary,
+                ),
+                shape = RoundedCornerShape(6.dp),
+            ) {
+                MaterialSymbol(if (state.hasActiveRecording) Symbols.Stop else Symbols.Record, null, color = Color.White)
+                Spacer(Modifier.width(8.dp))
+                Text(buttonLabel)
+            }
         }
     }
 }
@@ -1944,6 +2046,7 @@ private object Symbols {
     const val ExpandMore = "\uE5CF"
     const val Folder = "\uE2C7"
     const val FolderOpen = "\uE2C8"
+    const val Keyboard = "\uE312"
     const val Mic = "\uE31D"
     const val MicOff = "\uE02B"
     const val Monitor = "\uEF5B"

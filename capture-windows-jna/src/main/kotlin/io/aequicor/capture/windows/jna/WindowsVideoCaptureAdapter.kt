@@ -8,6 +8,7 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.platform.InputOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -33,6 +34,7 @@ class WindowsVideoCaptureAdapter internal constructor(
         var selectedWindow: WindowsWindowDescriptor? = null
         var outputWidth = 0
         var outputHeight = 0
+        val inputOverlay = InputOverlayRenderer()
         val screenCapture = (selection as? WindowsSelection.Desktop)
             ?.let { desktop -> windowSystem.openScreenCapture(desktop.bounds, settings.frameRate) }
 
@@ -46,18 +48,34 @@ class WindowsVideoCaptureAdapter internal constructor(
                 }
                 captured.validate()
                 var bgraPixels = captured.bgraPixels
-                if (settings.captureCursor) {
-                    windowSystem.cursorPosition()
-                        ?.takeIf(captured.bounds::contains)
-                        ?.let { cursor ->
-                            RgbaCursorPainter.drawBgra(
-                                bgraPixels = bgraPixels,
-                                frameWidth = captured.bounds.width,
-                                frameHeight = captured.bounds.height,
-                                hotspotX = cursor.x - captured.bounds.x,
-                                hotspotY = cursor.y - captured.bounds.y,
-                            )
-                        }
+                val cursor = if (settings.captureCursor || settings.showInputOverlay) {
+                    windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
+                } else {
+                    null
+                }
+                val hotspotX = cursor?.x?.minus(captured.bounds.x)
+                val hotspotY = cursor?.y?.minus(captured.bounds.y)
+                if (settings.captureCursor && hotspotX != null && hotspotY != null) {
+                    RgbaCursorPainter.drawBgra(
+                        bgraPixels = bgraPixels,
+                        frameWidth = captured.bounds.width,
+                        frameHeight = captured.bounds.height,
+                        hotspotX = hotspotX,
+                        hotspotY = hotspotY,
+                    )
+                }
+                if (settings.showInputOverlay) {
+                    val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
+                    if (label != null && hotspotX != null && hotspotY != null) {
+                        inputOverlay.drawBgra(
+                            pixels = bgraPixels,
+                            frameWidth = captured.bounds.width,
+                            frameHeight = captured.bounds.height,
+                            hotspotX = hotspotX,
+                            hotspotY = hotspotY,
+                            text = label,
+                        )
+                    }
                 }
 
                 if (outputWidth == 0 || outputHeight == 0) {

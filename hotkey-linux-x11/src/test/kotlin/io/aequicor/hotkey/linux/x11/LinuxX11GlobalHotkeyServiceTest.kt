@@ -26,7 +26,7 @@ class LinuxX11GlobalHotkeyServiceTest {
         val service = LinuxX11GlobalHotkeyService(defaultDesktopGlobalHotkeys, nativeApi)
 
         try {
-            assertEquals(12, nativeApi.grabs.size)
+            assertEquals(16, nativeApi.grabs.size)
             assertEquals(
                 listOf(5, 7, 21, 23),
                 nativeApi.grabs.take(4).map(NativeGrab::modifiers),
@@ -122,6 +122,7 @@ private class FakeLinuxX11HotkeyNativeApi(
     }
 
     override fun keycode(key: GlobalHotkeyKey): Int = when (key) {
+        GlobalHotkeyKey.F8 -> 74
         GlobalHotkeyKey.F9 -> 75
         GlobalHotkeyKey.F10 -> 76
         GlobalHotkeyKey.F11 -> 95

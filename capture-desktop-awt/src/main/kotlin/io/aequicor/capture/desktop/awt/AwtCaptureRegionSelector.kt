@@ -18,11 +18,13 @@ import java.awt.GraphicsEnvironment
 import java.awt.Point
 import java.awt.Rectangle
 import java.awt.RenderingHints
+import java.awt.Toolkit
 import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.awt.geom.Area
+import java.awt.image.BufferedImage
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.AbstractAction
@@ -157,7 +159,7 @@ private class RegionSelectionWindow(
         bounds = Rectangle(virtualBounds)
         isAlwaysOnTop = true
         focusableWindowState = true
-        cursor = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
+        cursor = createRegionSelectionCursor()
         contentPane = surface
         if (perPixelTranslucent) {
             background = Color(0, 0, 0, 0)
@@ -182,6 +184,45 @@ private class RegionSelectionWindow(
         toFront()
         requestFocus()
     }
+}
+
+private fun createRegionSelectionCursor(): Cursor {
+    val fallback = Cursor.getPredefinedCursor(Cursor.CROSSHAIR_CURSOR)
+    return runCatching {
+        val toolkit = Toolkit.getDefaultToolkit()
+        val size = toolkit.getBestCursorSize(CURSOR_SIZE, CURSOR_SIZE)
+        if (size.width <= 0 || size.height <= 0) {
+            return@runCatching fallback
+        }
+        val image = createHighContrastCursorImage(width = size.width, height = size.height)
+        toolkit.createCustomCursor(
+            image,
+            Point(size.width / 2, size.height / 2),
+            "Mission Recorder region selection cursor",
+        )
+    }.getOrDefault(fallback)
+}
+
+internal fun createHighContrastCursorImage(width: Int, height: Int): BufferedImage {
+    require(width > 0 && height > 0) { "Cursor dimensions must be positive." }
+    val image = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+    val graphics = image.createGraphics()
+    try {
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val centerX = width / 2
+        val centerY = height / 2
+        graphics.color = Color.BLACK
+        graphics.stroke = BasicStroke(CURSOR_OUTLINE_STROKE)
+        graphics.drawLine(centerX, 0, centerX, height - 1)
+        graphics.drawLine(0, centerY, width - 1, centerY)
+        graphics.color = Color.WHITE
+        graphics.stroke = BasicStroke(CURSOR_FOREGROUND_STROKE)
+        graphics.drawLine(centerX, 0, centerX, height - 1)
+        graphics.drawLine(0, centerY, width - 1, centerY)
+    } finally {
+        graphics.dispose()
+    }
+    return image
 }
 
 private class RegionSelectionSurface(
@@ -285,6 +326,9 @@ private class RegionSelectionSurface(
 
 private const val MIN_SELECTION_SIZE = 4
 private const val CANCEL_ACTION = "cancel-region-selection"
+private const val CURSOR_SIZE = 32
+private const val CURSOR_OUTLINE_STROKE = 5.0f
+private const val CURSOR_FOREGROUND_STROKE = 2.0f
 private const val FALLBACK_WINDOW_OPACITY = 0.35f
 private const val SELECTION_STROKE = 2.0f
 private const val LABEL_PADDING = 5

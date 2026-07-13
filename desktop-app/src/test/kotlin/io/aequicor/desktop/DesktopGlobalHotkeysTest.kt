@@ -7,10 +7,30 @@ import io.aequicor.compose.ui.RecorderUiAction
 import io.aequicor.compose.ui.RecorderUiState
 import io.aequicor.compose.ui.ReplayUiStatus
 import io.aequicor.hotkey.GlobalHotkeyAction
+import io.aequicor.hotkey.GlobalHotkeyGesture
+import io.aequicor.hotkey.GlobalHotkeyKey
+import io.aequicor.hotkey.GlobalHotkeyModifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class DesktopGlobalHotkeysTest {
+    @Test
+    fun formatsShortcutModifiersInUiOrder() {
+        assertEquals(
+            "Ctrl+Alt+Shift+F11",
+            formatGlobalHotkeyGesture(
+                GlobalHotkeyGesture(
+                    modifiers = setOf(
+                        GlobalHotkeyModifier.Shift,
+                        GlobalHotkeyModifier.Control,
+                        GlobalHotkeyModifier.Alt,
+                    ),
+                    key = GlobalHotkeyKey.F11,
+                ),
+            ),
+        )
+    }
+
     @Test
     fun routesActionsOnlyWhenTheirCurrentStateAllowsThem() {
         val actions = mutableListOf<RecorderUiAction>()
@@ -41,6 +61,7 @@ class DesktopGlobalHotkeysTest {
             ready.copy(replayStatus = ReplayUiStatus.Buffering, replayVideoFrames = 30),
             actions::add,
         )
+        routeGlobalHotkey(GlobalHotkeyAction.SelectRegion, ready, actions::add)
 
         assertEquals(
             listOf(
@@ -49,6 +70,7 @@ class DesktopGlobalHotkeysTest {
                 RecorderUiAction.ResumeRecording,
                 RecorderUiAction.StopRecording,
                 RecorderUiAction.SaveReplayBuffer,
+                RecorderUiAction.SelectRegion,
             ),
             actions,
         )

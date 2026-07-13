@@ -12,6 +12,15 @@ import io.aequicor.settings.toEncoderProfileSettings
 import io.aequicor.settings.toEncoderSettings
 import io.aequicor.settings.toRecordingSettings
 import io.aequicor.compose.ui.StoryboardMode
+import io.aequicor.hotkey.GlobalHotkeyAction
+import io.aequicor.hotkey.GlobalHotkeyBinding
+import io.aequicor.hotkey.GlobalHotkeyGesture
+import io.aequicor.hotkey.GlobalHotkeyKey
+import io.aequicor.hotkey.GlobalHotkeyModifier
+import io.aequicor.settings.GlobalHotkeyGestureSettings
+import io.aequicor.settings.GlobalHotkeyKeySetting
+import io.aequicor.settings.GlobalHotkeyModifierSetting
+import io.aequicor.settings.GlobalHotkeySettings
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -39,6 +48,7 @@ internal class DesktopUiSettingsRepository(
                 frameRate = profile.video.frameRate.takeIf { it in SUPPORTED_DESKTOP_FRAME_RATES }
                     ?: DEFAULT_DESKTOP_FRAME_RATE,
                 captureCursor = profile.video.captureCursor,
+                showInputOverlay = profile.video.showInputOverlay,
                 replayDurationMinutes = (profile.replay.durationSeconds / SECONDS_PER_MINUTE)
                     .coerceIn(MIN_REPLAY_MINUTES.toLong(), MAX_REPLAY_MINUTES.toLong())
                     .toInt(),
@@ -49,6 +59,7 @@ internal class DesktopUiSettingsRepository(
                 encoderSettings = profile.encoder.toEncoderSettings(),
             ),
             globalHotkeysEnabled = settings.desktopUi.globalHotkeysEnabled,
+            globalHotkeyBindings = settings.desktopUi.globalHotkeys.toBindings(),
             showApplicationInRecording = settings.desktopUi.showApplicationInRecording,
             showCaptureBorder = settings.desktopUi.showCaptureBorder,
         )
@@ -161,6 +172,7 @@ internal class DesktopUiSettingsRepository(
                     video = profile.video.copy(
                         frameRate = preferences.frameRate,
                         captureCursor = preferences.captureCursor,
+                        showInputOverlay = preferences.showInputOverlay,
                     ),
                     replay = profile.replay.copy(
                         durationSeconds = preferences.replayDurationMinutes * SECONDS_PER_MINUTE,
@@ -185,9 +197,19 @@ internal class DesktopUiSettingsRepository(
         )
     }
 
-    fun saveGlobalHotkeysEnabled(enabled: Boolean) = synchronized(lock) {
+    fun saveGlobalHotkeySettings(
+        enabled: Boolean,
+        bindings: List<GlobalHotkeyBinding>,
+    ) = synchronized(lock) {
         val settings = store.loadOrDefault()
-        store.save(settings.copy(desktopUi = settings.desktopUi.copy(globalHotkeysEnabled = enabled)))
+        store.save(
+            settings.copy(
+                desktopUi = settings.desktopUi.copy(
+                    globalHotkeysEnabled = enabled,
+                    globalHotkeys = bindings.toSettings(),
+                ),
+            ),
+        )
     }
 
     fun saveShowApplicationInRecording(enabled: Boolean) = synchronized(lock) {
@@ -220,6 +242,7 @@ internal class DesktopUiSettingsRepository(
                 frameRate = video.frameRate.takeIf { it in SUPPORTED_DESKTOP_FRAME_RATES }
                     ?: DEFAULT_DESKTOP_FRAME_RATE,
                 captureCursor = video.captureCursor,
+                showInputOverlay = video.showInputOverlay,
                 replayDurationMinutes = (replay.durationSeconds / SECONDS_PER_MINUTE)
                     .coerceIn(MIN_REPLAY_MINUTES.toLong(), MAX_REPLAY_MINUTES.toLong())
                     .toInt(),
@@ -244,6 +267,7 @@ internal class DesktopUiSettingsRepository(
         video = video.copy(
             frameRate = snapshot.preferences.frameRate,
             captureCursor = snapshot.preferences.captureCursor,
+            showInputOverlay = snapshot.preferences.showInputOverlay,
         ),
         audio = AudioSettings(snapshot.audioSources.map { source -> source.toAudioSourceSettings() }),
         output = output.copy(
@@ -300,6 +324,72 @@ private fun io.aequicor.settings.DesktopUiSettings.with(
 private fun StoryboardLayoutSetting.toStoryboardMode(): StoryboardMode = when (this) {
     StoryboardLayoutSetting.SeparatePngFiles -> StoryboardMode.SeparatePngFiles
     StoryboardLayoutSetting.ContactSheet -> StoryboardMode.ContactSheet
+}
+
+private fun GlobalHotkeySettings.toBindings(): List<GlobalHotkeyBinding> = listOf(
+    toggleRecording.toBinding(GlobalHotkeyAction.ToggleRecording),
+    togglePause.toBinding(GlobalHotkeyAction.TogglePause),
+    saveReplay.toBinding(GlobalHotkeyAction.SaveReplay),
+    selectRegion.toBinding(GlobalHotkeyAction.SelectRegion),
+)
+
+private fun GlobalHotkeyGestureSettings.toBinding(action: GlobalHotkeyAction): GlobalHotkeyBinding =
+    GlobalHotkeyBinding(
+        action = action,
+        gesture = GlobalHotkeyGesture(
+            modifiers = modifiers.mapTo(mutableSetOf(), GlobalHotkeyModifierSetting::toDomain),
+            key = key.toDomain(),
+        ),
+    )
+
+private fun List<GlobalHotkeyBinding>.toSettings(): GlobalHotkeySettings {
+    require(size == GlobalHotkeyAction.entries.size) { "Every global hotkey action must have one binding." }
+    require(map(GlobalHotkeyBinding::action).distinct().size == size) {
+        "Global hotkey actions must be unique."
+    }
+    require(map(GlobalHotkeyBinding::gesture).distinct().size == size) {
+        "Global hotkey gestures must be unique."
+    }
+    val bindingsByAction = associateBy(GlobalHotkeyBinding::action)
+    return GlobalHotkeySettings(
+        selectRegion = requireNotNull(bindingsByAction[GlobalHotkeyAction.SelectRegion]).gesture.toSettings(),
+        toggleRecording = requireNotNull(bindingsByAction[GlobalHotkeyAction.ToggleRecording]).gesture.toSettings(),
+        togglePause = requireNotNull(bindingsByAction[GlobalHotkeyAction.TogglePause]).gesture.toSettings(),
+        saveReplay = requireNotNull(bindingsByAction[GlobalHotkeyAction.SaveReplay]).gesture.toSettings(),
+    )
+}
+
+private fun GlobalHotkeyGesture.toSettings(): GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+    modifiers = modifiers.mapTo(mutableSetOf(), GlobalHotkeyModifier::toSettings),
+    key = key.toSettings(),
+)
+
+private fun GlobalHotkeyModifierSetting.toDomain(): GlobalHotkeyModifier = when (this) {
+    GlobalHotkeyModifierSetting.Alt -> GlobalHotkeyModifier.Alt
+    GlobalHotkeyModifierSetting.Control -> GlobalHotkeyModifier.Control
+    GlobalHotkeyModifierSetting.Shift -> GlobalHotkeyModifier.Shift
+    GlobalHotkeyModifierSetting.Meta -> GlobalHotkeyModifier.Meta
+}
+
+private fun GlobalHotkeyModifier.toSettings(): GlobalHotkeyModifierSetting = when (this) {
+    GlobalHotkeyModifier.Alt -> GlobalHotkeyModifierSetting.Alt
+    GlobalHotkeyModifier.Control -> GlobalHotkeyModifierSetting.Control
+    GlobalHotkeyModifier.Shift -> GlobalHotkeyModifierSetting.Shift
+    GlobalHotkeyModifier.Meta -> GlobalHotkeyModifierSetting.Meta
+}
+
+private fun GlobalHotkeyKeySetting.toDomain(): GlobalHotkeyKey = when (this) {
+    GlobalHotkeyKeySetting.F8 -> GlobalHotkeyKey.F8
+    GlobalHotkeyKeySetting.F9 -> GlobalHotkeyKey.F9
+    GlobalHotkeyKeySetting.F10 -> GlobalHotkeyKey.F10
+    GlobalHotkeyKeySetting.F11 -> GlobalHotkeyKey.F11
+}
+
+private fun GlobalHotkeyKey.toSettings(): GlobalHotkeyKeySetting = when (this) {
+    GlobalHotkeyKey.F8 -> GlobalHotkeyKeySetting.F8
+    GlobalHotkeyKey.F9 -> GlobalHotkeyKeySetting.F9
+    GlobalHotkeyKey.F10 -> GlobalHotkeyKeySetting.F10
+    GlobalHotkeyKey.F11 -> GlobalHotkeyKeySetting.F11
 }
 
 private fun uniqueProfileId(name: String, existingIds: Set<String>): String {

@@ -131,12 +131,13 @@ class DesktopRecorderViewModelTest {
         runCurrent()
 
         assertEquals(PreviewUiStatus.Active, viewModel.state.value.previewStatus)
-        assertEquals(15, assertNotNull(preview.settings).frameRate)
+        assertEquals(5, assertNotNull(preview.settings).frameRate)
         assertTrue(assertNotNull(preview.settings).audioSources.isEmpty())
         assertFalse(assertNotNull(preview.settings).captureCursor)
+        assertEquals(PixelFormat.Rgba8888, assertNotNull(viewModel.previewFrame.value).pixelFormat)
         assertEquals(
             listOf(255.toByte(), 0.toByte(), 0.toByte(), 255.toByte()),
-            assertNotNull(viewModel.previewFrame.value).rgbaPixels.take(4),
+            assertNotNull(viewModel.previewFrame.value).pixelData.take(4),
         )
 
         viewModel.onAction(RecorderUiAction.StartRecording)
@@ -149,7 +150,7 @@ class DesktopRecorderViewModelTest {
     }
 
     @Test
-    fun preservesNativeResolutionForAFullWidthQhdPreview() = runTest {
+    fun preservesFullWidthQhdPreviewResolution() = runTest {
         val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
         val viewModel = DesktopRecorderViewModel(
             scope = backgroundScope,
@@ -170,6 +171,51 @@ class DesktopRecorderViewModelTest {
         val preview = assertNotNull(viewModel.previewFrame.value)
         assertEquals(3440, preview.width)
         assertEquals(1440, preview.height)
+        assertEquals(preview.width * preview.height * 4, preview.pixelData.size)
+    }
+
+    @Test
+    fun preservesBgraPreviewWithPaddedRowsWithoutCopying() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val width = 2
+        val strideBytes = width * 4 + 8
+        val pixels = ByteArray(strideBytes * 2).also { data ->
+            data[0] = 10
+            data[1] = 20
+            data[2] = 30
+            val lastSampleOffset = strideBytes + 4
+            data[lastSampleOffset] = 50
+            data[lastSampleOffset + 1] = 60
+            data[lastSampleOffset + 2] = 70
+        }
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            previewEngine = FakeDesktopPreviewEngine(
+                width = width,
+                height = 2,
+                pixelFormat = PixelFormat.Bgra8888,
+                strideBytes = strideBytes,
+                pixels = pixels,
+            ),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.StartPreview)
+        runCurrent()
+
+        val preview = assertNotNull(viewModel.previewFrame.value)
+        assertEquals(width, preview.width)
+        assertEquals(2, preview.height)
+        assertEquals(PixelFormat.Bgra8888, preview.pixelFormat)
+        assertEquals(strideBytes, preview.strideBytes)
+        assertTrue(preview.pixelData === pixels)
     }
 
     @Test
@@ -429,6 +475,7 @@ class DesktopRecorderViewModelTest {
         val initial = DesktopRecorderPreferences(
             frameRate = 15,
             captureCursor = false,
+            showInputOverlay = true,
             replayDurationMinutes = 8,
             storyboardMode = StoryboardMode.ContactSheet,
             encoderSettings = EncoderSettings(
@@ -453,12 +500,14 @@ class DesktopRecorderViewModelTest {
 
         assertEquals(15, viewModel.state.value.frameRate)
         assertFalse(viewModel.state.value.captureCursor)
+        assertTrue(viewModel.state.value.showInputOverlay)
         assertEquals(8, viewModel.state.value.replayDurationMinutes)
         assertEquals(StoryboardMode.ContactSheet, viewModel.state.value.storyboardMode)
         assertEquals(12, viewModel.state.value.videoBitrateMbps)
 
         viewModel.onAction(RecorderUiAction.SetFrameRate(60))
         viewModel.onAction(RecorderUiAction.SetCaptureCursor(true))
+        viewModel.onAction(RecorderUiAction.SetShowInputOverlay(false))
         viewModel.onAction(RecorderUiAction.SetReplayDurationMinutes(11))
         viewModel.onAction(RecorderUiAction.SetStoryboardMode(StoryboardMode.SeparatePngFiles))
         viewModel.onAction(RecorderUiAction.SetVideoBitrateMbps(18))
@@ -468,6 +517,7 @@ class DesktopRecorderViewModelTest {
             DesktopRecorderPreferences(
                 frameRate = 60,
                 captureCursor = true,
+                showInputOverlay = false,
                 replayDurationMinutes = 11,
                 storyboardMode = StoryboardMode.SeparatePngFiles,
                 encoderSettings = initial.encoderSettings.copy(videoBitrateBitsPerSecond = 18_000_000),
@@ -499,11 +549,13 @@ class DesktopRecorderViewModelTest {
         runCurrent()
 
         viewModel.onAction(RecorderUiAction.SetCaptureCursor(false))
+        viewModel.onAction(RecorderUiAction.SetShowInputOverlay(true))
         viewModel.onAction(RecorderUiAction.StartRecording)
         runCurrent()
         assertEquals(RecorderStatus.Recording, viewModel.state.value.status)
         val startedSettings = assertNotNull(engine.startedSettings)
         assertFalse(startedSettings.captureCursor)
+        assertTrue(startedSettings.showInputOverlay)
         assertEquals(14_000_000, startedSettings.encoder.videoBitrateBitsPerSecond)
         assertEquals(144_000, startedSettings.encoder.audioBitrateBitsPerSecond)
 
@@ -1111,6 +1163,9 @@ private class StaticAudioSourceRepository(
 private class FakeDesktopPreviewEngine(
     private val width: Int = 2,
     private val height: Int = 1,
+    private val pixelFormat: PixelFormat = PixelFormat.Rgba8888,
+    private val strideBytes: Int = width * 4,
+    private val pixels: ByteArray = previewPixels(width, height),
 ) : DesktopPreviewEngine {
     var settings: RecordingSettings? = null
         private set
@@ -1128,10 +1183,10 @@ private class FakeDesktopPreviewEngine(
                     timestamp = MediaTimestamp(0),
                     width = width,
                     height = height,
-                    pixelFormat = PixelFormat.Rgba8888,
-                    strideBytes = width * 4,
+                    pixelFormat = pixelFormat,
+                    strideBytes = strideBytes,
                     sourceId = CaptureSourceId("screen:test"),
-                    pixelData = previewPixels(width, height),
+                    pixelData = pixels,
                 ),
             )
             awaitCancellation()

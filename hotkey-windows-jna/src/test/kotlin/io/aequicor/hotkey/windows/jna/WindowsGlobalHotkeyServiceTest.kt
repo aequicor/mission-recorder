@@ -29,6 +29,7 @@ class WindowsGlobalHotkeyServiceTest {
                     NativeRegistration(id = 1, modifiers = 0x4006, virtualKey = 0x78),
                     NativeRegistration(id = 2, modifiers = 0x4006, virtualKey = 0x79),
                     NativeRegistration(id = 3, modifiers = 0x4006, virtualKey = 0x7A),
+                    NativeRegistration(id = 4, modifiers = 0x4006, virtualKey = 0x77),
                 ),
                 nativeApi.registrations,
             )
@@ -44,7 +45,7 @@ class WindowsGlobalHotkeyServiceTest {
             service.close()
         }
 
-        assertEquals(listOf(3, 2, 1), nativeApi.unregisteredIds)
+        assertEquals(listOf(4, 3, 2, 1), nativeApi.unregisteredIds)
         assertEquals(nativeApi.messageThreadId, nativeApi.registrationThreadIds.toSet().single())
         assertEquals(nativeApi.messageThreadId, nativeApi.unregistrationThreadIds.toSet().single())
     }

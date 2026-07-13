@@ -154,6 +154,7 @@ private fun GlobalHotkeyGesture.toNativeModifiers(): Int =
     }
 
 private fun GlobalHotkeyKey.toVirtualKey(): Int = when (this) {
+    GlobalHotkeyKey.F8 -> VK_F8
     GlobalHotkeyKey.F9 -> VK_F9
     GlobalHotkeyKey.F10 -> VK_F10
     GlobalHotkeyKey.F11 -> VK_F11
@@ -170,6 +171,7 @@ private const val MOD_CONTROL = 0x0002
 private const val MOD_SHIFT = 0x0004
 private const val MOD_WIN = 0x0008
 private const val MOD_NOREPEAT = 0x4000
+private const val VK_F8 = 0x77
 private const val VK_F9 = 0x78
 private const val VK_F10 = 0x79
 private const val VK_F11 = 0x7A

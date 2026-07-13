@@ -22,6 +22,7 @@ class MissionRecorderSettingsTest {
         assertEquals(emptyList(), MissionRecorderSettingsValidator.validate(settings))
         val defaultProfile = settings.profiles.single()
         assertTrue(defaultProfile.video.captureCursor)
+        assertEquals(false, defaultProfile.video.showInputOverlay)
         assertTrue(defaultProfile.output.fileNamePattern.endsWith(".mp4"))
 
         val encoded = defaultSettingsJson.encodeToString(MissionRecorderSettings.serializer(), settings)
@@ -85,6 +86,7 @@ class MissionRecorderSettingsTest {
                 ),
             ),
             encoder = EncoderProfileSettings(container = ContainerFormatSetting.Matroska),
+            video = VideoSettings(showInputOverlay = true),
             output = OutputSettings(overwrite = true),
         )
 
@@ -94,6 +96,7 @@ class MissionRecorderSettingsTest {
         assertEquals(640, source.region.width)
         assertEquals(1, recordingSettings.audioSources.size)
         assertEquals(ContainerFormat.Matroska, recordingSettings.encoder.container)
+        assertTrue(recordingSettings.showInputOverlay)
         assertTrue(recordingSettings.overwriteOutput)
     }
 
@@ -248,5 +251,41 @@ class MissionRecorderSettingsTest {
         assertEquals(CURRENT_SETTINGS_SCHEMA_VERSION, settings.schemaVersion)
         assertEquals(24_000_000, settings.profiles[0].encoder.videoBitrateBitsPerSecond)
         assertEquals(42_000_000, settings.profiles[1].encoder.videoBitrateBitsPerSecond)
+    }
+
+    @Test
+    fun rejectsDuplicateGlobalHotkeyGestures() {
+        val defaults = MissionRecorderSettingsFactory.defaultLocal()
+        val globalHotkeys = defaults.desktopUi.globalHotkeys
+        val invalid = defaults.copy(
+            desktopUi = defaults.desktopUi.copy(
+                globalHotkeys = globalHotkeys.copy(togglePause = globalHotkeys.toggleRecording),
+            ),
+        )
+
+        assertEquals(
+            listOf("desktopUi.globalHotkeys"),
+            MissionRecorderSettingsValidator.validate(invalid).map(SettingsValidationIssue::field),
+        )
+    }
+
+    @Test
+    fun addsRegionSelectionShortcutToExistingHotkeySettings() {
+        val settings = defaultSettingsJson.decodeFromString(
+            GlobalHotkeySettings.serializer(),
+            """
+                {
+                  "toggleRecording": { "modifiers": ["Control", "Shift"], "key": "F9" },
+                  "togglePause": { "modifiers": ["Control", "Shift"], "key": "F10" },
+                  "saveReplay": { "modifiers": ["Control", "Shift"], "key": "F11" }
+                }
+            """.trimIndent(),
+        )
+
+        assertEquals(GlobalHotkeyKeySetting.F8, settings.selectRegion.key)
+        assertEquals(
+            setOf(GlobalHotkeyModifierSetting.Control, GlobalHotkeyModifierSetting.Shift),
+            settings.selectRegion.modifiers,
+        )
     }
 }

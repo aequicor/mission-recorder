@@ -96,7 +96,7 @@ internal class JnaWindowsWindowSystem(
                     sourceDc,
                     0,
                     0,
-                    GDI32.SRCCOPY or CAPTUREBLT,
+                    cursorSafeRasterOperation,
                 )
                 if (copied) {
                     frameBytes = pixels.getByteArray(0, byteCount)
@@ -132,6 +132,12 @@ internal class JnaWindowsWindowSystem(
         val point = POINT()
         return if (user32.GetCursorPos(point)) WindowsPoint(point.x, point.y) else null
     }
+
+    override fun pressedInputs(): List<String> = WINDOWS_INPUTS
+        .filter { input -> input.virtualKeys.any(::isPressed) }
+        .map(WindowsInput::label)
+
+    private fun isPressed(virtualKey: Int): Boolean = user32.GetAsyncKeyState(virtualKey).toInt() and KEY_DOWN_MASK != 0
 
     private fun describeUserWindow(handle: HWND): WindowsWindowDescriptor? {
         if (!user32.IsWindow(handle) || !user32.IsWindowVisible(handle) || isCloaked(handle)) {
@@ -287,7 +293,7 @@ private class JnaWindowsScreenCapture(
                 sourceDc,
                 bounds.x,
                 bounds.y,
-                GDI32.SRCCOPY or CAPTUREBLT,
+                cursorSafeRasterOperation,
             )
         ) {
             throw nativeFailure("BitBlt")
@@ -369,13 +375,62 @@ private fun PointerType?.isInvalidGdiHandle(): Boolean =
 
 private fun Byte.isZero(): Boolean = this == 0.toByte()
 
+private data class WindowsInput(
+    val label: String,
+    val virtualKeys: IntArray,
+)
+
+private val WINDOWS_INPUTS: List<WindowsInput> = buildList {
+    add(WindowsInput("Ctrl", intArrayOf(0x11)))
+    add(WindowsInput("Shift", intArrayOf(0x10)))
+    add(WindowsInput("Alt", intArrayOf(0x12)))
+    add(WindowsInput("Win", intArrayOf(0x5b, 0x5c)))
+    addAll((0x41..0x5a).map { virtualKey -> WindowsInput(virtualKey.toChar().toString(), intArrayOf(virtualKey)) })
+    addAll((0x30..0x39).map { virtualKey -> WindowsInput(virtualKey.toChar().toString(), intArrayOf(virtualKey)) })
+    addAll((0x70..0x7b).mapIndexed { index, virtualKey -> WindowsInput("F${index + 1}", intArrayOf(virtualKey)) })
+    add(WindowsInput("Esc", intArrayOf(0x1b)))
+    add(WindowsInput("Tab", intArrayOf(0x09)))
+    add(WindowsInput("Enter", intArrayOf(0x0d)))
+    add(WindowsInput("Space", intArrayOf(0x20)))
+    add(WindowsInput("Backspace", intArrayOf(0x08)))
+    add(WindowsInput("Delete", intArrayOf(0x2e)))
+    add(WindowsInput("Insert", intArrayOf(0x2d)))
+    add(WindowsInput("Home", intArrayOf(0x24)))
+    add(WindowsInput("End", intArrayOf(0x23)))
+    add(WindowsInput("PgUp", intArrayOf(0x21)))
+    add(WindowsInput("PgDn", intArrayOf(0x22)))
+    add(WindowsInput("←", intArrayOf(0x25)))
+    add(WindowsInput("↑", intArrayOf(0x26)))
+    add(WindowsInput("→", intArrayOf(0x27)))
+    add(WindowsInput("↓", intArrayOf(0x28)))
+    add(WindowsInput("-", intArrayOf(0xbd)))
+    add(WindowsInput("=", intArrayOf(0xbb)))
+    add(WindowsInput("[", intArrayOf(0xdb)))
+    add(WindowsInput("]", intArrayOf(0xdd)))
+    add(WindowsInput("\\", intArrayOf(0xdc)))
+    add(WindowsInput(";", intArrayOf(0xba)))
+    add(WindowsInput("'", intArrayOf(0xde)))
+    add(WindowsInput(",", intArrayOf(0xbc)))
+    add(WindowsInput(".", intArrayOf(0xbe)))
+    add(WindowsInput("/", intArrayOf(0xbf)))
+    add(WindowsInput("`", intArrayOf(0xc0)))
+    add(WindowsInput("LMB", intArrayOf(0x01)))
+    add(WindowsInput("RMB", intArrayOf(0x02)))
+    add(WindowsInput("MMB", intArrayOf(0x04)))
+    add(WindowsInput("Mouse 4", intArrayOf(0x05)))
+    add(WindowsInput("Mouse 5", intArrayOf(0x06)))
+}
+
 private const val GWL_EXSTYLE = -20
 private const val WS_EX_TOOLWINDOW = 0x00000080
 private const val WS_EX_APPWINDOW = 0x00040000
 private const val PW_RENDERFULLCONTENT = 0x00000002
-private const val CAPTUREBLT = 0x40000000
 private const val DWMWA_CLOAKED = 14
 private const val S_OK = 0
 private const val BGRA_CHANNEL_COUNT = 4L
 private const val MAX_FRAME_DIMENSION = 32_768L
 private const val UINT32_MASK = 0xffff_ffffL
+private const val KEY_DOWN_MASK = 0x8000
+
+// CAPTUREBLT can make the hardware cursor flicker on the real display while GDI capture is active.
+private val cursorSafeRasterOperation = GDI32.SRCCOPY

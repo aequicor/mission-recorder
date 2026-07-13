@@ -39,6 +39,7 @@
     <string name="video_bitrate">Video bitrate</string>
     <string name="megabits_per_second">%1$d Mbps</string>
     <string name="capture_cursor">Show cursor in video</string>
+    <string name="show_input_overlay">Show keyboard and mouse presses</string>
     <string name="show_capture_border">Show recording area border</string>
     <string name="show_application_in_recording">Show Mission Recorder in video</string>
     <string name="frames_per_second">%1$d FPS</string>
@@ -55,6 +56,14 @@
     <string name="view_menu">View</string>
     <string name="show_mini_controller">Always-on-top controls</string>
     <string name="global_hotkeys">Global hotkeys</string>
+    <string name="enable_global_hotkeys">Enable global hotkeys</string>
+    <string name="configure_hotkeys">Configure shortcuts…</string>
+    <string name="shortcut_recording">Start / stop recording</string>
+    <string name="shortcut_pause">Pause / resume recording</string>
+    <string name="shortcut_save_replay">Save replay</string>
+    <string name="shortcut_select_region">Select recording area</string>
+    <string name="hotkey_conflict">Each action must use a different shortcut.</string>
+    <string name="reset_defaults">Reset defaults</string>
     <string name="mini_controller_title">Mission Recorder controls</string>
     <string name="tray_open">Open Mission Recorder</string>
     <string name="tray_exit">Exit</string>

@@ -161,12 +161,14 @@ internal class JnaLinuxX11HotkeyNativeApi(
 }
 
 private fun GlobalHotkeyKey.keysym(): Long = when (this) {
+    GlobalHotkeyKey.F8 -> XK_F8
     GlobalHotkeyKey.F9 -> XK_F9
     GlobalHotkeyKey.F10 -> XK_F10
     GlobalHotkeyKey.F11 -> XK_F11
 }
 
 private val X11_ERROR_TRAP_LOCK = Any()
+private const val XK_F8 = 0xFFC5L
 private const val XK_F9 = 0xFFC6L
 private const val XK_F10 = 0xFFC7L
 private const val XK_F11 = 0xFFC8L

@@ -144,14 +144,17 @@ private class CaptureAreaIndicator {
                 isAlwaysOnTop = true
                 focusableWindowState = false
                 type = java.awt.Window.Type.UTILITY
-                setWindowVisibleInCapture(this, visible = false)
             }
         }.also { windows = it }
         indicatorBounds(captureBounds).zip(borderWindows).forEach { (bounds, window) ->
-            window.bounds = bounds
-            window.isVisible = true
-            setWindowVisibleInCapture(window, visible = false)
-            window.toFront()
+            if (window.bounds != bounds) {
+                window.bounds = bounds
+            }
+            if (!window.isVisible) {
+                window.isVisible = true
+                // Reapplying display affinity to visible DWM windows on every poll makes the system cursor flicker.
+                setWindowVisibleInCapture(window, visible = false)
+            }
         }
     }
 

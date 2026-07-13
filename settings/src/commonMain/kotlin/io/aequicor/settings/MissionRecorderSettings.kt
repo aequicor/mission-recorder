@@ -31,9 +31,55 @@ data class DesktopUiSettings(
     val miniController: MiniControllerSettings = MiniControllerSettings(),
     val storyboardLayout: StoryboardLayoutSetting = StoryboardLayoutSetting.SeparatePngFiles,
     val globalHotkeysEnabled: Boolean = false,
+    val globalHotkeys: GlobalHotkeySettings = GlobalHotkeySettings(),
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,
 )
+
+/** Persisted gestures for desktop global hotkey actions. */
+@Serializable
+data class GlobalHotkeySettings(
+    val selectRegion: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+        key = GlobalHotkeyKeySetting.F8,
+    ),
+    val toggleRecording: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+        key = GlobalHotkeyKeySetting.F9,
+    ),
+    val togglePause: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+        key = GlobalHotkeyKeySetting.F10,
+    ),
+    val saveReplay: GlobalHotkeyGestureSettings = GlobalHotkeyGestureSettings(
+        key = GlobalHotkeyKeySetting.F11,
+    ),
+)
+
+/** Persisted platform-neutral global hotkey gesture. */
+@Serializable
+data class GlobalHotkeyGestureSettings(
+    val modifiers: Set<GlobalHotkeyModifierSetting> = setOf(
+        GlobalHotkeyModifierSetting.Control,
+        GlobalHotkeyModifierSetting.Shift,
+    ),
+    val key: GlobalHotkeyKeySetting,
+)
+
+/** Modifier keys supported by desktop global hotkey adapters. */
+@Serializable
+enum class GlobalHotkeyModifierSetting {
+    Alt,
+    Control,
+    Shift,
+    Meta,
+}
+
+/** Function keys supported by desktop global hotkey adapters. */
+@Serializable
+enum class GlobalHotkeyKeySetting {
+    F8,
+    F9,
+    F10,
+    F11,
+}
 
 @Serializable
 enum class StoryboardLayoutSetting {
@@ -104,6 +150,8 @@ data class OutputSettings(
 data class VideoSettings(
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
+    /** Opt-in profile setting for recording keyboard and mouse press labels in the video. */
+    val showInputOverlay: Boolean = false,
 )
 
 @Serializable
@@ -219,6 +267,7 @@ fun RecordingProfileSettings.toRecordingSettings(outputPath: String): RecordingS
         overwriteOutput = output.overwrite,
         frameRate = video.frameRate,
         captureCursor = video.captureCursor,
+        showInputOverlay = video.showInputOverlay,
         replayDuration = replay.takeIf { it.enabled }?.durationSeconds?.seconds,
         encoder = encoder.toEncoderSettings(),
     )

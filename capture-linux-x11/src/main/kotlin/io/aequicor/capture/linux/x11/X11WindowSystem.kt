@@ -34,6 +34,7 @@ internal interface X11WindowSystem {
     fun findWindow(windowId: Long): X11WindowDescriptor?
     fun captureWindow(windowId: Long): X11CapturedFrame
     fun cursorPosition(): X11Point?
+    fun pressedInputs(): List<String>
 }
 
 internal object X11CaptureSourceIds {

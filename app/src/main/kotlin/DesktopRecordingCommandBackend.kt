@@ -86,6 +86,7 @@ class DesktopRecordingCommandBackend(
             outputPath = resolvedOutputPath ?: profile.resolveOutputPath(),
         )
         val captureCursor = command.options.captureCursor ?: profileSettings?.captureCursor ?: true
+        val showInputOverlay = command.options.showInputOverlay ?: profileSettings?.showInputOverlay ?: false
         val duration = command.options.duration?.let { rawDuration ->
             rawDuration.parseCliDuration()?.takeIf(Duration::isPositive)
                 ?: return@coroutineScope RecordingCommandResult.Rejected(
@@ -129,6 +130,7 @@ class DesktopRecordingCommandBackend(
                 outputPath = outputPath,
                 frameRate = command.options.fps ?: profileSettings.frameRate,
                 captureCursor = captureCursor,
+                showInputOverlay = showInputOverlay,
                 overwriteOutput = command.options.overwriteOutput || profileSettings.overwriteOutput,
             )
             ?: RecordingSettings(
@@ -137,6 +139,7 @@ class DesktopRecordingCommandBackend(
                 outputPath = outputPath,
                 frameRate = command.options.fps ?: 30,
                 captureCursor = captureCursor,
+                showInputOverlay = showInputOverlay,
                 overwriteOutput = command.options.overwriteOutput,
             )
         val permissionAuthorization = try {

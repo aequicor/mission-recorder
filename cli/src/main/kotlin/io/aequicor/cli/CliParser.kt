@@ -92,6 +92,14 @@ object CliParser {
             options.has("--no-cursor") -> false
             else -> null
         }
+        val showInputOverlay = when {
+            options.has("--show-input") && options.has("--hide-input") -> {
+                return CliParseResult.Invalid("Use either --show-input or --hide-input, not both.")
+            }
+            options.has("--show-input") -> true
+            options.has("--hide-input") -> false
+            else -> null
+        }
         val microphone = if (options.contains("--mic")) {
             options.requireValue("--mic")
                 ?: return CliParseResult.Invalid("--mic requires a microphone id, display name, or 'default'.")
@@ -143,6 +151,7 @@ object CliParser {
                     outputPath = outputPath,
                     fps = fps,
                     captureCursor = captureCursor,
+                    showInputOverlay = showInputOverlay,
                     microphone = microphone,
                     microphoneGainPercent = microphoneGainPercent,
                     systemAudio = systemAudio,
@@ -274,6 +283,14 @@ object CliParser {
             options.has("--no-cursor") -> false
             else -> null
         }
+        val showInputOverlay = when {
+            options.has("--show-input") && options.has("--hide-input") -> {
+                return CliParseResult.Invalid("Use either --show-input or --hide-input, not both.")
+            }
+            options.has("--show-input") -> true
+            options.has("--hide-input") -> false
+            else -> null
+        }
         val microphone = if (options.contains("--mic")) {
             options.requireValue("--mic")
                 ?: return CliParseResult.Invalid("--mic requires a microphone id, display name, or 'default'.")
@@ -325,6 +342,7 @@ object CliParser {
                     outputPath = outputPath,
                     fps = fps,
                     captureCursor = captureCursor,
+                    showInputOverlay = showInputOverlay,
                     microphone = microphone,
                     microphoneGainPercent = microphoneGainPercent,
                     systemAudio = systemAudio,

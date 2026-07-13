@@ -125,7 +125,9 @@ internal fun interface DesktopPreviewEngine {
 internal data class DesktopPreviewFrame(
     val width: Int,
     val height: Int,
-    val rgbaPixels: ByteArray,
+    val pixelFormat: PixelFormat,
+    val strideBytes: Int,
+    val pixelData: ByteArray,
 )
 
 private val UnavailableDesktopPreviewEngine = DesktopPreviewEngine { emptyFlow() }
@@ -193,6 +195,7 @@ internal class DesktopRecorderViewModel(
                 ?: DesktopOutputPolicy().fileNamePattern,
             frameRate = startupPreferences.frameRate,
             captureCursor = startupPreferences.captureCursor,
+            showInputOverlay = startupPreferences.showInputOverlay,
             showApplicationInRecording = initialShowApplicationInRecording,
             showCaptureBorder = initialShowCaptureBorder,
             replayDurationMinutes = startupPreferences.replayDurationMinutes,
@@ -315,6 +318,7 @@ internal class DesktopRecorderViewModel(
             )
             is RecorderUiAction.SetFrameRate -> setFrameRate(action.frameRate)
             is RecorderUiAction.SetCaptureCursor -> setCaptureCursor(action.enabled)
+            is RecorderUiAction.SetShowInputOverlay -> setShowInputOverlay(action.enabled)
             is RecorderUiAction.SetShowApplicationInRecording -> mutableState.update {
                 it.copy(showApplicationInRecording = action.enabled)
             }
@@ -572,6 +576,13 @@ internal class DesktopRecorderViewModel(
         }
     }
 
+    private fun setShowInputOverlay(enabled: Boolean) {
+        if (!mutableState.value.isBusy) {
+            mutableState.update { it.copy(showInputOverlay = enabled) }
+            queueRecorderPreferences()
+        }
+    }
+
     private fun setVideoBitrateMbps(megabitsPerSecond: Int) {
         val supported = megabitsPerSecond in MIN_VIDEO_BITRATE_MBPS..MAX_VIDEO_BITRATE_MBPS
         if (!mutableState.value.isBusy && supported) {
@@ -795,6 +806,7 @@ internal class DesktopRecorderViewModel(
                 showOutputNamingDialog = false,
                 frameRate = configuration.preferences.frameRate,
                 captureCursor = configuration.preferences.captureCursor,
+                showInputOverlay = configuration.preferences.showInputOverlay,
                 videoBitrateMbps = configuration.preferences.videoBitrateMbps,
                 replayDurationMinutes = configuration.preferences.replayDurationMinutes,
                 storyboardMode = configuration.preferences.storyboardMode,
@@ -1003,6 +1015,7 @@ internal class DesktopRecorderViewModel(
             overwriteOutput = overwriteOutput,
             frameRate = snapshot.frameRate,
             captureCursor = snapshot.captureCursor,
+            showInputOverlay = snapshot.showInputOverlay,
             encoder = encoderSettings,
         )
 
@@ -1143,6 +1156,7 @@ internal class DesktopRecorderViewModel(
             overwriteOutput = false,
             frameRate = snapshot.frameRate,
             captureCursor = snapshot.captureCursor,
+            showInputOverlay = snapshot.showInputOverlay,
             replayDuration = snapshot.replayDurationMinutes.minutes,
             encoder = encoderSettings,
         )
@@ -1547,6 +1561,7 @@ private fun RecorderUiState.toRecorderPreferences(encoderSettings: EncoderSettin
     DesktopRecorderPreferences(
         frameRate = frameRate,
         captureCursor = captureCursor,
+        showInputOverlay = showInputOverlay,
         replayDurationMinutes = replayDurationMinutes,
         storyboardMode = storyboardMode,
         encoderSettings = encoderSettings,
@@ -1593,39 +1608,23 @@ private fun VideoFrame.toDesktopPreviewFrame(): DesktopPreviewFrame {
     require(pixelFormat == PixelFormat.Rgba8888 || pixelFormat == PixelFormat.Bgra8888) {
         "Preview requires RGBA8888 or BGRA8888 video frames."
     }
-    require(width > 0 && height > 0 && strideBytes >= width * PREVIEW_BYTES_PER_PIXEL) {
+    val rowPixelBytes = width.toLong() * PREVIEW_BYTES_PER_PIXEL
+    require(width > 0 && height > 0 && strideBytes.toLong() >= rowPixelBytes) {
         "Preview frame dimensions or stride are invalid."
     }
     val source = requireNotNull(pixelData) { "Preview frame does not contain pixels." }
-    val requiredBytes = (height - 1).toLong() * strideBytes + width * PREVIEW_BYTES_PER_PIXEL
+    val requiredBytes = (height - 1).toLong() * strideBytes + rowPixelBytes
     require(requiredBytes <= source.size) { "Preview frame pixel payload is incomplete." }
-    val rowBytes = width * PREVIEW_BYTES_PER_PIXEL
-    val target = ByteArray(rowBytes * height)
-    repeat(height) { y ->
-        val sourceRowOffset = y * strideBytes
-        val targetRowOffset = y * rowBytes
-        if (pixelFormat == PixelFormat.Rgba8888) {
-            source.copyInto(
-                destination = target,
-                destinationOffset = targetRowOffset,
-                startIndex = sourceRowOffset,
-                endIndex = sourceRowOffset + rowBytes,
-            )
-        } else {
-            repeat(width) { x ->
-                val sourceOffset = sourceRowOffset + x * PREVIEW_BYTES_PER_PIXEL
-                val targetOffset = targetRowOffset + x * PREVIEW_BYTES_PER_PIXEL
-                target[targetOffset] = source[sourceOffset + 2]
-                target[targetOffset + 1] = source[sourceOffset + 1]
-                target[targetOffset + 2] = source[sourceOffset]
-                target[targetOffset + 3] = 0xff.toByte()
-            }
-        }
-    }
-    return DesktopPreviewFrame(width, height, target)
+    return DesktopPreviewFrame(
+        width = width,
+        height = height,
+        pixelFormat = pixelFormat,
+        strideBytes = strideBytes,
+        pixelData = source,
+    )
 }
 
 private const val PREVIEW_OUTPUT_PLACEHOLDER = "preview-does-not-create-output.mp4"
 private const val SHUTDOWN_TIMEOUT_MILLIS = 3_000L
-private const val MAX_PREVIEW_FRAME_RATE = 15
+private const val MAX_PREVIEW_FRAME_RATE = 5
 private const val PREVIEW_BYTES_PER_PIXEL = 4

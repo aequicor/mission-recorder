@@ -11,16 +11,19 @@ import io.aequicor.audio.core.MutingAudioCaptureAdapter
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.isTraySupported
@@ -52,14 +55,18 @@ import io.aequicor.capture.platform.RoutingVideoCaptureAdapter
 import io.aequicor.capture.platform.VideoCaptureRoute
 import io.aequicor.capture.windows.jna.WindowsCaptureAdapterFactory
 import io.aequicor.compose.ui.MissionRecorderScreen
+import io.aequicor.compose.ui.MissionRecorderTheme
 import io.aequicor.compose.ui.MiniRecorderController
 import io.aequicor.compose.ui.PreviewUiStatus
+import io.aequicor.compose.ui.RecorderShortcutLabels
 import io.aequicor.compose.ui.RecorderStatus
 import io.aequicor.compose.ui.RecorderUiAction
 import io.aequicor.compose.ui.StoryboardMode
 import io.aequicor.compose.resources.Res
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.global_hotkeys
+import io.aequicor.compose.resources.configure_hotkeys
+import io.aequicor.compose.resources.enable_global_hotkeys
 import io.aequicor.compose.resources.mini_controller_title
 import io.aequicor.compose.resources.app_name
 import io.aequicor.compose.resources.tray_exit
@@ -71,6 +78,8 @@ import io.aequicor.media.desktop.ffmpeg.StoryboardExportSettings
 import io.aequicor.media.desktop.ffmpeg.StoryboardExporter
 import io.aequicor.media.desktop.ffmpeg.StoryboardLayout
 import io.aequicor.hotkey.GlobalHotkeyEvent
+import io.aequicor.hotkey.GlobalHotkeyAction
+import io.aequicor.hotkey.GlobalHotkeyBinding
 import io.aequicor.replay.ReplayCaptureController
 import io.aequicor.settings.MissionRecorderSettingsStore
 import kotlinx.coroutines.CoroutineScope
@@ -79,9 +88,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import java.awt.Dimension
 import java.awt.Frame
@@ -126,23 +133,19 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         )
     }
     val state by viewModel.state.collectAsState()
-    val previewImage = remember(viewModel, recorderScope) {
-        viewModel.previewFrame
-            .map { frame -> frame?.toImageBitmap() }
-            .stateIn(
-                scope = recorderScope,
-                started = SharingStarted.Eagerly,
-                initialValue = null,
-            )
-    }.collectAsState()
+    val previewImageResource = remember { mutableStateOf<DesktopPreviewImage?>(null) }
+    val previewImage = remember { derivedStateOf { previewImageResource.value?.bitmap } }
     val currentState by rememberUpdatedState(state)
     val hotkeyFactory = remember { DesktopGlobalHotkeyServiceFactory() }
     var closing by remember { mutableStateOf(false) }
     var showMainWindow by remember { mutableStateOf(true) }
+    var mainWindowMinimized by remember { mutableStateOf(false) }
     var showMiniController by remember { mutableStateOf(false) }
     var compactedForRecording by remember { mutableStateOf(false) }
     var mainWindow by remember { mutableStateOf<java.awt.Window?>(null) }
     var globalHotkeysEnabled by remember { mutableStateOf(startupSettings.globalHotkeysEnabled) }
+    var globalHotkeyBindings by remember { mutableStateOf(startupSettings.globalHotkeyBindings) }
+    var showHotkeySettingsDialog by remember { mutableStateOf(false) }
     val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
     val miniWindowState = rememberWindowState(
         width = 488.dp,
@@ -150,6 +153,8 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         position = WindowPosition(Alignment.TopEnd),
     )
     val globalHotkeysLabel = stringResource(Res.string.global_hotkeys)
+    val enableGlobalHotkeysLabel = stringResource(Res.string.enable_global_hotkeys)
+    val configureHotkeysLabel = stringResource(Res.string.configure_hotkeys)
     val miniControllerTitle = stringResource(Res.string.mini_controller_title)
     val applicationName = stringResource(Res.string.app_name)
     val trayOpenLabel = stringResource(Res.string.tray_open)
@@ -166,6 +171,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
     }
     val showFromTray = {
         compactedForRecording = false
+        mainWindowMinimized = false
         showMiniController = false
         showMainWindow = true
         restoreMainWindow(mainWindow)
@@ -178,10 +184,12 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
 
     DisposableEffect(Unit) {
         onDispose {
+            recorderScope.cancel()
+            previewImageResource.value?.close()
+            previewImageResource.value = null
             audioAdapters.close()
             captureAdapters.close()
             capturePresentation.close()
-            recorderScope.cancel()
         }
     }
 
@@ -194,22 +202,50 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
     }
 
+    LaunchedEffect(viewModel) {
+        var pendingImage: DesktopPreviewImage? = null
+        var retiredImage: DesktopPreviewImage? = null
+        try {
+            viewModel.previewFrame.collect { frame ->
+                withContext(Dispatchers.IO) {
+                    pendingImage = frame?.toDesktopPreviewImage()
+                }
+                retiredImage = previewImageResource.value
+                previewImageResource.value = pendingImage
+                pendingImage = null
+                // The first frame publishes the replacement; the second cannot draw the retired image anymore.
+                repeat(PREVIEW_IMAGE_RETIREMENT_FRAMES) { withFrameNanos { } }
+                retiredImage?.close()
+                retiredImage = null
+            }
+        } finally {
+            pendingImage?.close()
+            retiredImage?.close()
+        }
+    }
+
     LaunchedEffect(state.selectedSourceId, state.frameRate) {
         if (state.previewStatus != PreviewUiStatus.Idle) {
             viewModel.onAction(RecorderUiAction.StopPreview)
         }
     }
 
-    LaunchedEffect(state.canStartPreview) {
-        if (state.canStartPreview) {
+    LaunchedEffect(showMainWindow, mainWindowMinimized, state.canStartPreview) {
+        if (shouldStartPreview(showMainWindow, mainWindowMinimized, state.canStartPreview)) {
             viewModel.onAction(RecorderUiAction.StartPreview)
         }
     }
 
-    LaunchedEffect(globalHotkeysEnabled) {
+    LaunchedEffect(showMainWindow, mainWindowMinimized, state.previewStatus) {
+        if (shouldStopPreview(showMainWindow, mainWindowMinimized, state.isPreviewRunning)) {
+            viewModel.onAction(RecorderUiAction.StopPreview)
+        }
+    }
+
+    LaunchedEffect(globalHotkeysEnabled, globalHotkeyBindings) {
         runCatching {
             withContext(Dispatchers.IO) {
-                desktopUiSettings.saveGlobalHotkeysEnabled(globalHotkeysEnabled)
+                desktopUiSettings.saveGlobalHotkeySettings(globalHotkeysEnabled, globalHotkeyBindings)
             }
         }.onFailure { failure ->
             viewModel.reportPlatformError(failure.message ?: "Could not save global hotkey settings.")
@@ -218,7 +254,7 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             return@LaunchedEffect
         }
         val service = try {
-            withContext(Dispatchers.IO) { hotkeyFactory.create() }
+            withContext(Dispatchers.IO) { hotkeyFactory.create(globalHotkeyBindings) }
         } catch (failure: Throwable) {
             globalHotkeysEnabled = false
             viewModel.reportPlatformError(failure.message ?: "Could not enable global hotkeys.")
@@ -339,10 +375,27 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         MenuBar {
             Menu(globalHotkeysLabel) {
                 CheckboxItem(
-                    text = "Ctrl+Shift+F9 / F10 / F11",
+                    text = enableGlobalHotkeysLabel,
                     checked = globalHotkeysEnabled,
                     enabled = hotkeyFactory.isSupported,
                     onCheckedChange = { checked -> globalHotkeysEnabled = checked },
+                )
+                Separator()
+                Item(
+                    text = configureHotkeysLabel,
+                    onClick = { showHotkeySettingsDialog = true },
+                )
+            }
+        }
+        if (showHotkeySettingsDialog) {
+            MissionRecorderTheme {
+                DesktopHotkeySettingsDialog(
+                    bindings = globalHotkeyBindings,
+                    onDismissRequest = { showHotkeySettingsDialog = false },
+                    onApply = { bindings ->
+                        globalHotkeyBindings = bindings
+                        showHotkeySettingsDialog = false
+                    },
                 )
             }
         }
@@ -353,17 +406,33 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
         DisposableEffect(window) {
             val windowListener = object : WindowAdapter() {
+                override fun windowLostFocus(event: WindowEvent) {
+                    if (!shouldCompactOnFocusLoss(focusMovedWithinApplication = event.oppositeWindow != null)) {
+                        return
+                    }
+                    val frame = event.window as? Frame ?: return
+                    if (frame.extendedState and Frame.ICONIFIED != 0) {
+                        return
+                    }
+                    showMiniController = true
+                    frame.extendedState = frame.extendedState or Frame.ICONIFIED
+                }
+
                 override fun windowIconified(event: WindowEvent) {
+                    mainWindowMinimized = true
                     showMiniController = true
                 }
 
                 override fun windowDeiconified(event: WindowEvent) {
+                    mainWindowMinimized = false
                     showMiniController = false
                 }
             }
             window.addWindowListener(windowListener)
+            window.addWindowFocusListener(windowListener)
             onDispose {
                 window.removeWindowListener(windowListener)
+                window.removeWindowFocusListener(windowListener)
                 if (mainWindow === window) {
                     mainWindow = null
                 }
@@ -373,6 +442,8 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             state = state,
             onAction = viewModel::onAction,
             previewImage = previewImage,
+            onConfigureShortcuts = { showHotkeySettingsDialog = true },
+            shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
         )
     }
 
@@ -382,11 +453,14 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             state = miniWindowState,
             title = miniControllerTitle,
             icon = applicationIcon,
-            resizable = false,
+            resizable = true,
+            focusable = false,
             alwaysOnTop = true,
         ) {
             LaunchedEffect(window) {
                 restoreMiniControllerPosition(window, desktopUiSettings)
+                window.minimumSize = window.size
+                window.maximumSize = window.size
             }
             LaunchedEffect(window, state.showApplicationInRecording) {
                 setWindowVisibleInCapture(window, state.showApplicationInRecording)
@@ -396,16 +470,41 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
                     override fun windowGainedFocus(event: WindowEvent) {
                         clampWindowToAvailableScreens(window)
                     }
+
+                    override fun windowStateChanged(event: WindowEvent) {
+                        if (!shouldRestoreMainWindowFromMiniController(event.newState)) {
+                            return
+                        }
+                        window.extendedState = Frame.NORMAL
+                        miniWindowState.placement = WindowPlacement.Floating
+                        showFromTray()
+                    }
                 }
                 window.addWindowFocusListener(focusListener)
+                window.addWindowStateListener(focusListener)
                 onDispose {
                     window.removeWindowFocusListener(focusListener)
+                    window.removeWindowStateListener(focusListener)
                     saveMiniControllerPosition(window, desktopUiSettings)
                 }
             }
-            MiniRecorderController(state = state, onAction = viewModel::onAction)
+            MiniRecorderController(
+                state = state,
+                onAction = viewModel::onAction,
+                shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
+            )
         }
     }
+}
+
+private fun List<GlobalHotkeyBinding>.toShortcutLabels(): RecorderShortcutLabels {
+    val bindingsByAction = associateBy(GlobalHotkeyBinding::action)
+    return RecorderShortcutLabels(
+        recording = requireNotNull(bindingsByAction[GlobalHotkeyAction.ToggleRecording]).gesture
+            .let(::formatGlobalHotkeyGesture),
+        pause = requireNotNull(bindingsByAction[GlobalHotkeyAction.TogglePause]).gesture
+            .let(::formatGlobalHotkeyGesture),
+    )
 }
 
 private fun restoreMainWindow(window: java.awt.Window?) {
@@ -425,6 +524,24 @@ internal enum class DesktopCloseAction {
 
 internal fun desktopCloseAction(traySupported: Boolean): DesktopCloseAction =
     if (traySupported) DesktopCloseAction.HideToTray else DesktopCloseAction.MinimizeToTaskbar
+
+internal fun shouldCompactOnFocusLoss(focusMovedWithinApplication: Boolean): Boolean =
+    !focusMovedWithinApplication
+
+internal fun shouldRestoreMainWindowFromMiniController(windowState: Int): Boolean =
+    windowState and Frame.MAXIMIZED_BOTH != 0
+
+internal fun shouldStartPreview(
+    mainWindowVisible: Boolean,
+    mainWindowMinimized: Boolean,
+    canStartPreview: Boolean,
+): Boolean = mainWindowVisible && !mainWindowMinimized && canStartPreview
+
+internal fun shouldStopPreview(
+    mainWindowVisible: Boolean,
+    mainWindowMinimized: Boolean,
+    previewRunning: Boolean,
+): Boolean = (!mainWindowVisible || mainWindowMinimized) && previewRunning
 
 private fun createDesktopRecorderViewModel(
     scope: CoroutineScope,
@@ -701,6 +818,7 @@ private fun reportDesktopUiSettingsFailure(action: String, error: Throwable) {
     System.err.println("Unable to $action desktop UI settings: ${error.message}")
 }
 
+private const val PREVIEW_IMAGE_RETIREMENT_FRAMES = 2
 private const val CAPTURE_INDICATOR_REFRESH_MILLIS = 250L
 
 private class DesktopFfmpegStoryboardExporter(

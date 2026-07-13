@@ -23,6 +23,7 @@ import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.Robot
 import java.awt.Transparency
+import java.awt.geom.Ellipse2D
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
 import java.awt.image.DataBufferInt
@@ -156,6 +157,12 @@ private fun BufferedImage.drawCursor(screenLocation: Point, captureRectangle: Re
     }
     createGraphics().use { graphics ->
         graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val highlight = Ellipse2D.Double(x - 14.0, y - 14.0, 28.0, 28.0)
+        graphics.color = Color(38, 97, 156, 96)
+        graphics.fill(highlight)
+        graphics.color = Color(255, 255, 255, 210)
+        graphics.stroke = BasicStroke(2.0f)
+        graphics.draw(highlight)
         graphics.color = Color.WHITE
         graphics.fill(cursor)
         graphics.color = Color.BLACK

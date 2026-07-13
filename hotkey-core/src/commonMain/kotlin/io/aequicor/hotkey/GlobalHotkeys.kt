@@ -6,6 +6,7 @@ enum class GlobalHotkeyAction {
     ToggleRecording,
     TogglePause,
     SaveReplay,
+    SelectRegion,
 }
 
 enum class GlobalHotkeyModifier {
@@ -16,6 +17,7 @@ enum class GlobalHotkeyModifier {
 }
 
 enum class GlobalHotkeyKey {
+    F8,
     F9,
     F10,
     F11,
@@ -71,6 +73,13 @@ val defaultDesktopGlobalHotkeys: List<GlobalHotkeyBinding> = listOf(
         gesture = GlobalHotkeyGesture(
             modifiers = setOf(GlobalHotkeyModifier.Control, GlobalHotkeyModifier.Shift),
             key = GlobalHotkeyKey.F11,
+        ),
+    ),
+    GlobalHotkeyBinding(
+        action = GlobalHotkeyAction.SelectRegion,
+        gesture = GlobalHotkeyGesture(
+            modifiers = setOf(GlobalHotkeyModifier.Control, GlobalHotkeyModifier.Shift),
+            key = GlobalHotkeyKey.F8,
         ),
     ),
 )

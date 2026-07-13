@@ -131,6 +131,22 @@ class MissionRecorderScreenTest {
     }
 
     @Test
+    fun opensShortcutSettingsFromHeader() = runComposeUiTest {
+        var configureRequests = 0
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(outputPath = "recordings/test.mp4"),
+                onAction = {},
+                onConfigureShortcuts = { configureRequests++ },
+            )
+        }
+
+        onNodeWithTag("configure-hotkeys").performClick()
+
+        assertEquals(1, configureRequests)
+    }
+
+    @Test
     fun confirmsProfileDeletionFromDialog() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {
@@ -207,6 +223,12 @@ class MissionRecorderScreenTest {
             ),
             actions,
         )
+    }
+
+    @Test
+    fun recordingShortcutTooltipIncludesActionAndGesture() {
+        assertEquals("Stop · Ctrl+Shift+F9", shortcutTooltipLabel("Stop", "Ctrl+Shift+F9"))
+        assertEquals("Pause · Ctrl+Shift+F10", shortcutTooltipLabel("Pause", "Ctrl+Shift+F10"))
     }
 
     @Test
@@ -452,6 +474,21 @@ class MissionRecorderScreenTest {
         onNodeWithTag("capture-cursor").performScrollTo().assertIsEnabled().performClick()
 
         assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetCaptureCursor(false)), actions)
+    }
+
+    @Test
+    fun hoistsInputOverlayToggle() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(showInputOverlay = false),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("show-input-overlay").performScrollTo().assertIsEnabled().performClick()
+
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetShowInputOverlay(true)), actions)
     }
 
     @Test

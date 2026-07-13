@@ -20,6 +20,16 @@ import kotlin.test.assertTrue
 
 class WindowsVideoCaptureAdapterTest {
     @Test
+    fun cursorPainterAddsHighlightAroundHotspot() {
+        val pixels = ByteArray(40 * 40 * 4) { 0xff.toByte() }
+
+        RgbaCursorPainter.drawBgra(pixels, frameWidth = 40, frameHeight = 40, hotspotX = 20, hotspotY = 20)
+
+        val highlightedPixel = pixels.copyOfRange((20 * 40 + 10) * 4, (20 * 40 + 10) * 4 + 3)
+        assertTrue(highlightedPixel.any { channel -> channel != 0xff.toByte() })
+    }
+
+    @Test
     fun passesNativeBgraPixelsWithoutPerPixelConversion() = runBlocking {
         val selectedWindow = window(handle = 1, processId = 42, title = "Editor", width = 2, height = 1)
         val system = FakeWindowsWindowSystem(
@@ -61,6 +71,41 @@ class WindowsVideoCaptureAdapterTest {
                 .chunked(4)
                 .any { pixel -> pixel.take(3).any { channel -> channel != 0xff.toByte() } },
         )
+    }
+
+    @Test
+    fun paintsPressedInputsNearCursorWhenEnabled() = runBlocking {
+        val selectedWindow = window(handle = 1, processId = 42, title = "Editor", x = 100, y = 200)
+        val system = FakeWindowsWindowSystem(
+            windows = listOf(selectedWindow),
+            frames = mapOf(
+                selectedWindow.handle to WindowsCapturedFrame(
+                    selectedWindow.bounds,
+                    solidBgra(selectedWindow.bounds, blue = 0xff, green = 0xff, red = 0xff),
+                ),
+            ),
+            cursor = WindowsPoint(116, 216),
+            pressedInputs = listOf("Ctrl", "C"),
+        )
+
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
+            .frames(settings(windowSource(selectedWindow), captureCursor = false, showInputOverlay = true))
+            .first()
+
+        assertTrue(requireNotNull(frame.pixelData).containsNonWhiteColor())
+        assertEquals(1, system.pressedInputReadCount)
+    }
+
+    @Test
+    fun doesNotReadPressedInputsWhenOverlayIsDisabled() = runBlocking {
+        val selectedWindow = window(handle = 1, processId = 42, title = "Editor")
+        val system = FakeWindowsWindowSystem(windows = listOf(selectedWindow))
+
+        WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
+            .frames(settings(windowSource(selectedWindow), captureCursor = false))
+            .first()
+
+        assertEquals(0, system.pressedInputReadCount)
     }
 
     @Test
@@ -137,9 +182,12 @@ internal class FakeWindowsWindowSystem(
         descriptor.handle to WindowsCapturedFrame(descriptor.bounds, solidBgra(descriptor.bounds))
     },
     private val cursor: WindowsPoint? = null,
+    private val pressedInputs: List<String> = emptyList(),
 ) : WindowsWindowSystem {
     val screenCaptureThreads = mutableSetOf<String>()
     var lastCapturedHandle: Long? = null
+        private set
+    var pressedInputReadCount: Int = 0
         private set
 
     override fun listWindows(): List<WindowsWindowDescriptor> = windows
@@ -166,6 +214,11 @@ internal class FakeWindowsWindowSystem(
     }
 
     override fun cursorPosition(): WindowsPoint? = cursor
+
+    override fun pressedInputs(): List<String> {
+        pressedInputReadCount += 1
+        return pressedInputs
+    }
 }
 
 internal fun window(
@@ -192,11 +245,20 @@ private fun windowSource(window: WindowsWindowDescriptor): CaptureSource.Window 
     displayName = window.title,
 )
 
-private fun settings(source: CaptureSource, captureCursor: Boolean): RecordingSettings = RecordingSettings(
+private fun settings(
+    source: CaptureSource,
+    captureCursor: Boolean,
+    showInputOverlay: Boolean = false,
+): RecordingSettings = RecordingSettings(
     captureSource = source,
     outputPath = "unused.mp4",
     captureCursor = captureCursor,
+    showInputOverlay = showInputOverlay,
 )
+
+private fun ByteArray.containsNonWhiteColor(): Boolean = asList()
+    .chunked(4)
+    .any { pixel -> pixel.take(3).any { channel -> channel != 0xff.toByte() } }
 
 internal fun solidBgra(
     bounds: WindowsWindowBounds,

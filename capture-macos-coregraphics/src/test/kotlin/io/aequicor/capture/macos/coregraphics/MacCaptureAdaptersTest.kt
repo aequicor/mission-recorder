@@ -8,6 +8,7 @@ import io.aequicor.capture.platform.CaptureSourceRequest
 import io.aequicor.capture.platform.PermissionStatus
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -23,6 +24,16 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MacCaptureAdaptersTest {
+    @Test
+    fun cursorPainterAddsHighlightAroundHotspot() {
+        val pixels = ByteArray(40 * 40 * 4) { 0xff.toByte() }
+
+        MacRgbaCursorPainter.draw(pixels, width = 40, height = 40, hotspotX = 20, hotspotY = 20)
+
+        val highlightedPixel = pixels.copyOfRange((20 * 40 + 10) * 4, (20 * 40 + 10) * 4 + 3)
+        assertTrue(highlightedPixel.any { channel -> channel != 0xff.toByte() })
+    }
+
     @Test
     fun repositoryListsWindowsAndGroupsApplications() = runTest {
         val windows = listOf(
@@ -74,6 +85,33 @@ class MacCaptureAdaptersTest {
         assertEquals(2.0, result.first().scaleFactor)
         assertContentEquals(byteArrayOf(255.toByte(), 0, 0, 255.toByte()), result.first().pixelData!!.copyOf(4))
         assertContentEquals(byteArrayOf(0, 0, 255.toByte(), 255.toByte()), result.last().pixelData!!.copyOf(4))
+    }
+
+    @Test
+    fun videoAdapterPaintsPressedInputsNearCursor() = runTest {
+        val window = descriptor(10, 42, "Document", "Editor", 80, 60)
+        val frames = ArrayDeque(
+            listOf(MacCapturedFrame(window.bounds, 80, 60, ByteArray(80 * 60 * 4) { 0xff.toByte() })),
+        )
+        val windowSystem = FakeMacWindowSystem(
+            windows = listOf(window),
+            frames = frames,
+            cursor = MacPoint(40, 30),
+            pressedInputs = listOf("Cmd", "C"),
+        )
+        val adapter = MacVideoCaptureAdapter(windowSystem, UnconfinedTestDispatcher(testScheduler)) { 1L }
+
+        val frame = adapter.frames(
+            RecordingSettings(
+                captureSource = CaptureSource.Window(CaptureSourceId("window:macos:10"), "Document"),
+                outputPath = "test.mp4",
+                captureCursor = false,
+                showInputOverlay = true,
+            ),
+        ).first()
+
+        assertTrue(requireNotNull(frame.pixelData).containsNonWhiteColor())
+        assertEquals(1, windowSystem.pressedInputReadCount)
     }
 
     @Test
@@ -130,11 +168,21 @@ private class FakeScreenPermissionApi(
 private class FakeMacWindowSystem(
     private val windows: List<MacWindowDescriptor>,
     private val frames: ArrayDeque<MacCapturedFrame> = ArrayDeque(),
+    private val cursor: MacPoint? = null,
+    private val pressedInputs: List<String> = emptyList(),
 ) : MacWindowSystem {
+    var pressedInputReadCount: Int = 0
+        private set
+
     override fun listWindows(): List<MacWindowDescriptor> = windows
     override fun findWindow(windowId: Long): MacWindowDescriptor? = windows.firstOrNull { it.windowId == windowId }
     override fun captureWindow(windowId: Long): MacCapturedFrame = frames.removeFirst()
-    override fun cursorPosition(): MacPoint? = null
+    override fun cursorPosition(): MacPoint? = cursor
+
+    override fun pressedInputs(): List<String> {
+        pressedInputReadCount += 1
+        return pressedInputs
+    }
 }
 
 private fun descriptor(
@@ -162,3 +210,7 @@ private fun solidFrame(bounds: MacWindowBounds, width: Int, height: Int, red: In
     }
     return MacCapturedFrame(bounds, width, height, pixels)
 }
+
+private fun ByteArray.containsNonWhiteColor(): Boolean = asList()
+    .chunked(4)
+    .any { pixel -> pixel.take(3).any { channel -> channel != 0xff.toByte() } }

@@ -89,6 +89,7 @@ data class RecorderUiState(
     val showOutputNamingDialog: Boolean = false,
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
+    val showInputOverlay: Boolean = false,
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,
     val previewStatus: PreviewUiStatus = PreviewUiStatus.Idle,
@@ -222,6 +223,7 @@ sealed interface RecorderUiAction {
     data class ApplyOutputNaming(val directory: String, val fileNamePattern: String) : RecorderUiAction
     data class SetFrameRate(val frameRate: Int) : RecorderUiAction
     data class SetCaptureCursor(val enabled: Boolean) : RecorderUiAction
+    data class SetShowInputOverlay(val enabled: Boolean) : RecorderUiAction
     data class SetShowApplicationInRecording(val enabled: Boolean) : RecorderUiAction
     data class SetShowCaptureBorder(val enabled: Boolean) : RecorderUiAction
     data class SetVideoBitrateMbps(val megabitsPerSecond: Int) : RecorderUiAction

@@ -21,6 +21,9 @@ internal fun routeGlobalHotkey(
             else -> null
         }
         GlobalHotkeyAction.SaveReplay -> RecorderUiAction.SaveReplayBuffer.takeIf { state.canSaveReplay }
+        GlobalHotkeyAction.SelectRegion -> RecorderUiAction.SelectRegion.takeIf {
+            !state.isBusy && !state.isRefreshingSources
+        }
     }
     uiAction?.let(onAction)
 }

@@ -224,6 +224,7 @@ private fun CliCommand.ReplayStart.toRunArguments(endpoint: Path, output: Path):
     addAll(listOf("--buffer", options.bufferDuration, "--output", output.toString()))
     options.fps?.let { addAll(listOf("--fps", it.toString())) }
     options.captureCursor?.let { add(if (it) "--cursor" else "--no-cursor") }
+    options.showInputOverlay?.let { add(if (it) "--show-input" else "--hide-input") }
     options.microphone?.let { addAll(listOf("--mic", it)) }
     options.microphoneGainPercent?.let { addAll(listOf("--mic-gain", it.toString())) }
     if (options.systemAudio) add("--system-audio")

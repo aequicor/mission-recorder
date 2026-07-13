@@ -6,10 +6,13 @@ import io.aequicor.capture.core.CaptureSource
 import io.aequicor.compose.ui.StoryboardMode
 import io.aequicor.compose.ui.MAX_VIDEO_BITRATE_MBPS
 import io.aequicor.compose.ui.MIN_VIDEO_BITRATE_MBPS
+import io.aequicor.hotkey.GlobalHotkeyBinding
+import io.aequicor.hotkey.defaultDesktopGlobalHotkeys
 
 internal data class DesktopRecorderPreferences(
     val frameRate: Int = DEFAULT_DESKTOP_FRAME_RATE,
     val captureCursor: Boolean = true,
+    val showInputOverlay: Boolean = false,
     val replayDurationMinutes: Int = DEFAULT_REPLAY_MINUTES,
     val storyboardMode: StoryboardMode = StoryboardMode.SeparatePngFiles,
     val encoderSettings: EncoderSettings = EncoderSettings(),
@@ -25,6 +28,7 @@ internal data class DesktopRecorderPreferences(
 internal data class DesktopStartupSettings(
     val recorderPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
     val globalHotkeysEnabled: Boolean = false,
+    val globalHotkeyBindings: List<GlobalHotkeyBinding> = defaultDesktopGlobalHotkeys,
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,
 )

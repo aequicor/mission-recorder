@@ -15,6 +15,7 @@ internal class JnaMacWindowSystem(
     private val coreFoundation: CoreFoundation = CoreFoundation.INSTANCE,
     private val coreGraphics: CoreGraphics = CoreGraphics.INSTANCE,
     private val imageApi: MacCoreGraphicsImageApi = MacCoreGraphicsImageApi.INSTANCE,
+    private val inputApi: MacInputApi = MacInputApi.INSTANCE,
     private val excludedProcessId: Long = ProcessHandle.current().pid(),
 ) : MacWindowSystem {
     fun probe() {
@@ -84,6 +85,17 @@ internal class JnaMacWindowSystem(
     override fun cursorPosition(): MacPoint? = runCatching {
         MouseInfo.getPointerInfo()?.location?.let { MacPoint(it.x, it.y) }
     }.getOrNull()
+
+    override fun pressedInputs(): List<String> = buildList {
+        MAC_KEY_INPUTS
+            .filter { input -> input.keyCodes.any { keyCode -> inputApi.CGEventSourceKeyState(SESSION_STATE, keyCode) } }
+            .mapTo(this, MacKeyInput::label)
+        if (inputApi.CGEventSourceButtonState(SESSION_STATE, 0)) add("LMB")
+        if (inputApi.CGEventSourceButtonState(SESSION_STATE, 1)) add("RMB")
+        if (inputApi.CGEventSourceButtonState(SESSION_STATE, 2)) add("MMB")
+        if (inputApi.CGEventSourceButtonState(SESSION_STATE, 3)) add("Mouse 4")
+        if (inputApi.CGEventSourceButtonState(SESSION_STATE, 4)) add("Mouse 5")
+    }
 
     private fun copyWindowInfo(): List<MacWindowDescriptor> {
         val array = coreGraphics.CGWindowListCopyWindowInfo(
@@ -176,6 +188,15 @@ internal interface MacCoreGraphicsImageApi : Library {
     }
 }
 
+internal interface MacInputApi : Library {
+    fun CGEventSourceKeyState(stateId: Int, keyCode: Short): Boolean
+    fun CGEventSourceButtonState(stateId: Int, button: Int): Boolean
+
+    companion object {
+        val INSTANCE: MacInputApi by lazy { Native.load("CoreGraphics", MacInputApi::class.java) }
+    }
+}
+
 private val CoreFoundation.CFArrayRef.count: Int get() = coreCount().toInt()
 private fun CoreFoundation.CFArrayRef.coreCount() = CoreFoundation.INSTANCE.CFArrayGetCount(this).toLong()
 
@@ -203,6 +224,92 @@ private fun pixelRect(width: Long, height: Long) = CoreGraphics.CGRect.ByValue()
     write()
 }
 
+private data class MacKeyInput(
+    val label: String,
+    val keyCodes: ShortArray,
+)
+
+private val MAC_KEY_INPUTS: List<MacKeyInput> = listOf(
+    MacKeyInput("Ctrl", shortArrayOf(59, 62)),
+    MacKeyInput("Shift", shortArrayOf(56, 60)),
+    MacKeyInput("Option", shortArrayOf(58, 61)),
+    MacKeyInput("Cmd", shortArrayOf(54, 55)),
+    MacKeyInput("A", shortArrayOf(0)),
+    MacKeyInput("B", shortArrayOf(11)),
+    MacKeyInput("C", shortArrayOf(8)),
+    MacKeyInput("D", shortArrayOf(2)),
+    MacKeyInput("E", shortArrayOf(14)),
+    MacKeyInput("F", shortArrayOf(3)),
+    MacKeyInput("G", shortArrayOf(5)),
+    MacKeyInput("H", shortArrayOf(4)),
+    MacKeyInput("I", shortArrayOf(34)),
+    MacKeyInput("J", shortArrayOf(38)),
+    MacKeyInput("K", shortArrayOf(40)),
+    MacKeyInput("L", shortArrayOf(37)),
+    MacKeyInput("M", shortArrayOf(46)),
+    MacKeyInput("N", shortArrayOf(45)),
+    MacKeyInput("O", shortArrayOf(31)),
+    MacKeyInput("P", shortArrayOf(35)),
+    MacKeyInput("Q", shortArrayOf(12)),
+    MacKeyInput("R", shortArrayOf(15)),
+    MacKeyInput("S", shortArrayOf(1)),
+    MacKeyInput("T", shortArrayOf(17)),
+    MacKeyInput("U", shortArrayOf(32)),
+    MacKeyInput("V", shortArrayOf(9)),
+    MacKeyInput("W", shortArrayOf(13)),
+    MacKeyInput("X", shortArrayOf(7)),
+    MacKeyInput("Y", shortArrayOf(16)),
+    MacKeyInput("Z", shortArrayOf(6)),
+    MacKeyInput("0", shortArrayOf(29)),
+    MacKeyInput("1", shortArrayOf(18)),
+    MacKeyInput("2", shortArrayOf(19)),
+    MacKeyInput("3", shortArrayOf(20)),
+    MacKeyInput("4", shortArrayOf(21)),
+    MacKeyInput("5", shortArrayOf(23)),
+    MacKeyInput("6", shortArrayOf(22)),
+    MacKeyInput("7", shortArrayOf(26)),
+    MacKeyInput("8", shortArrayOf(28)),
+    MacKeyInput("9", shortArrayOf(25)),
+    MacKeyInput("F1", shortArrayOf(122)),
+    MacKeyInput("F2", shortArrayOf(120)),
+    MacKeyInput("F3", shortArrayOf(99)),
+    MacKeyInput("F4", shortArrayOf(118)),
+    MacKeyInput("F5", shortArrayOf(96)),
+    MacKeyInput("F6", shortArrayOf(97)),
+    MacKeyInput("F7", shortArrayOf(98)),
+    MacKeyInput("F8", shortArrayOf(100)),
+    MacKeyInput("F9", shortArrayOf(101)),
+    MacKeyInput("F10", shortArrayOf(109)),
+    MacKeyInput("F11", shortArrayOf(103)),
+    MacKeyInput("F12", shortArrayOf(111)),
+    MacKeyInput("Esc", shortArrayOf(53)),
+    MacKeyInput("Tab", shortArrayOf(48)),
+    MacKeyInput("Enter", shortArrayOf(36, 76)),
+    MacKeyInput("Space", shortArrayOf(49)),
+    MacKeyInput("Backspace", shortArrayOf(51)),
+    MacKeyInput("Delete", shortArrayOf(117)),
+    MacKeyInput("Home", shortArrayOf(115)),
+    MacKeyInput("End", shortArrayOf(119)),
+    MacKeyInput("PgUp", shortArrayOf(116)),
+    MacKeyInput("PgDn", shortArrayOf(121)),
+    MacKeyInput("←", shortArrayOf(123)),
+    MacKeyInput("↑", shortArrayOf(126)),
+    MacKeyInput("→", shortArrayOf(124)),
+    MacKeyInput("↓", shortArrayOf(125)),
+    MacKeyInput("-", shortArrayOf(27)),
+    MacKeyInput("=", shortArrayOf(24)),
+    MacKeyInput("[", shortArrayOf(33)),
+    MacKeyInput("]", shortArrayOf(30)),
+    MacKeyInput("\\", shortArrayOf(42)),
+    MacKeyInput(";", shortArrayOf(41)),
+    MacKeyInput("'", shortArrayOf(39)),
+    MacKeyInput(",", shortArrayOf(43)),
+    MacKeyInput(".", shortArrayOf(47)),
+    MacKeyInput("/", shortArrayOf(44)),
+    MacKeyInput("`", shortArrayOf(50)),
+)
+
 private const val RGBA_CHANNELS = 4L
 private const val BITS_PER_COMPONENT = 8
 private const val RGBA_BITMAP_INFO = 0x4001
+private const val SESSION_STATE = 0

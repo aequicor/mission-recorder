@@ -2,11 +2,13 @@ package io.aequicor.capture.desktop.awt
 
 import io.aequicor.capture.core.CaptureSourceId
 import io.aequicor.capture.core.CoordinateSpace
+import java.awt.Color
 import java.awt.Point
 import java.awt.Rectangle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AwtCaptureRegionSelectorTest {
     @Test
@@ -21,6 +23,19 @@ class AwtCaptureRegionSelectorTest {
     @Test
     fun rejectsClickWithoutArea() {
         assertNull(normalizedSelection(Point(10, 10), Point(12, 12), Rectangle(0, 0, 100, 100)))
+    }
+
+    @Test
+    fun createsCursorWithLightForegroundAndDarkOutline() {
+        val image = createHighContrastCursorImage(width = 32, height = 32)
+        val colors = buildSet {
+            repeat(image.height) { y ->
+                repeat(image.width) { x -> add(image.getRGB(x, y)) }
+            }
+        }
+
+        assertTrue(Color.WHITE.rgb in colors)
+        assertTrue(Color.BLACK.rgb in colors)
     }
 
     @Test

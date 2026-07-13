@@ -30,6 +30,7 @@ internal interface MacWindowSystem {
     fun findWindow(windowId: Long): MacWindowDescriptor?
     fun captureWindow(windowId: Long): MacCapturedFrame
     fun cursorPosition(): MacPoint?
+    fun pressedInputs(): List<String>
 }
 
 internal object MacCaptureSourceIds {

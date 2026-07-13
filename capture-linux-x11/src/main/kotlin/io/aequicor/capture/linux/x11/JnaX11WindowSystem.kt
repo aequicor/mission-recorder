@@ -15,6 +15,8 @@ internal class JnaX11WindowSystem(
     private val x11: X11 = X11.INSTANCE,
     private val imageLibrary: X11ImageLibrary = X11ImageLibrary.INSTANCE,
 ) : X11WindowSystem {
+    private val keyCodeCache = mutableMapOf<Long, Int>()
+
     fun probe() {
         withDisplay { Unit }
     }
@@ -95,6 +97,51 @@ internal class JnaX11WindowSystem(
                 null
             }
         }
+    }
+
+    override fun pressedInputs(): List<String> = withDisplay { display ->
+        withXErrorTrap(display) {
+            val keymap = ByteArray(32)
+            x11.XQueryKeymap(display, keymap)
+            buildList<String> {
+                X11_INPUTS
+                    .filter { input -> input.keySymbols.any { keySymbol -> isKeyPressed(display, keymap, keySymbol) } }
+                    .mapTo(this, X11Input::label)
+                val pointerMask = pointerMask(display)
+                if (pointerMask and X11.Button1Mask != 0) add("LMB")
+                if (pointerMask and X11.Button3Mask != 0) add("RMB")
+                if (pointerMask and X11.Button2Mask != 0) add("MMB")
+                if (pointerMask and X11.Button4Mask != 0) add("Mouse 4")
+                if (pointerMask and X11.Button5Mask != 0) add("Mouse 5")
+            }
+        }
+    }
+
+    private fun isKeyPressed(display: X11.Display, keymap: ByteArray, keySymbol: Long): Boolean {
+        val keyCode = keyCodeCache.getOrPut(keySymbol) {
+            x11.XKeysymToKeycode(display, X11.KeySym(keySymbol)).toInt() and 0xff
+        }
+        if (keyCode == 0) return false
+        val byteIndex = keyCode ushr 3
+        val bitMask = 1 shl (keyCode and 7)
+        return keymap[byteIndex].toInt() and bitMask != 0
+    }
+
+    private fun pointerMask(display: X11.Display): Int {
+        val root = x11.XDefaultRootWindow(display)
+        val mask = IntByReference()
+        x11.XQueryPointer(
+            display,
+            root,
+            X11.WindowByReference(),
+            X11.WindowByReference(),
+            IntByReference(),
+            IntByReference(),
+            IntByReference(),
+            IntByReference(),
+            mask,
+        )
+        return mask.value
     }
 
     private fun descriptor(
@@ -403,6 +450,37 @@ private fun Long.channel(mask: Long): Int {
     val shift = java.lang.Long.numberOfTrailingZeros(mask)
     val maximum = mask ushr shift
     return (((this and mask) ushr shift) * 255L / maximum).toInt().coerceIn(0, 255)
+}
+
+private data class X11Input(
+    val label: String,
+    val keySymbols: LongArray,
+)
+
+private val X11_INPUTS: List<X11Input> = buildList {
+    add(X11Input("Ctrl", longArrayOf(0xffe3, 0xffe4)))
+    add(X11Input("Shift", longArrayOf(0xffe1, 0xffe2)))
+    add(X11Input("Alt", longArrayOf(0xffe9, 0xffea)))
+    add(X11Input("Super", longArrayOf(0xffeb, 0xffec)))
+    addAll(('a'..'z').map { key -> X11Input(key.uppercase(), longArrayOf(key.code.toLong())) })
+    addAll(('0'..'9').map { key -> X11Input(key.toString(), longArrayOf(key.code.toLong())) })
+    addAll((0xffbeL..0xffc9L).mapIndexed { index, key -> X11Input("F${index + 1}", longArrayOf(key)) })
+    add(X11Input("Esc", longArrayOf(0xff1b)))
+    add(X11Input("Tab", longArrayOf(0xff09)))
+    add(X11Input("Enter", longArrayOf(0xff0d)))
+    add(X11Input("Space", longArrayOf(0x20)))
+    add(X11Input("Backspace", longArrayOf(0xff08)))
+    add(X11Input("Delete", longArrayOf(0xffff)))
+    add(X11Input("Insert", longArrayOf(0xff63)))
+    add(X11Input("Home", longArrayOf(0xff50)))
+    add(X11Input("End", longArrayOf(0xff57)))
+    add(X11Input("PgUp", longArrayOf(0xff55)))
+    add(X11Input("PgDn", longArrayOf(0xff56)))
+    add(X11Input("←", longArrayOf(0xff51)))
+    add(X11Input("↑", longArrayOf(0xff52)))
+    add(X11Input("→", longArrayOf(0xff53)))
+    add(X11Input("↓", longArrayOf(0xff54)))
+    "-=[]\\;',./`".forEach { key -> add(X11Input(key.toString(), longArrayOf(key.code.toLong()))) }
 }
 
 private val X11_ERROR_LOCK = Any()

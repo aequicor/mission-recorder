@@ -6,6 +6,12 @@ import io.aequicor.capture.core.AudioSourceId
 import io.aequicor.capture.core.CaptureSource
 import io.aequicor.capture.core.CaptureSourceId
 import io.aequicor.compose.ui.StoryboardMode
+import io.aequicor.hotkey.GlobalHotkeyAction
+import io.aequicor.hotkey.GlobalHotkeyBinding
+import io.aequicor.hotkey.GlobalHotkeyGesture
+import io.aequicor.hotkey.GlobalHotkeyKey
+import io.aequicor.hotkey.GlobalHotkeyModifier
+import io.aequicor.hotkey.defaultDesktopGlobalHotkeys
 import io.aequicor.settings.MissionRecorderSettingsStore
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,6 +34,7 @@ class DesktopUiSettingsRepositoryTest {
             preferences = DesktopRecorderPreferences(
                 frameRate = 60,
                 captureCursor = false,
+                showInputOverlay = true,
                 replayDurationMinutes = 9,
                 encoderSettings = EncoderSettings(videoBitrateBitsPerSecond = 16_000_000),
             ),
@@ -109,6 +116,7 @@ class DesktopUiSettingsRepositoryTest {
         val preferences = DesktopRecorderPreferences(
             frameRate = 60,
             captureCursor = false,
+            showInputOverlay = true,
             replayDurationMinutes = 12,
             storyboardMode = StoryboardMode.ContactSheet,
             encoderSettings = EncoderSettings(
@@ -120,7 +128,7 @@ class DesktopUiSettingsRepositoryTest {
 
         repository.saveMiniControllerPosition(position)
         repository.saveRecorderPreferences(preferences)
-        repository.saveGlobalHotkeysEnabled(true)
+        repository.saveGlobalHotkeySettings(true, defaultDesktopGlobalHotkeys)
         repository.saveShowApplicationInRecording(true)
         repository.saveShowCaptureBorder(false)
 
@@ -137,10 +145,40 @@ class DesktopUiSettingsRepositoryTest {
         val persistedProfile = store.loadOrDefault().profiles.single()
         assertEquals(60, persistedProfile.video.frameRate)
         assertEquals(false, persistedProfile.video.captureCursor)
+        assertTrue(persistedProfile.video.showInputOverlay)
         assertEquals(12 * 60L, persistedProfile.replay.durationSeconds)
         assertEquals(18_000_000, persistedProfile.encoder.videoBitrateBitsPerSecond)
         assertEquals(160_000, persistedProfile.encoder.audioBitrateBitsPerSecond)
         assertEquals(3, persistedProfile.encoder.keyframeIntervalSeconds)
+    }
+
+    @Test
+    fun persistsCustomGlobalHotkeys() {
+        val path = Files.createTempDirectory("mission-recorder-hotkeys").resolve("settings.json")
+        val repository = DesktopUiSettingsRepository(MissionRecorderSettingsStore(path))
+        val bindings = listOf(
+            GlobalHotkeyBinding(
+                action = GlobalHotkeyAction.ToggleRecording,
+                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Alt), GlobalHotkeyKey.F10),
+            ),
+            GlobalHotkeyBinding(
+                action = GlobalHotkeyAction.TogglePause,
+                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Control), GlobalHotkeyKey.F9),
+            ),
+            GlobalHotkeyBinding(
+                action = GlobalHotkeyAction.SaveReplay,
+                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Meta), GlobalHotkeyKey.F11),
+            ),
+            GlobalHotkeyBinding(
+                action = GlobalHotkeyAction.SelectRegion,
+                gesture = GlobalHotkeyGesture(setOf(GlobalHotkeyModifier.Shift), GlobalHotkeyKey.F8),
+            ),
+        )
+
+        repository.saveGlobalHotkeySettings(enabled = true, bindings = bindings)
+
+        assertEquals(true, repository.loadStartupSettings().globalHotkeysEnabled)
+        assertEquals(bindings, repository.loadStartupSettings().globalHotkeyBindings)
     }
 
     @Test

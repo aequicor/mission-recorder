@@ -165,6 +165,7 @@ class CliParserTest {
                 "--fps",
                 "60",
                 "--no-cursor",
+                "--show-input",
                 "--overwrite",
             ),
         )
@@ -175,7 +176,27 @@ class CliParserTest {
         assertEquals("region.mp4", command.options.outputPath)
         assertEquals(60, command.options.fps)
         assertEquals(false, command.options.captureCursor)
+        assertEquals(true, command.options.showInputOverlay)
         assertEquals(true, command.options.overwriteOutput)
+    }
+
+    @Test
+    fun rejectsConflictingInputOverlayFlags() {
+        val result = CliParser.parse(
+            arrayOf(
+                "record",
+                "screen",
+                "--output",
+                "screen.mp4",
+                "--show-input",
+                "--hide-input",
+            ),
+        )
+
+        assertEquals(
+            "Use either --show-input or --hide-input, not both.",
+            assertIs<CliParseResult.Invalid>(result).message,
+        )
     }
 
     @Test

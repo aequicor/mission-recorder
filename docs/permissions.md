@@ -6,7 +6,7 @@ Mission Recorder проверяет разрешения перед каждым
 - `Microphone` добавляется только при выбранном микрофоне;
 - `SystemAudio` добавляется только при включенном системном звуке.
 
-GUI выполняет preflight после явного нажатия кнопки записи, запуска replay buffer или отдельной кнопки preview. Preview захватывает только выбранный video source, не включает audio и не создаёт output; закрытие preview отменяет его capture flow. CLI выполняет тот же preflight после явной команды `record` или `replay run`. Регистрация глобальных hotkeys, открытие мини-панели или каталога записей, discovery источников, экспорт кадров, просмотр настроек и `control status|pause|resume|stop` сами по себе capture не запускают и разрешения не запрашивают.
+GUI выполняет preflight после явного нажатия кнопки записи или запуска replay buffer, а также перед автоматическим preview выбранного источника. Preview захватывает выбранный video source в исходном разрешении с частотой до 5 FPS, не включает audio и не создаёт output; скрытие или сворачивание основного окна отменяет capture flow до возвращения окна. CLI выполняет тот же preflight после явной команды `record` или `replay run`. Регистрация глобальных hotkeys, открытие мини-панели или каталога записей, discovery источников, экспорт кадров, просмотр настроек и `control status|pause|resume|stop` сами по себе capture не запускают и разрешения не запрашивают.
 
 `PermissionGateway` обязан вернуть статус для каждого запрошенного разрешения. Неполный отчет считается отказом; recording/replay engine не запускается. Причина выводится пользователю, а повторный запуск снова выполняет проверку.
 
@@ -26,7 +26,7 @@ GUI выполняет preflight после явного нажатия кноп
 
 ## macOS
 
-Production wiring использует native `CGPreflightScreenCaptureAccess` для проверки Screen Recording и вызывает `CGRequestScreenCaptureAccess` только после явного Start/Preview действия. Отказ возвращает инструкции для `System Settings > Privacy & Security > Screen Recording` до открытия output. Для микрофона AVFoundation TCC status проверяется заранее: denied/restricted блокируются, authorized разрешается, а not-determined передается Java Sound только после явного включения микрофона и запуска записи, чтобы системный prompt не появлялся при старте приложения. System-audio capture текущим macOS backend-ом не поддерживается.
+Production wiring использует native `CGPreflightScreenCaptureAccess` для проверки Screen Recording и вызывает `CGRequestScreenCaptureAccess` перед Start или автоматическим preview выбранного источника. Отказ возвращает инструкции для `System Settings > Privacy & Security > Screen Recording` до открытия output. Для микрофона AVFoundation TCC status проверяется заранее: denied/restricted блокируются, authorized разрешается, а not-determined передается Java Sound только после явного включения микрофона и запуска записи, чтобы системный prompt не появлялся при старте приложения. System-audio capture текущим macOS backend-ом не поддерживается.
 
 Native app bundle содержит `NSScreenCaptureUsageDescription` и `NSMicrophoneUsageDescription`. Текущий window/application image path основан на deprecated CoreGraphics API и должен быть заменен ScreenCaptureKit; до hardware smoke на поддерживаемых macOS версиях нельзя считать этот backend полностью проверенным.
 

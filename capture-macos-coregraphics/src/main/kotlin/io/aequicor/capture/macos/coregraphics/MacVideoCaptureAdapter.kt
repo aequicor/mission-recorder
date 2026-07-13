@@ -8,6 +8,7 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.platform.InputOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -33,6 +34,7 @@ internal class MacVideoCaptureAdapter(
         var selected: MacWindowDescriptor? = null
         var outputWidth = 0
         var outputHeight = 0
+        val inputOverlay = InputOverlayRenderer()
         while (currentCoroutineContext().isActive) {
             selected = resolveWindow(selection, selected)
             val captured = try {
@@ -42,8 +44,26 @@ internal class MacVideoCaptureAdapter(
             }
             captured.validate()
             var pixels = captured.rgbaPixels
-            if (settings.captureCursor) captured.cursorPixelPosition(windowSystem.cursorPosition())?.let { cursor ->
+            val cursor = if (settings.captureCursor || settings.showInputOverlay) {
+                captured.cursorPixelPosition(windowSystem.cursorPosition())
+            } else {
+                null
+            }
+            if (settings.captureCursor && cursor != null) {
                 MacRgbaCursorPainter.draw(pixels, captured.pixelWidth, captured.pixelHeight, cursor.x, cursor.y)
+            }
+            if (settings.showInputOverlay) {
+                val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
+                if (label != null && cursor != null) {
+                    inputOverlay.drawRgba(
+                        pixels = pixels,
+                        frameWidth = captured.pixelWidth,
+                        frameHeight = captured.pixelHeight,
+                        hotspotX = cursor.x,
+                        hotspotY = cursor.y,
+                        text = label,
+                    )
+                }
             }
             if (outputWidth == 0 || outputHeight == 0) {
                 outputWidth = captured.pixelWidth

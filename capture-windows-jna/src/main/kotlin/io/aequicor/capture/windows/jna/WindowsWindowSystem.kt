@@ -42,6 +42,8 @@ internal interface WindowsWindowSystem {
     fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture
 
     fun cursorPosition(): WindowsPoint?
+
+    fun pressedInputs(): List<String>
 }
 
 internal interface WindowsScreenCapture : AutoCloseable {

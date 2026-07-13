@@ -96,6 +96,7 @@ class DesktopReplayCommandBackend(
             outputPath = output.toString(),
             frameRate = command.options.fps ?: DEFAULT_REPLAY_FRAME_RATE,
             captureCursor = command.options.captureCursor ?: true,
+            showInputOverlay = command.options.showInputOverlay ?: false,
             replayDuration = bufferDuration,
         )
         val permissionAuthorization = try {

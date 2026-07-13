@@ -6,6 +6,7 @@ import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.platform.CaptureSourceRequest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -85,6 +86,33 @@ class X11CaptureAdaptersTest {
     }
 
     @Test
+    fun videoAdapterPaintsPressedInputsNearCursor() = runTest {
+        val window = descriptor(0x10, 42, "Document", "Editor", 80, 60)
+        val windowSystem = FakeX11WindowSystem(
+            windows = listOf(window),
+            capturedFrames = ArrayDeque(listOf(solidFrame(window.bounds, red = 255, green = 255, blue = 255))),
+            cursor = X11Point(40, 30),
+            pressedInputs = listOf("Ctrl", "C"),
+        )
+        val adapter = X11VideoCaptureAdapter(windowSystem, UnconfinedTestDispatcher(testScheduler)) { 1L }
+
+        val frame = adapter.frames(
+            RecordingSettings(
+                captureSource = CaptureSource.Window(
+                    CaptureSourceId(X11CaptureSourceIds.window(window.windowId)),
+                    "Document",
+                ),
+                outputPath = "test.mp4",
+                captureCursor = false,
+                showInputOverlay = true,
+            ),
+        ).first()
+
+        assertTrue(requireNotNull(frame.pixelData).containsNonWhiteColor())
+        assertEquals(1, windowSystem.pressedInputReadCount)
+    }
+
+    @Test
     fun convertsPackedXImagePixelsUsingByteOrderAndColourMasks() {
         val littleEndian = packedXImageToRgba(
             source = byteArrayOf(0x33, 0x22, 0x11, 0),
@@ -136,6 +164,16 @@ class X11CaptureAdaptersTest {
     }
 
     @Test
+    fun cursorPainterAddsHighlightAroundHotspot() {
+        val pixels = ByteArray(40 * 40 * 4) { 0xff.toByte() }
+
+        X11RgbaCursorPainter.draw(pixels, 40, 40, hotspotX = 20, hotspotY = 20)
+
+        val highlightedPixel = pixels.copyOfRange((20 * 40 + 10) * 4, (20 * 40 + 10) * 4 + 3)
+        assertTrue(highlightedPixel.any { channel -> channel != 0xff.toByte() })
+    }
+
+    @Test
     fun factoryEnablesOnlyConfirmedX11LinuxSessions() {
         assertTrue(LinuxX11CaptureAdapterFactory.isSupported("Linux", "x11", "", ":0"))
         assertFalse(LinuxX11CaptureAdapterFactory.isSupported("Linux", "wayland", "wayland-0", ":0"))
@@ -146,14 +184,24 @@ class X11CaptureAdaptersTest {
 private class FakeX11WindowSystem(
     private val windows: List<X11WindowDescriptor>,
     private val capturedFrames: ArrayDeque<X11CapturedFrame> = ArrayDeque(),
+    private val cursor: X11Point? = null,
+    private val pressedInputs: List<String> = emptyList(),
 ) : X11WindowSystem {
+    var pressedInputReadCount: Int = 0
+        private set
+
     override fun listWindows(): List<X11WindowDescriptor> = windows
 
     override fun findWindow(windowId: Long): X11WindowDescriptor? = windows.firstOrNull { it.windowId == windowId }
 
     override fun captureWindow(windowId: Long): X11CapturedFrame = capturedFrames.removeFirst()
 
-    override fun cursorPosition(): X11Point? = null
+    override fun cursorPosition(): X11Point? = cursor
+
+    override fun pressedInputs(): List<String> {
+        pressedInputReadCount += 1
+        return pressedInputs
+    }
 }
 
 private fun descriptor(
@@ -182,3 +230,7 @@ private fun solidFrame(bounds: X11WindowBounds, red: Int, green: Int, blue: Int)
     }
     return X11CapturedFrame(bounds, pixels)
 }
+
+private fun ByteArray.containsNonWhiteColor(): Boolean = asList()
+    .chunked(4)
+    .any { pixel -> pixel.take(3).any { channel -> channel != 0xff.toByte() } }

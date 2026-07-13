@@ -3,12 +3,15 @@ package io.aequicor.capture.windows.jna
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.RenderingHints
+import java.awt.geom.Ellipse2D
 import java.awt.geom.Path2D
 import java.awt.image.BufferedImage
 
 internal object RgbaCursorPainter {
-    private const val WIDTH = 19
-    private const val HEIGHT = 27
+    private const val ORIGIN_X = -16
+    private const val ORIGIN_Y = -16
+    private const val WIDTH = 36
+    private const val HEIGHT = 44
     private const val CHANNELS = 4
     private val cursorPixels = createCursorPixels()
 
@@ -20,12 +23,12 @@ internal object RgbaCursorPainter {
         hotspotY: Int,
     ) {
         for (cursorY in 0 until HEIGHT) {
-            val frameY = hotspotY + cursorY
+            val frameY = hotspotY + ORIGIN_Y + cursorY
             if (frameY !in 0 until frameHeight) {
                 continue
             }
             for (cursorX in 0 until WIDTH) {
-                val frameX = hotspotX + cursorX
+                val frameX = hotspotX + ORIGIN_X + cursorX
                 if (frameX !in 0 until frameWidth) {
                     continue
                 }
@@ -51,10 +54,10 @@ internal object RgbaCursorPainter {
         hotspotY: Int,
     ) {
         for (cursorY in 0 until HEIGHT) {
-            val frameY = hotspotY + cursorY
+            val frameY = hotspotY + ORIGIN_Y + cursorY
             if (frameY !in 0 until frameHeight) continue
             for (cursorX in 0 until WIDTH) {
-                val frameX = hotspotX + cursorX
+                val frameX = hotspotX + ORIGIN_X + cursorX
                 if (frameX !in 0 until frameWidth) continue
                 val source = cursorPixels[cursorY * WIDTH + cursorX]
                 val alpha = source ushr 24 and 0xff
@@ -88,6 +91,13 @@ internal object RgbaCursorPainter {
         val graphics = image.createGraphics()
         try {
             graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            graphics.translate(-ORIGIN_X, -ORIGIN_Y)
+            val highlight = Ellipse2D.Double(-14.0, -14.0, 28.0, 28.0)
+            graphics.color = Color(38, 97, 156, 96)
+            graphics.fill(highlight)
+            graphics.color = Color(255, 255, 255, 210)
+            graphics.stroke = BasicStroke(2.0f)
+            graphics.draw(highlight)
             graphics.color = Color.WHITE
             graphics.fill(cursor)
             graphics.color = Color.BLACK

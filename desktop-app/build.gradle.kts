@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":settings"))
     implementation(compose.components.resources)
     implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
     implementation(libs.kotlinxCoroutines)
     implementation(libs.kotlinxCoroutinesSwing)
     implementation(libs.jna)
