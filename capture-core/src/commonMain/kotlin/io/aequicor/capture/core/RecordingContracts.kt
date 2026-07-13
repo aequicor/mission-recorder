@@ -12,6 +12,9 @@ fun interface RecordingSessionIdFactory {
 
 interface VideoCaptureAdapter {
     fun frames(settings: RecordingSettings): Flow<VideoFrame>
+
+    /** Uses platform-native frames when both the source and consumer support them. */
+    fun nativeFrames(settings: RecordingSettings): Flow<VideoFrame> = frames(settings)
 }
 
 interface AudioCaptureAdapter {
@@ -24,6 +27,12 @@ interface MediaEncoder {
     suspend fun writeAudioFrame(frame: AudioFrame)
     suspend fun finish(session: RecordingSession, metrics: RecordingMetrics): RecordingOutput
     suspend fun cancel(session: RecordingSession?)
+}
+
+/** An encoder that can consume frames returned by [VideoCaptureAdapter.nativeFrames]. */
+interface NativeVideoFrameMediaEncoder {
+    /** Returns whether the required native encoder is available on the current machine. */
+    fun supportsNativeVideoFrames(): Boolean
 }
 
 data class RecordingOutput(

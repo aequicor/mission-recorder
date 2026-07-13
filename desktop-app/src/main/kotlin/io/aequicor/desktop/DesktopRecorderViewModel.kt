@@ -19,6 +19,7 @@ import io.aequicor.capture.core.ResumeRecordingResult
 import io.aequicor.capture.core.StartRecordingResult
 import io.aequicor.capture.core.StopRecordingResult
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.release
 import io.aequicor.capture.platform.AudioSourceRepository
 import io.aequicor.capture.platform.AudioSourceRequest
 import io.aequicor.capture.platform.CaptureSourceRepository
@@ -161,6 +162,8 @@ internal class DesktopRecorderViewModel(
     private val previewEngine: DesktopPreviewEngine = UnavailableDesktopPreviewEngine,
     private val nextOutputPath: () -> String,
     private val nextReplayOutputPath: () -> String,
+    private val screenshotSaver: DesktopScreenshotSaver = UnavailableDesktopScreenshotSaver,
+    private val nextScreenshotOutputPath: (String) -> String = { "screenshot.png" },
     private val captureRegionSelector: CaptureRegionSelector = UnavailableCaptureRegionSelector,
     private val audioLevels: StateFlow<Map<AudioSourceId, AudioLevels>> = MutableStateFlow(emptyMap()),
     private val outputFileSelector: DesktopOutputFileSelector = UnavailableDesktopOutputFileSelector,
@@ -345,6 +348,8 @@ internal class DesktopRecorderViewModel(
             RecorderUiAction.ResumeRecording -> resumeRecording()
             RecorderUiAction.StopRecording -> stopRecording()
             RecorderUiAction.MarkImportantFrame -> markImportantFrame()
+            RecorderUiAction.TakeScreenshot -> takeScreenshot()
+            RecorderUiAction.OpenEditor -> Unit
             RecorderUiAction.ExportStoryboard -> exportStoryboard()
             RecorderUiAction.StartReplayBuffer -> startReplayBuffer()
             RecorderUiAction.SaveReplayBuffer -> saveReplayBuffer()
@@ -1134,8 +1139,44 @@ internal class DesktopRecorderViewModel(
         }
         scope.launch {
             when (recordingEngine.markImportantFrame()) {
-                MarkImportantFrameResult.Marked -> Unit
+                MarkImportantFrameResult.Marked -> mutableState.update { current ->
+                    current.copy(importantFrameCaptureSequence = current.importantFrameCaptureSequence + 1L)
+                }
                 is MarkImportantFrameResult.NotRecording -> Unit
+            }
+        }
+    }
+
+    private fun takeScreenshot() {
+        val snapshot = mutableState.value
+        val frame = mutablePreviewFrame.value
+        if (!snapshot.canTakeScreenshot || frame == null) {
+            return
+        }
+        val outputPath = try {
+            nextScreenshotOutputPath(snapshot.outputPath)
+        } catch (failure: IllegalArgumentException) {
+            mutableState.update { it.copy(errorMessage = failure.message ?: "Screenshot path is invalid.") }
+            return
+        } catch (failure: SecurityException) {
+            mutableState.update { it.copy(errorMessage = failure.message ?: "Screenshot path is not accessible.") }
+            return
+        }
+        mutableState.update {
+            it.copy(isSavingScreenshot = true, lastScreenshotPath = null, errorMessage = null)
+        }
+        scope.launch {
+            when (val result = screenshotSaver.save(frame, outputPath)) {
+                is DesktopScreenshotSaveResult.Saved -> mutableState.update {
+                    it.copy(
+                        isSavingScreenshot = false,
+                        lastScreenshotPath = result.outputPath,
+                        errorMessage = null,
+                    )
+                }
+                is DesktopScreenshotSaveResult.Failed -> mutableState.update {
+                    it.copy(isSavingScreenshot = false, errorMessage = result.message)
+                }
             }
         }
     }
@@ -1263,9 +1304,13 @@ internal class DesktopRecorderViewModel(
             }
             try {
                 previewEngine.frames(settings).collect { frame ->
-                    mutablePreviewFrame.value = frame.toDesktopPreviewFrame()
-                    mutableState.update { current ->
-                        current.copy(previewStatus = PreviewUiStatus.Active, errorMessage = null)
+                    try {
+                        mutablePreviewFrame.value = frame.toDesktopPreviewFrame()
+                        mutableState.update { current ->
+                            current.copy(previewStatus = PreviewUiStatus.Active, errorMessage = null)
+                        }
+                    } finally {
+                        frame.release()
                     }
                 }
                 error("Preview source stopped producing frames.")
@@ -1647,7 +1692,7 @@ private fun VideoFrame.toDesktopPreviewFrame(): DesktopPreviewFrame {
         height = height,
         pixelFormat = pixelFormat,
         strideBytes = strideBytes,
-        pixelData = source,
+        pixelData = source.copyOf(),
     )
 }
 

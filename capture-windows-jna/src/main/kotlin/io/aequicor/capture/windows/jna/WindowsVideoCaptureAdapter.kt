@@ -8,6 +8,7 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.VideoFrameLease
 import io.aequicor.capture.platform.InputOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
@@ -26,17 +27,31 @@ class WindowsVideoCaptureAdapter internal constructor(
     private val dispatcher: CoroutineDispatcher,
     private val nanoTime: () -> Long = System::nanoTime,
 ) : VideoCaptureAdapter {
-    override fun frames(settings: RecordingSettings): Flow<VideoFrame> = flow {
+    override fun frames(settings: RecordingSettings): Flow<VideoFrame> = captureFrames(settings, nativeFrames = false)
+
+    override fun nativeFrames(settings: RecordingSettings): Flow<VideoFrame> = captureFrames(settings, nativeFrames = true)
+
+    private fun captureFrames(settings: RecordingSettings, nativeFrames: Boolean): Flow<VideoFrame> = flow {
         val selection = settings.captureSource.toWindowsSelection()
         val intervalNanoseconds = NANOS_PER_SECOND / max(settings.frameRate, 1)
-        val startedAt = nanoTime()
-        var nextFrameDeadline = startedAt
         var selectedWindow: WindowsWindowDescriptor? = null
         var outputWidth = 0
         var outputHeight = 0
         val inputOverlay = InputOverlayRenderer()
+        val useNativeFrames = nativeFrames &&
+            settings.encoder.hardwareAcceleration != io.aequicor.capture.core.HardwareAccelerationMode.Disabled &&
+            !settings.showInputOverlay
         val screenCapture = (selection as? WindowsSelection.Desktop)
-            ?.let { desktop -> windowSystem.openScreenCapture(desktop.bounds, settings.frameRate) }
+            ?.let { desktop ->
+                windowSystem.openScreenCapture(
+                    bounds = desktop.bounds,
+                    frameRate = settings.frameRate,
+                    nativeFrames = useNativeFrames,
+                    captureCursor = settings.captureCursor,
+                )
+            }
+        val startedAt = nanoTime()
+        var nextFrameDeadline = startedAt
 
         try {
             while (currentCoroutineContext().isActive) {
@@ -46,77 +61,105 @@ class WindowsVideoCaptureAdapter internal constructor(
                     selectedWindow = resolveWindow(selection, selectedWindow)
                     capture(requireNotNull(selectedWindow), settings.captureSource.displayName)
                 }
-                captured.validate()
-                var bgraPixels = captured.bgraPixels
-                val cursor = if (settings.captureCursor || settings.showInputOverlay) {
-                    windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
-                } else {
-                    null
-                }
-                val hotspotX = cursor?.x?.minus(captured.bounds.x)
-                val hotspotY = cursor?.y?.minus(captured.bounds.y)
-                if (settings.captureCursor && hotspotX != null && hotspotY != null) {
-                    RgbaCursorPainter.drawBgra(
-                        bgraPixels = bgraPixels,
-                        frameWidth = captured.bounds.width,
-                        frameHeight = captured.bounds.height,
-                        hotspotX = hotspotX,
-                        hotspotY = hotspotY,
-                    )
-                }
-                if (settings.showInputOverlay) {
-                    val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
-                    if (label != null) {
-                        inputOverlay.drawBgra(
-                            pixels = bgraPixels,
+                val lease = VideoFrameLease(captured::release)
+                try {
+                    captured.validate()
+                    if (captured.nativeFrame != null) {
+                        emit(
+                            VideoFrame(
+                                timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                                width = captured.bounds.width,
+                                height = captured.bounds.height,
+                                pixelFormat = PixelFormat.Nv12,
+                                strideBytes = 0,
+                                sourceId = settings.captureSource.id,
+                                nativeFrame = captured.nativeFrame,
+                                lease = lease,
+                            ),
+                        )
+                        nextFrameDeadline = paceFrame(nextFrameDeadline, intervalNanoseconds)
+                        continue
+                    }
+                    var bgraPixels = requireNotNull(captured.bgraPixels)
+                    val cursor = if (settings.captureCursor || settings.showInputOverlay) {
+                        windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
+                    } else {
+                        null
+                    }
+                    val hotspotX = cursor?.x?.minus(captured.bounds.x)
+                    val hotspotY = cursor?.y?.minus(captured.bounds.y)
+                    if (settings.captureCursor && hotspotX != null && hotspotY != null) {
+                        RgbaCursorPainter.drawBgra(
+                            bgraPixels = bgraPixels,
                             frameWidth = captured.bounds.width,
                             frameHeight = captured.bounds.height,
-                            hotspotX = hotspotX ?: 0,
-                            hotspotY = hotspotY ?: 0,
-                            text = label,
+                            hotspotX = hotspotX,
+                            hotspotY = hotspotY,
                         )
                     }
-                }
+                    if (settings.showInputOverlay) {
+                        val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
+                        if (label != null) {
+                            inputOverlay.drawBgra(
+                                pixels = bgraPixels,
+                                frameWidth = captured.bounds.width,
+                                frameHeight = captured.bounds.height,
+                                hotspotX = hotspotX ?: 0,
+                                hotspotY = hotspotY ?: 0,
+                                text = label,
+                            )
+                        }
+                    }
 
-                if (outputWidth == 0 || outputHeight == 0) {
-                    outputWidth = captured.bounds.width
-                    outputHeight = captured.bounds.height
-                } else if (captured.bounds.width != outputWidth || captured.bounds.height != outputHeight) {
-                    bgraPixels = bgraPixels.fitInto(
-                        sourceWidth = captured.bounds.width,
-                        sourceHeight = captured.bounds.height,
-                        targetWidth = outputWidth,
-                        targetHeight = outputHeight,
+                    if (outputWidth == 0 || outputHeight == 0) {
+                        outputWidth = captured.bounds.width
+                        outputHeight = captured.bounds.height
+                    } else if (captured.bounds.width != outputWidth || captured.bounds.height != outputHeight) {
+                        bgraPixels = bgraPixels.fitInto(
+                            sourceWidth = captured.bounds.width,
+                            sourceHeight = captured.bounds.height,
+                            targetWidth = outputWidth,
+                            targetHeight = outputHeight,
+                        )
+                    }
+                    if (settings.showInputOverlay) {
+                        inputOverlay.drawPendingEventMarkerBgra(bgraPixels, outputWidth, outputHeight)
+                    }
+
+                    emit(
+                        VideoFrame(
+                            timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                            width = outputWidth,
+                            height = outputHeight,
+                            pixelFormat = PixelFormat.Bgra8888,
+                            strideBytes = outputWidth * RGBA_CHANNEL_COUNT,
+                            sourceId = settings.captureSource.id,
+                            pixelData = bgraPixels,
+                            lease = lease,
+                        ),
                     )
+                } catch (throwable: Throwable) {
+                    lease.release()
+                    throw throwable
                 }
-                if (settings.showInputOverlay) {
-                    inputOverlay.drawPendingEventMarkerBgra(bgraPixels, outputWidth, outputHeight)
-                }
-
-                emit(
-                    VideoFrame(
-                        timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
-                        width = outputWidth,
-                        height = outputHeight,
-                        pixelFormat = PixelFormat.Bgra8888,
-                        strideBytes = outputWidth * RGBA_CHANNEL_COUNT,
-                        sourceId = settings.captureSource.id,
-                        pixelData = bgraPixels,
-                    ),
-                )
-                nextFrameDeadline += intervalNanoseconds
-                val remainingNanoseconds = nextFrameDeadline - nanoTime()
-                if (remainingNanoseconds > 0) {
-                    delay(remainingNanoseconds.nanoseconds)
-                } else if (remainingNanoseconds < -intervalNanoseconds) {
-                    val missedIntervals = (-remainingNanoseconds) / intervalNanoseconds
-                    nextFrameDeadline += missedIntervals * intervalNanoseconds
-                }
+                nextFrameDeadline = paceFrame(nextFrameDeadline, intervalNanoseconds)
             }
         } finally {
             screenCapture?.close()
         }
     }.flowOn(dispatcher)
+
+    private suspend fun paceFrame(previousDeadline: Long, intervalNanoseconds: Long): Long {
+        var nextDeadline = previousDeadline + intervalNanoseconds
+        val remainingNanoseconds = nextDeadline - nanoTime()
+        if (remainingNanoseconds > 0) {
+            delay(remainingNanoseconds.nanoseconds)
+        } else if (remainingNanoseconds < -intervalNanoseconds) {
+            val missedIntervals = (-remainingNanoseconds) / intervalNanoseconds
+            nextDeadline += missedIntervals * intervalNanoseconds
+        }
+        return nextDeadline
+    }
 
     private fun resolveWindow(
         selection: WindowsSelection,
@@ -176,7 +219,12 @@ private fun monitorBounds(index: Int): WindowsWindowBounds? = GraphicsEnvironmen
 
 private fun WindowsCapturedFrame.validate() {
     val expectedBytes = bounds.width.toLong() * bounds.height * RGBA_CHANNEL_COUNT
-    if (bounds.width <= 0 || bounds.height <= 0 || expectedBytes > Int.MAX_VALUE || bgraPixels.size != expectedBytes.toInt()) {
+    val invalidPayload = if (nativeFrame != null) {
+        bgraPixels != null
+    } else {
+        expectedBytes > Int.MAX_VALUE || bgraPixels?.size != expectedBytes.toInt()
+    }
+    if (bounds.width <= 0 || bounds.height <= 0 || invalidPayload) {
         throw sourceUnavailable("Windows capture returned an invalid ${bounds.width}x${bounds.height} BGRA frame.")
     }
 }

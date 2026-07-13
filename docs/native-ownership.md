@@ -17,6 +17,8 @@
 
 Реализация находится в `capture-windows-jna`. Обнаруженные `HWND` принадлежат Windows или записываемому приложению. Mission Recorder хранит только opaque id, повторно проверяет окно перед кадром и никогда не вызывает для него `DestroyWindow` или `CloseHandle`.
 
+Для совместимой записи целого DXGI output `AVFrame` с D3D11/NV12 клонируется перед передачей из capture adapter-а и освобождается через lease после завершения NVENC submit. Кодировщик удерживает собственную ссылку на `hw_frames_ctx`; обычный preview, оверлей нажатий, region/window и multi-output capture остаются на BGRA-пути с bounded-пулом.
+
 Захват screen/monitor/region в пределах одного output открывает FFmpeg `ddagrab` на выделенном capture dispatcher-е. `FFmpegFrameGrabber` владеет D3D11 device, `IDXGIOutputDuplication` и промежуточными frames до завершения flow; `close()` парно вызывает `stop()` и `release()`. При ошибке открытия или потере DXGI output adapter закрывает grabber и один раз переключается на GDI screen capture. Область сразу на нескольких outputs использует GDI, потому что один `ddagrab` source не объединяет мониторы.
 
 При захвате одного кадра действуют следующие пары владения:

@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertRangeInfoEquals
@@ -23,6 +24,7 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 @OptIn(ExperimentalTestApi::class)
 class MissionRecorderScreenTest {
@@ -99,35 +101,17 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun hoistsProfileSelectionCreationAndDeletionActions() = runComposeUiTest {
-        val actions = mutableListOf<RecorderUiAction>()
+    fun doesNotShowProfileControls() = runComposeUiTest {
         setContent {
             MissionRecorderScreen(
-                state = RecorderUiState(
-                    profiles = listOf(
-                        RecorderProfileUi("default", "Default"),
-                        RecorderProfileUi("gaming", "Gaming"),
-                    ),
-                    selectedProfileId = "default",
-                    outputPath = "recordings/test.mp4",
-                ),
-                onAction = actions::add,
+                state = RecorderUiState(outputPath = "recordings/test.mp4"),
+                onAction = {},
             )
         }
 
-        onNodeWithTag("profile-selector").performClick()
-        onNodeWithText("Gaming").performClick()
-        onNodeWithTag("create-profile").performClick()
-        onNodeWithTag("delete-profile").assertIsEnabled().performClick()
-
-        assertEquals(
-            listOf(
-                RecorderUiAction.SelectProfile("gaming"),
-                RecorderUiAction.ShowCreateProfileDialog,
-                RecorderUiAction.ShowDeleteProfileDialog,
-            ),
-            actions,
-        )
+        onAllNodesWithTag("profile-selector").assertCountEquals(0)
+        onAllNodesWithTag("create-profile").assertCountEquals(0)
+        onAllNodesWithTag("delete-profile").assertCountEquals(0)
     }
 
     @Test
@@ -147,50 +131,11 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun confirmsProfileDeletionFromDialog() = runComposeUiTest {
-        val actions = mutableListOf<RecorderUiAction>()
-        setContent {
-            MissionRecorderScreen(
-                state = RecorderUiState(
-                    profiles = listOf(
-                        RecorderProfileUi("default", "Default"),
-                        RecorderProfileUi("gaming", "Gaming"),
-                    ),
-                    selectedProfileId = "gaming",
-                    showDeleteProfileDialog = true,
-                    outputPath = "recordings/test.mp4",
-                ),
-                onAction = actions::add,
-            )
-        }
-
-        onNodeWithTag("confirm-delete-profile").performClick()
-
-        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.DeleteSelectedProfile), actions)
-    }
-
-    @Test
-    fun createProfileDialogRequiresAndSubmitsTrimmedName() = runComposeUiTest {
-        val actions = mutableListOf<RecorderUiAction>()
-        setContent {
-            MissionRecorderScreen(
-                state = RecorderUiState(showCreateProfileDialog = true, outputPath = "recordings/test.mp4"),
-                onAction = actions::add,
-            )
-        }
-
-        onNodeWithTag("confirm-create-profile").assertIsNotEnabled()
-        onNodeWithTag("profile-name").performTextInput("  Work  ")
-        onNodeWithTag("confirm-create-profile").assertIsEnabled().performClick()
-
-        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.CreateProfile("Work")), actions)
-    }
-
-    @Test
     fun miniControllerHoistsPrimaryRecordingActions() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         var expandRequests = 0
         var hideRequests = 0
+        var openEditorRequests = 0
         setContent {
             MiniRecorderController(
                 state = RecorderUiState(
@@ -210,6 +155,7 @@ class MissionRecorderScreenTest {
                 onAction = actions::add,
                 onExpand = { expandRequests++ },
                 onHide = { hideRequests++ },
+                onOpenEditor = { openEditorRequests++ },
             )
         }
 
@@ -219,16 +165,46 @@ class MissionRecorderScreenTest {
         onNodeWithTag("mini-hide").assertIsEnabled().performClick()
         onNodeWithTag("mini-pause-toggle").assertIsEnabled().performClick()
         onNodeWithTag("mini-record-toggle").assertIsEnabled().performClick()
+        onNodeWithTag("mini-open-editor-icon", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithTag("mini-open-editor").assertIsEnabled().performClick()
+        onNodeWithTag("mini-mark-important-frame").assertIsEnabled().performClick()
+
+        val transportCenter = onNodeWithTag("mini-transport-controls").fetchSemanticsNode().boundsInRoot.center.x
+        val pauseCenter = onNodeWithTag("mini-pause-toggle").fetchSemanticsNode().boundsInRoot.center.x
+        val recordCenter = onNodeWithTag("mini-record-toggle").fetchSemanticsNode().boundsInRoot.center.x
+        val editorCenter = onNodeWithTag("mini-open-editor").fetchSemanticsNode().boundsInRoot.center.x
+        assertTrue(kotlin.math.abs(transportCenter - recordCenter) < 0.5f)
+        assertTrue(kotlin.math.abs((recordCenter - pauseCenter) - (editorCenter - recordCenter)) < 0.5f)
 
         assertEquals(1, expandRequests)
         assertEquals(1, hideRequests)
+        assertEquals(1, openEditorRequests)
         assertEquals(
             listOf(
                 RecorderUiAction.PauseRecording,
                 RecorderUiAction.StopRecording,
+                RecorderUiAction.MarkImportantFrame,
             ),
             actions,
         )
+    }
+
+    @Test
+    fun miniControllerShowsImportantFrameCaptureFeedbackAfterShortcut() = runComposeUiTest {
+        var captureSequence by mutableStateOf(0L)
+        setContent {
+            MiniRecorderController(
+                state = RecorderUiState(
+                    status = RecorderStatus.Recording,
+                    importantFrameCaptureSequence = captureSequence,
+                ),
+                onAction = {},
+            )
+        }
+
+        captureSequence += 1L
+
+        onAllNodesWithTag("mini-important-frame-capture-effect").assertCountEquals(1)
     }
 
     @Test
@@ -238,7 +214,7 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun miniControllerHidesPauseWithoutActiveRecording() = runComposeUiTest {
+    fun miniControllerDisablesRecordingOnlyActionsWithoutActiveRecording() = runComposeUiTest {
         setContent {
             MiniRecorderController(
                 state = RecorderUiState(
@@ -252,8 +228,65 @@ class MissionRecorderScreenTest {
             )
         }
 
-        onAllNodesWithTag("mini-pause-toggle").assertCountEquals(0)
+        onNodeWithTag("mini-pause-toggle").assertIsNotEnabled()
+        onNodeWithTag("mini-mark-important-frame").assertIsNotEnabled()
+        onNodeWithTag("mini-open-editor").assertIsNotEnabled()
         onNodeWithTag("mini-record-toggle").assertIsEnabled()
+    }
+
+    @Test
+    fun miniControllerOpensLastRecordingInEditor() = runComposeUiTest {
+        var openEditorRequests = 0
+        setContent {
+            MiniRecorderController(
+                state = RecorderUiState(
+                    status = RecorderStatus.Completed,
+                    lastOutputPath = "recordings/finished.mp4",
+                ),
+                onAction = {},
+                onOpenEditor = { openEditorRequests++ },
+            )
+        }
+
+        onNodeWithTag("mini-open-editor").assertIsEnabled().performClick()
+
+        assertEquals(1, openEditorRequests)
+    }
+
+    @Test
+    fun miniControllerDisplaysPreviewFrame() = runComposeUiTest {
+        val previewImage = mutableStateOf<ImageBitmap?>(ImageBitmap(width = 2, height = 2))
+        setContent {
+            MiniRecorderController(
+                state = RecorderUiState(status = RecorderStatus.Recording),
+                onAction = {},
+                previewImage = previewImage,
+            )
+        }
+
+        onAllNodesWithTag("mini-preview-image").assertCountEquals(1)
+    }
+
+    @Test
+    fun miniControllerHoistsReplayActions() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MiniRecorderController(
+                state = RecorderUiState(
+                    replayStatus = ReplayUiStatus.Buffering,
+                    replayVideoFrames = 12,
+                ),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("mini-save-replay").assertIsEnabled().performClick()
+        onNodeWithTag("mini-stop-replay").assertIsEnabled().performClick()
+
+        assertEquals(
+            listOf(RecorderUiAction.SaveReplayBuffer, RecorderUiAction.StopReplayBuffer),
+            actions,
+        )
     }
 
     @Test
@@ -466,6 +499,21 @@ class MissionRecorderScreenTest {
     }
 
     @Test
+    fun enablesScreenshotForActivePreviewAndHoistsAction() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(previewStatus = PreviewUiStatus.Active),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("take-screenshot").assertIsEnabled().performClick()
+
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.TakeScreenshot), actions)
+    }
+
+    @Test
     fun hoistsExplicitCursorVisibilityToggle() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {
@@ -599,44 +647,21 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun exportsStoryboardOnlyFromDedicatedControl() = runComposeUiTest {
+    fun opensEditorOnlyFromDedicatedControl() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
-        var state by mutableStateOf(
-            RecorderUiState(
-                outputPath = "recordings/next.mp4",
-                lastOutputPath = "recordings/finished.mp4",
-            ),
-        )
         setContent {
             MissionRecorderScreen(
-                state = state,
-                onAction = { action ->
-                    actions += action
-                    state = when (action) {
-                        is RecorderUiAction.SetStoryboardInputPath -> state.copy(storyboardInputPath = action.path)
-                        is RecorderUiAction.SetStoryboardMode -> state.copy(storyboardMode = action.mode)
-                        else -> state
-                    }
-                },
+                state = RecorderUiState(
+                    outputPath = "recordings/next.mp4",
+                    lastOutputPath = "recordings/finished.mp4",
+                ),
+                onAction = actions::add,
             )
         }
 
-        onNodeWithTag("storyboard-input-video")
-            .performScrollTo()
-            .performTextClearance()
-        onNodeWithTag("storyboard-input-video").performTextInput("recordings/source.mp4")
-        onNodeWithTag("storyboard-mode-contact").performScrollTo().performClick()
-        onNodeWithTag("export-storyboard").performScrollTo().assertIsEnabled().performClick()
+        onNodeWithTag("open-video-editor").performScrollTo().assertIsEnabled().performClick()
 
-        assertEquals(
-            listOf(
-                RecorderUiAction.SetStoryboardInputPath(""),
-                RecorderUiAction.SetStoryboardInputPath("recordings/source.mp4"),
-                RecorderUiAction.SetStoryboardMode(StoryboardMode.ContactSheet),
-                RecorderUiAction.ExportStoryboard,
-            ),
-            actions,
-        )
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.OpenEditor), actions)
     }
 
     @Test

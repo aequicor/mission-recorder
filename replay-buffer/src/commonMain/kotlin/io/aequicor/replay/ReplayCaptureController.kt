@@ -9,10 +9,13 @@ import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.RecordingSettingsValidator
 import io.aequicor.capture.core.ValidationIssue
 import io.aequicor.capture.core.VideoCaptureAdapter
+import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.release
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -156,9 +159,7 @@ class ReplayCaptureController(
             mutableState.value = ReplayCaptureState.Buffering(active.session, active.stats)
             coroutineScope {
                 launch {
-                    videoCaptureAdapter.frames(settings).collect { frame ->
-                        updateStats(active, mediaBuffer.writeVideoFrame(frame))
-                    }
+                    runVideoPipeline(active, settings)
                 }
                 if (settings.audioSources.isNotEmpty()) {
                     launch {
@@ -173,6 +174,32 @@ class ReplayCaptureController(
             throw cancellation
         } catch (throwable: Throwable) {
             fail(active, throwable)
+        }
+    }
+
+    private suspend fun runVideoPipeline(active: ActiveReplaySession, settings: RecordingSettings): Unit = coroutineScope {
+        val frames = Channel<VideoFrame>(
+            capacity = REPLAY_CAPTURE_FRAME_BUFFER_SIZE,
+            onUndeliveredElement = { frame -> frame.release() },
+        )
+        launch {
+            try {
+                videoCaptureAdapter.frames(settings).collect(frames::send)
+            } finally {
+                frames.close()
+            }
+        }
+        try {
+            for (frame in frames) {
+                try {
+                    updateStats(active, mediaBuffer.writeVideoFrame(frame))
+                } finally {
+                    frame.release()
+                }
+            }
+            throw ReplayBufferException("Capture stream ended while replay buffering was active.")
+        } finally {
+            frames.cancel()
         }
     }
 
@@ -271,6 +298,8 @@ private val EMPTY_REPLAY_STATS = ReplayBufferStats(
     retainedDuration = kotlin.time.Duration.ZERO,
     storagePolicy = ReplayStoragePolicy.DiskSegments,
 )
+
+private const val REPLAY_CAPTURE_FRAME_BUFFER_SIZE = 3
 
 private fun Throwable.replayMessage(fallback: String): String =
     when (this) {

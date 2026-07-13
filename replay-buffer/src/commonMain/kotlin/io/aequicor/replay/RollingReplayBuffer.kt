@@ -251,7 +251,7 @@ private fun ReplayBufferSnapshot.metrics(frameRate: Int): RecordingMetrics =
     )
 
 private fun VideoFrame.retainedCopy(): VideoFrame =
-    copy(pixelData = pixelData?.copyOf())
+    copy(pixelData = pixelData?.copyOf(), nativeFrame = null, lease = null)
 
 private fun AudioFrame.retainedCopy(): AudioFrame =
     copy(audioData = audioData?.copyOf())

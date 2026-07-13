@@ -20,6 +20,7 @@ class MissionRecorderSettingsTest {
         val settings = MissionRecorderSettingsFactory.defaultLocal()
 
         assertEquals(emptyList(), MissionRecorderSettingsValidator.validate(settings))
+        assertTrue(settings.desktopUi.globalHotkeysEnabled)
         val defaultProfile = settings.profiles.single()
         assertTrue(defaultProfile.video.captureCursor)
         assertEquals(false, defaultProfile.video.showInputOverlay)

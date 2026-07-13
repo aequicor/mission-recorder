@@ -174,6 +174,43 @@ class WindowsVideoCaptureAdapterTest {
         assertEquals(1, system.screenCaptureThreads.size)
         assertTrue(system.screenCaptureThreads.single().startsWith("windows-capture-test"))
     }
+
+    @Test
+    fun requestsNativeNv12FramesForDesktopEncoding() = runBlocking {
+        val system = FakeWindowsWindowSystem(windows = emptyList())
+
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
+            .nativeFrames(
+                settings(
+                    CaptureSource.Screen(CaptureSourceId("screen:all"), "All screens"),
+                    captureCursor = true,
+                ),
+            )
+            .first()
+
+        assertEquals(PixelFormat.Nv12, frame.pixelFormat)
+        assertTrue(frame.nativeFrame === system.nativeFrame)
+        assertEquals(true, system.lastNativeFramesRequested)
+        assertEquals(true, system.lastNativeCursorRequested)
+    }
+
+    @Test
+    fun inputOverlayKeepsDesktopFramesCpuAccessible() = runBlocking {
+        val system = FakeWindowsWindowSystem(windows = emptyList())
+
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
+            .nativeFrames(
+                settings(
+                    CaptureSource.Screen(CaptureSourceId("screen:all"), "All screens"),
+                    captureCursor = false,
+                    showInputOverlay = true,
+                ),
+            )
+            .first()
+
+        assertEquals(PixelFormat.Bgra8888, frame.pixelFormat)
+        assertEquals(false, system.lastNativeFramesRequested)
+    }
 }
 
 internal class FakeWindowsWindowSystem(
@@ -184,10 +221,15 @@ internal class FakeWindowsWindowSystem(
     private val cursor: WindowsPoint? = null,
     private val pressedInputs: List<String> = emptyList(),
 ) : WindowsWindowSystem {
+    val nativeFrame: Any = Any()
     val screenCaptureThreads = mutableSetOf<String>()
     var lastCapturedHandle: Long? = null
         private set
     var pressedInputReadCount: Int = 0
+        private set
+    var lastNativeFramesRequested: Boolean? = null
+        private set
+    var lastNativeCursorRequested: Boolean? = null
         private set
 
     override fun listWindows(): List<WindowsWindowDescriptor> = windows
@@ -199,12 +241,23 @@ internal class FakeWindowsWindowSystem(
         return frames[handle] ?: throw WindowsCaptureFailure("No fake frame for $handle.")
     }
 
-    override fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture {
+    override fun openScreenCapture(
+        bounds: WindowsWindowBounds,
+        frameRate: Int,
+        nativeFrames: Boolean,
+        captureCursor: Boolean,
+    ): WindowsScreenCapture {
+        lastNativeFramesRequested = nativeFrames
+        lastNativeCursorRequested = captureCursor
         screenCaptureThreads += Thread.currentThread().name
         return object : WindowsScreenCapture {
             override fun capture(): WindowsCapturedFrame {
                 screenCaptureThreads += Thread.currentThread().name
-                return WindowsCapturedFrame(bounds, solidBgra(bounds))
+                return if (nativeFrames) {
+                    WindowsCapturedFrame(bounds = bounds, nativeFrame = nativeFrame)
+                } else {
+                    WindowsCapturedFrame(bounds, solidBgra(bounds))
+                }
             }
 
             override fun close() {

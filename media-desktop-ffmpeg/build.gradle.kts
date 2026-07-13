@@ -6,6 +6,7 @@ val javaCppPlatform = providers.systemProperty("javacpp.platform").orNull ?: cur
 
 dependencies {
     implementation(project(":capture-core"))
+    implementation(project(":editor-core"))
     implementation(project(":replay-buffer"))
     implementation(libs.javacv)
     implementation(libs.ffmpeg)

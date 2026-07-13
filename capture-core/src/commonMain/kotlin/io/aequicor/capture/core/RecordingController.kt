@@ -6,10 +6,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -190,10 +190,7 @@ class RecordingController(
             }
             coroutineScope {
                 launch {
-                    videoCaptureAdapter.frames(settings).buffer(capacity = CAPTURE_FRAME_BUFFER_SIZE).collect { frame ->
-                        processVideoFrame(active, frame)
-                        yield()
-                    }
+                    runVideoPipeline(active, settings)
                 }
                 if (settings.audioSources.isNotEmpty()) {
                     launch {
@@ -203,11 +200,44 @@ class RecordingController(
                     }
                 }
             }
-            throw RecordingException(RecordingError.SourceUnavailable("Capture stream ended before stop."))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (throwable: Throwable) {
             fail(active, throwable)
+        }
+    }
+
+    private suspend fun runVideoPipeline(active: ActiveSession, settings: RecordingSettings): Unit = coroutineScope {
+        val frames = Channel<VideoFrame>(
+            capacity = CAPTURE_FRAME_BUFFER_SIZE,
+            onUndeliveredElement = { frame -> frame.release() },
+        )
+        launch {
+            try {
+                val sourceFrames = if (
+                    mediaEncoder is NativeVideoFrameMediaEncoder && mediaEncoder.supportsNativeVideoFrames()
+                ) {
+                    videoCaptureAdapter.nativeFrames(settings)
+                } else {
+                    videoCaptureAdapter.frames(settings)
+                }
+                sourceFrames.collect(frames::send)
+            } finally {
+                frames.close()
+            }
+        }
+        try {
+            for (frame in frames) {
+                try {
+                    processVideoFrame(active, frame)
+                    yield()
+                } finally {
+                    frame.release()
+                }
+            }
+            throw RecordingException(RecordingError.SourceUnavailable("Capture stream ended before stop."))
+        } finally {
+            frames.cancel()
         }
     }
 
@@ -238,7 +268,7 @@ class RecordingController(
                 return@withLock
             }
             mediaEncoder.writeAudioFrame(frame.withPauseOffset(current.accumulatedPausedNanoseconds))
-            updateMetrics(active) { copy(audioFrames = audioFrames + 1) }
+            updateMetrics(active, publishState = false) { copy(audioFrames = audioFrames + 1) }
         }
     }
 
@@ -248,6 +278,7 @@ class RecordingController(
 
     private suspend fun updateMetrics(
         active: ActiveSession,
+        publishState: Boolean = true,
         transform: RecordingMetrics.() -> RecordingMetrics,
     ) {
         val updatedSession = metricsMutex.withLock {
@@ -257,12 +288,14 @@ class RecordingController(
                 .transform()
             current.copy(metrics = updated).also { activeSession = it }
         } ?: return
-        when (state.value) {
-            is RecordingState.Recording ->
-                state.value = RecordingState.Recording(updatedSession.session, updatedSession.metrics)
-            is RecordingState.Paused ->
-                state.value = RecordingState.Paused(updatedSession.session, updatedSession.metrics)
-            else -> Unit
+        if (publishState) {
+            when (state.value) {
+                is RecordingState.Recording ->
+                    state.value = RecordingState.Recording(updatedSession.session, updatedSession.metrics)
+                is RecordingState.Paused ->
+                    state.value = RecordingState.Paused(updatedSession.session, updatedSession.metrics)
+                else -> Unit
+            }
         }
     }
 
@@ -273,12 +306,14 @@ class RecordingController(
     ) {
         val updatedSession = metricsMutex.withLock {
             val current = activeSession?.takeIf { it.session.id == active.session.id } ?: return@withLock null
+            val nowNanoseconds = clock.nowNanoseconds()
+            val recording = current.withRecordingStartedAt(nowNanoseconds, timestamp.nanoseconds)
             val droppedFrames = current.estimatedDroppedFrames(timestamp.nanoseconds)
-            current.copy(
-                metrics = current.metrics.copy(
-                    duration = current.recordedDurationAt(clock.nowNanoseconds()).nanoseconds,
-                    videoFrames = current.metrics.videoFrames + 1,
-                    droppedFrames = current.metrics.droppedFrames + droppedFrames,
+            recording.copy(
+                metrics = recording.metrics.copy(
+                    duration = recording.recordedDurationAt(nowNanoseconds).nanoseconds,
+                    videoFrames = recording.metrics.videoFrames + 1,
+                    droppedFrames = recording.metrics.droppedFrames + droppedFrames,
                 ),
                 lastVideoTimestampNanoseconds = timestamp.nanoseconds,
                 importantFramePending = current.importantFramePending && !importantFrameConsumed,
@@ -319,6 +354,7 @@ class RecordingController(
         val job: Job? = null,
         val pausedAtNanoseconds: Long? = null,
         val accumulatedPausedNanoseconds: Long = 0,
+        val recordingStartedAtNanoseconds: Long? = null,
         val lastVideoTimestampNanoseconds: Long? = null,
         val importantFramePending: Boolean = false,
     ) {
@@ -339,12 +375,25 @@ class RecordingController(
             )
         }
 
+        fun withRecordingStartedAt(
+            nowNanoseconds: Long,
+            firstFrameTimestampNanoseconds: Long,
+        ): ActiveSession = if (recordingStartedAtNanoseconds == null) {
+            copy(
+                recordingStartedAtNanoseconds =
+                    (nowNanoseconds - firstFrameTimestampNanoseconds).coerceAtLeast(session.startedAtNanoseconds),
+            )
+        } else {
+            this
+        }
+
         fun recordedDurationAt(nowNanoseconds: Long): Long {
+            val recordingStartedAt = recordingStartedAtNanoseconds ?: return 0
             val activePauseDuration = pausedAtNanoseconds
                 ?.let { pausedAt -> (nowNanoseconds - pausedAt).coerceAtLeast(0) }
                 ?: 0
             return (
-                nowNanoseconds - session.startedAtNanoseconds -
+                nowNanoseconds - recordingStartedAt -
                     accumulatedPausedNanoseconds - activePauseDuration
                 ).coerceAtLeast(0)
         }
@@ -359,7 +408,7 @@ class RecordingController(
     }
 }
 
-private const val CAPTURE_FRAME_BUFFER_SIZE = 1
+private const val CAPTURE_FRAME_BUFFER_SIZE = 3
 
 private fun VideoFrame.withPauseOffset(offsetNanoseconds: Long): VideoFrame =
     copy(timestamp = timestamp.minusOffset(offsetNanoseconds))

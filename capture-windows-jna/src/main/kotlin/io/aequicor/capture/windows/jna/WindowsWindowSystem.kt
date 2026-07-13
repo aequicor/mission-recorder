@@ -29,8 +29,12 @@ internal data class WindowsWindowDescriptor(
 
 internal data class WindowsCapturedFrame(
     val bounds: WindowsWindowBounds,
-    val bgraPixels: ByteArray,
+    val bgraPixels: ByteArray? = null,
+    val nativeFrame: Any? = null,
+    val releaseAction: () -> Unit = {},
 )
+
+internal fun WindowsCapturedFrame.release() = releaseAction()
 
 internal interface WindowsWindowSystem {
     fun listWindows(): List<WindowsWindowDescriptor>
@@ -39,7 +43,12 @@ internal interface WindowsWindowSystem {
 
     fun captureWindow(handle: Long): WindowsCapturedFrame
 
-    fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture
+    fun openScreenCapture(
+        bounds: WindowsWindowBounds,
+        frameRate: Int,
+        nativeFrames: Boolean = false,
+        captureCursor: Boolean = false,
+    ): WindowsScreenCapture
 
     fun cursorPosition(): WindowsPoint?
 

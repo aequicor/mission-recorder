@@ -30,4 +30,17 @@ class DdaWindowsScreenCaptureTest {
             ddaGrabFilter(output, region, frameRate = 30),
         )
     }
+
+    @Test
+    fun keepsFramesOnD3d11AndConvertsToNv12ForNativeEncoding() {
+        val output = WindowsDesktopOutput(
+            index = 0,
+            bounds = WindowsWindowBounds(x = 0, y = 0, width = 3440, height = 1440),
+        )
+
+        assertEquals(
+            "ddagrab=framerate=60:output_idx=0:draw_mouse=1:dup_frames=1,scale_d3d11=format=nv12",
+            ddaGrabFilter(output, output.bounds, frameRate = 60, nativeFrames = true, captureCursor = true),
+        )
+    }
 }

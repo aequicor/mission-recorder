@@ -107,15 +107,7 @@ class FfmpegSegmentedReplayBuffer(
         val current = context ?: throw ReplayBufferException("Replay buffer is not open.")
         validateAudioFrame(frame)
         try {
-            val recorder = current.recorder
-            if (recorder == null) {
-                current.pendingAudioFrames += frame.copy(audioData = frame.audioData?.copyOf())
-            } else {
-                recorder.recordPcmFrame(
-                    frame = frame,
-                    timestampMicros = current.relativeTimestampMicros(frame.timestamp.nanoseconds),
-                )
-            }
+            current.audioBatcher.append(frame).forEach(current::writeAudioFrame)
             current.appendAudioTimestamp(frame.timestamp.nanoseconds)
             current.stats()
         } catch (throwable: Throwable) {
@@ -220,6 +212,7 @@ class FfmpegSegmentedReplayBuffer(
     private fun stopRecorder(current: ReplayContext) {
         val recorder = current.recorder ?: return
         try {
+            current.audioBatcher.drain()?.let(current::writeAudioFrame)
             recorder.stop()
         } finally {
             runCatching { recorder.release() }
@@ -368,6 +361,7 @@ private data class ReplayContext(
     val maxSegments: Int,
     val segmentScanIntervalNanoseconds: Long,
     val pendingAudioFrames: MutableList<AudioFrame> = mutableListOf(),
+    val audioBatcher: PcmAudioFrameBatcher = PcmAudioFrameBatcher(),
     val videoTimestamps: ArrayDeque<Long> = ArrayDeque(),
     val droppedFramesBeforeVideoTimestamp: ArrayDeque<Long> = ArrayDeque(),
     val audioTimestamps: ArrayDeque<Long> = ArrayDeque(),
@@ -387,6 +381,18 @@ private data class ReplayContext(
     var lastSegmentScanTimestampNanoseconds: Long? = null,
     var retainedDroppedVideoFrames: Long = 0,
 ) {
+    fun writeAudioFrame(frame: AudioFrame) {
+        val activeRecorder = recorder
+        if (activeRecorder == null) {
+            pendingAudioFrames += frame
+        } else {
+            activeRecorder.recordPcmFrame(
+                frame = frame,
+                timestampMicros = relativeTimestampMicros(frame.timestamp.nanoseconds),
+            )
+        }
+    }
+
     fun relativeTimestampMicros(timestampNanoseconds: Long): Long {
         val origin = generationOriginNanoseconds ?: timestampNanoseconds
         return (timestampNanoseconds - origin).coerceAtLeast(0) / NANOS_PER_MICROSECOND

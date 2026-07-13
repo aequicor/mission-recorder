@@ -1,2 +1,5 @@
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
+
+[mcp_servers.mission_visualization]
+url = "http://127.0.0.1:7331/mcp"

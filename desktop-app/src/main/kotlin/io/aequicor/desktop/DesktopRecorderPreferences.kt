@@ -27,7 +27,7 @@ internal data class DesktopRecorderPreferences(
 
 internal data class DesktopStartupSettings(
     val recorderPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
-    val globalHotkeysEnabled: Boolean = false,
+    val globalHotkeysEnabled: Boolean = true,
     val globalHotkeyBindings: List<GlobalHotkeyBinding> = defaultDesktopGlobalHotkeys,
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,

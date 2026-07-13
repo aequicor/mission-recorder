@@ -122,9 +122,23 @@ internal class JnaWindowsWindowSystem(
         }
     }
 
-    override fun openScreenCapture(bounds: WindowsWindowBounds, frameRate: Int): WindowsScreenCapture {
+    override fun openScreenCapture(
+        bounds: WindowsWindowBounds,
+        frameRate: Int,
+        nativeFrames: Boolean,
+        captureCursor: Boolean,
+    ): WindowsScreenCapture {
         val fallback = { JnaWindowsScreenCapture(bounds, user32, gdi32) }
-        val accelerated = DdaWindowsScreenCapture.openOrNull(bounds, frameRate) ?: return fallback()
+        val accelerated = if (nativeFrames) {
+            DdaWindowsScreenCapture.openOrNull(
+                bounds = bounds,
+                frameRate = frameRate,
+                nativeFrames = true,
+                captureCursor = captureCursor,
+            ) ?: DdaWindowsScreenCapture.openOrNull(bounds, frameRate)
+        } else {
+            DdaWindowsScreenCapture.openOrNull(bounds, frameRate)
+        } ?: return fallback()
         return FailoverWindowsScreenCapture(accelerated, fallback)
     }
 
@@ -137,7 +151,7 @@ internal class JnaWindowsWindowSystem(
         .filter { input -> input.virtualKeys.any(::isPressed) }
         .map(WindowsInput::label)
 
-    private fun isPressed(virtualKey: Int): Boolean = user32.GetAsyncKeyState(virtualKey).toInt() and KEY_DOWN_MASK != 0
+    private fun isPressed(virtualKey: Int): Boolean = isWindowsInputActive(user32.GetAsyncKeyState(virtualKey))
 
     private fun describeUserWindow(handle: HWND): WindowsWindowDescriptor? {
         if (!user32.IsWindow(handle) || !user32.IsWindowVisible(handle) || isCloaked(handle)) {
@@ -232,6 +246,7 @@ private class JnaWindowsScreenCapture(
     private val gdi32: GDI32,
 ) : WindowsScreenCapture {
     private val byteCount = checkedFrameByteCount(bounds.width, bounds.height)
+    private val frameBuffers = WindowsFrameBufferPool(GDI_FRAME_BUFFER_POOL_SIZE)
     private val sourceDc = user32.GetDC(null)
         .takeUnless(PointerType?::isNullHandle)
         ?: throw nativeFailure("GetDC")
@@ -298,7 +313,14 @@ private class JnaWindowsScreenCapture(
         ) {
             throw nativeFailure("BitBlt")
         }
-        return WindowsCapturedFrame(bounds, pixels.getByteArray(0, byteCount))
+        val frame = frameBuffers.acquire(byteCount)
+        return try {
+            pixels.read(0, frame, 0, byteCount)
+            WindowsCapturedFrame(bounds, frame) { frameBuffers.release(frame) }
+        } catch (throwable: Throwable) {
+            frameBuffers.release(frame)
+            throw throwable
+        }
     }
 
     override fun close() {
@@ -310,8 +332,11 @@ private class JnaWindowsScreenCapture(
         runCatching { gdi32.DeleteObject(bitmap) }
         runCatching { gdi32.DeleteDC(memoryDc) }
         runCatching { user32.ReleaseDC(null, sourceDc) }
+        frameBuffers.clear()
     }
 }
+
+private const val GDI_FRAME_BUFFER_POOL_SIZE = 6
 
 internal interface ExtendedUser32 : StdCallLibrary {
     fun GetWindowDC(window: HWND): HDC?
@@ -375,6 +400,9 @@ private fun PointerType?.isInvalidGdiHandle(): Boolean =
 
 private fun Byte.isZero(): Boolean = this == 0.toByte()
 
+internal fun isWindowsInputActive(asyncKeyState: Short): Boolean =
+    asyncKeyState.toInt() and (KEY_DOWN_MASK or KEY_PRESSED_SINCE_LAST_QUERY_MASK) != 0
+
 private data class WindowsInput(
     val label: String,
     val virtualKeys: IntArray,
@@ -431,6 +459,7 @@ private const val BGRA_CHANNEL_COUNT = 4L
 private const val MAX_FRAME_DIMENSION = 32_768L
 private const val UINT32_MASK = 0xffff_ffffL
 private const val KEY_DOWN_MASK = 0x8000
+private const val KEY_PRESSED_SINCE_LAST_QUERY_MASK = 0x0001
 
 // CAPTUREBLT can make the hardware cursor flicker on the real display while GDI capture is active.
 private val cursorSafeRasterOperation = GDI32.SRCCOPY

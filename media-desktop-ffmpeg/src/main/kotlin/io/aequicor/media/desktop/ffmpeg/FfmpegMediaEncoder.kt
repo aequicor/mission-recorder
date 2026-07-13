@@ -2,6 +2,7 @@ package io.aequicor.media.desktop.ffmpeg
 
 import io.aequicor.capture.core.AudioFrame
 import io.aequicor.capture.core.MediaEncoder
+import io.aequicor.capture.core.NativeVideoFrameMediaEncoder
 import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingMetrics
 import io.aequicor.capture.core.RecordingOutput
@@ -13,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_AAC
 import org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_YUV420P
+import org.bytedeco.ffmpeg.avutil.AVFrame
 import org.bytedeco.javacv.FFmpegFrameRecorder
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
@@ -23,9 +25,12 @@ import kotlin.io.path.exists
 import kotlin.io.path.extension
 import kotlin.io.path.name
 
-class FfmpegMediaEncoder : MediaEncoder {
+class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
     private val mutex = Mutex()
     private var context: EncoderContext? = null
+    private val nativeVideoFramesSupported: Boolean by lazy(::isNvencDeviceAvailable)
+
+    override fun supportsNativeVideoFrames(): Boolean = nativeVideoFramesSupported
 
     override suspend fun open(session: RecordingSession, settings: RecordingSettings) = mutex.withLock {
         if (context != null) {
@@ -54,6 +59,30 @@ class FfmpegMediaEncoder : MediaEncoder {
     override suspend fun writeVideoFrame(frame: VideoFrame) = mutex.withLock {
         val current = context ?: throw encoderFailed("Encoder is not open.")
         try {
+            val nativeFrame = frame.nativeFrame as? AVFrame
+            if (nativeFrame != null) {
+                if (current.recorder != null) {
+                    throw encoderFailed("Video frame transport changed during recording.")
+                }
+                val nativeRecorder = current.nativeRecorder ?: D3d11NvencRecorder(
+                    output = current.temporary,
+                    settings = current.settings,
+                    firstFrame = nativeFrame,
+                    width = frame.width,
+                    height = frame.height,
+                ).also { started ->
+                    current.nativeRecorder = started
+                    current.width = frame.width
+                    current.height = frame.height
+                    current.pendingAudioFrames.sortedBy { it.timestamp }.forEach(started::writeAudioFrame)
+                    current.pendingAudioFrames.clear()
+                }
+                nativeRecorder.writeVideoFrame(nativeFrame, frame.timestamp.nanoseconds, frame.importantFrame)
+                return@withLock
+            }
+            if (current.nativeRecorder != null) {
+                throw encoderFailed("Video frame transport changed during recording.")
+            }
             val recorder = current.recorder ?: startRecorder(current, frame).also { started ->
                 current.recorder = started
                 current.pendingAudioFrames.sortedBy { it.timestamp }.forEach { pending ->
@@ -89,15 +118,7 @@ class FfmpegMediaEncoder : MediaEncoder {
         val current = context ?: throw encoderFailed("Encoder is not open.")
         validateAudioFrame(frame)
         try {
-            val recorder = current.recorder
-            if (recorder == null) {
-                current.pendingAudioFrames += frame.copy(audioData = frame.audioData?.copyOf())
-            } else {
-                recorder.recordPcmFrame(
-                    frame = frame,
-                    timestampMicros = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND,
-                )
-            }
+            current.audioBatcher.append(frame).forEach { batched -> current.writeAudioFrame(batched) }
         } catch (recording: RecordingException) {
             throw recording
         } catch (throwable: Throwable) {
@@ -107,21 +128,29 @@ class FfmpegMediaEncoder : MediaEncoder {
 
     override suspend fun finish(session: RecordingSession, metrics: RecordingMetrics): RecordingOutput = mutex.withLock {
         val current = context ?: throw encoderFailed("Encoder is not open.")
-        val recorder = current.recorder ?: run {
+        val recorder = current.recorder
+        val nativeRecorder = current.nativeRecorder
+        if (recorder == null && nativeRecorder == null) {
             cleanup(current)
             context = null
             throw encoderFailed("Recording does not contain video frames.")
         }
         try {
-            recorder.stop()
-            recorder.release()
+            current.audioBatcher.drain()?.let(current::writeAudioFrame)
+            if (nativeRecorder != null) {
+                nativeRecorder.finish()
+            } else {
+                requireNotNull(recorder).stop()
+                recorder.release()
+            }
             current.rgbaFrameBuffer?.close()
             current.rgbaFrameBuffer = null
             moveOutput(current.temporary, current.output, current.settings.overwriteOutput)
             context = null
             RecordingOutput(current.output.toString())
         } catch (throwable: Throwable) {
-            runCatching { recorder.release() }
+            runCatching { recorder?.release() }
+            runCatching { nativeRecorder?.cancel() }
             runCatching { current.rgbaFrameBuffer?.close() }
             current.rgbaFrameBuffer = null
             current.temporary.toFile().delete()
@@ -216,6 +245,7 @@ class FfmpegMediaEncoder : MediaEncoder {
             runCatching { recorder.stop() }
             runCatching { recorder.release() }
         }
+        context.nativeRecorder?.let { recorder -> runCatching { recorder.cancel() } }
         runCatching { context.rgbaFrameBuffer?.close() }
         context.rgbaFrameBuffer = null
         runCatching { Files.deleteIfExists(context.temporary) }
@@ -243,14 +273,32 @@ class FfmpegMediaEncoder : MediaEncoder {
         val temporary: Path,
         val settings: RecordingSettings,
         val pendingAudioFrames: MutableList<AudioFrame> = mutableListOf(),
+        val audioBatcher: PcmAudioFrameBatcher = PcmAudioFrameBatcher(),
         var recorder: FFmpegFrameRecorder? = null,
+        var nativeRecorder: D3d11NvencRecorder? = null,
         var rgbaFrameBuffer: RgbaFrameBuffer? = null,
         var width: Int = 0,
         var height: Int = 0,
         var encodedWidth: Int = 0,
         var encodedHeight: Int = 0,
         var lastVideoTimestampMicros: Long? = null,
-    )
+    ) {
+        fun writeAudioFrame(frame: AudioFrame) {
+            nativeRecorder?.let { recorder ->
+                recorder.writeAudioFrame(frame)
+                return
+            }
+            val activeRecorder = recorder
+            if (activeRecorder == null) {
+                pendingAudioFrames += frame
+            } else {
+                activeRecorder.recordPcmFrame(
+                    frame = frame,
+                    timestampMicros = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND,
+                )
+            }
+        }
+    }
 }
 
 internal fun h264OutputPixelFormat(): Int = AV_PIX_FMT_YUV420P

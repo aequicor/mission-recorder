@@ -57,6 +57,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import java.nio.file.Path
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -151,6 +152,36 @@ class DesktopRecorderViewModelTest {
     }
 
     @Test
+    fun savesActivePreviewAsScreenshot() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val screenshotSaver = FakeDesktopScreenshotSaver()
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            previewEngine = FakeDesktopPreviewEngine(),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            screenshotSaver = screenshotSaver,
+            nextScreenshotOutputPath = { "recordings/screenshot-test.png" },
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.StartPreview)
+        runCurrent()
+        viewModel.onAction(RecorderUiAction.TakeScreenshot)
+        runCurrent()
+
+        assertEquals("recordings/screenshot-test.png", screenshotSaver.outputPath)
+        assertEquals(PixelFormat.Rgba8888, assertNotNull(screenshotSaver.frame).pixelFormat)
+        assertEquals("recordings/screenshot-test.png", viewModel.state.value.lastScreenshotPath)
+        assertFalse(viewModel.state.value.isSavingScreenshot)
+    }
+
+    @Test
     fun preservesFullWidthQhdPreviewResolution() = runTest {
         val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
         val viewModel = DesktopRecorderViewModel(
@@ -176,7 +207,7 @@ class DesktopRecorderViewModelTest {
     }
 
     @Test
-    fun preservesBgraPreviewWithPaddedRowsWithoutCopying() = runTest {
+    fun copiesBgraPreviewWithPaddedRowsBeforeReleasingCaptureFrame() = runTest {
         val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
         val width = 2
         val strideBytes = width * 4 + 8
@@ -216,7 +247,8 @@ class DesktopRecorderViewModelTest {
         assertEquals(2, preview.height)
         assertEquals(PixelFormat.Bgra8888, preview.pixelFormat)
         assertEquals(strideBytes, preview.strideBytes)
-        assertTrue(preview.pixelData === pixels)
+        assertTrue(preview.pixelData !== pixels)
+        assertContentEquals(pixels, preview.pixelData)
     }
 
     @Test
@@ -563,6 +595,7 @@ class DesktopRecorderViewModelTest {
         viewModel.onAction(RecorderUiAction.MarkImportantFrame)
         runCurrent()
         assertEquals(1, engine.markImportantFrameCalls)
+        assertEquals(1L, viewModel.state.value.importantFrameCaptureSequence)
 
         viewModel.onAction(RecorderUiAction.PauseRecording)
         runCurrent()
@@ -1232,6 +1265,22 @@ private class FakeDesktopPreviewEngine(
         } finally {
             cancelled = true
         }
+    }
+}
+
+private class FakeDesktopScreenshotSaver : DesktopScreenshotSaver {
+    var frame: DesktopPreviewFrame? = null
+        private set
+    var outputPath: String? = null
+        private set
+
+    override suspend fun save(
+        frame: DesktopPreviewFrame,
+        outputPath: String,
+    ): DesktopScreenshotSaveResult {
+        this.frame = frame
+        this.outputPath = outputPath
+        return DesktopScreenshotSaveResult.Saved(outputPath)
     }
 }
 

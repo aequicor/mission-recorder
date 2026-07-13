@@ -18,7 +18,33 @@ data class VideoFrame(
     val sourceId: CaptureSourceId,
     val scaleFactor: Double = 1.0,
     val pixelData: ByteArray? = null,
+    val nativeFrame: Any? = null,
+    val importantFrame: Boolean = false,
+    val lease: VideoFrameLease? = null,
 )
+
+/**
+ * Owns reusable storage backing a [VideoFrame]. The frame consumer must call [release]
+ * after it has finished reading pixel data. Copies of a frame share the same lease.
+ */
+class VideoFrameLease(
+    private val releaseAction: () -> Unit,
+) {
+    private var released: Boolean = false
+
+    /** Returns the backing storage to its owner. Repeated calls have no effect. */
+    fun release() {
+        if (!released) {
+            released = true
+            releaseAction()
+        }
+    }
+}
+
+/** Releases reusable storage backing this frame, if any. */
+fun VideoFrame.release() {
+    lease?.release()
+}
 
 data class AudioFrame(
     val timestamp: MediaTimestamp,

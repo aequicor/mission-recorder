@@ -7,6 +7,7 @@ plugins {
     id("buildsrc.convention.kotlin-jvm")
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.composeCompiler)
+    alias(libs.plugins.kotlinPluginSerialization)
 }
 
 dependencies {
@@ -21,6 +22,7 @@ dependencies {
     implementation(project(":capture-platform-api"))
     implementation(project(":capture-windows-jna"))
     implementation(project(":compose-ui"))
+    implementation(project(":editor-core"))
     implementation(project(":hotkey-core"))
     implementation(project(":hotkey-linux-x11"))
     implementation(project(":hotkey-macos-carbon"))
@@ -33,6 +35,7 @@ dependencies {
     implementation(compose.material3)
     implementation(libs.kotlinxCoroutines)
     implementation(libs.kotlinxCoroutinesSwing)
+    implementation(libs.kotlinxSerialization)
     implementation(libs.jna)
     implementation(libs.jnaPlatform)
     testImplementation(kotlin("test"))

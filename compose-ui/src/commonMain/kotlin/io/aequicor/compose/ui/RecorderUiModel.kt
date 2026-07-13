@@ -93,6 +93,8 @@ data class RecorderUiState(
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,
     val previewStatus: PreviewUiStatus = PreviewUiStatus.Idle,
+    val isSavingScreenshot: Boolean = false,
+    val lastScreenshotPath: String? = null,
     val videoBitrateMbps: Int = DEFAULT_VIDEO_BITRATE_MBPS,
     val status: RecorderStatus = RecorderStatus.Idle,
     val elapsedMilliseconds: Long = 0,
@@ -100,6 +102,7 @@ data class RecorderUiState(
     val audioFrames: Long = 0,
     val droppedFrames: Long = 0,
     val effectiveFramesPerSecond: Double = 0.0,
+    val importantFrameCaptureSequence: Long = 0L,
     val isRefreshingSources: Boolean = false,
     val isSelectingRegion: Boolean = false,
     val isChoosingOutputFile: Boolean = false,
@@ -155,6 +158,9 @@ data class RecorderUiState(
     val canExportStoryboard: Boolean
         get() = !isBusy && !isRefreshingSources && storyboardInputPath.isNotBlank()
 
+    val canOpenEditor: Boolean
+        get() = !isBusy && !isRefreshingSources && (lastOutputPath?.isNotBlank() == true || storyboardInputPath.isNotBlank())
+
     val canStartReplay: Boolean
         get() = !hasBlockingOperation &&
             !isRefreshingSources &&
@@ -169,6 +175,9 @@ data class RecorderUiState(
 
     val canStopPreview: Boolean
         get() = isPreviewRunning
+
+    val canTakeScreenshot: Boolean
+        get() = previewStatus == PreviewUiStatus.Active && !isSavingScreenshot
 
     val canSaveReplay: Boolean
         get() = replayStatus == ReplayUiStatus.Buffering && replayVideoFrames > 0
@@ -245,6 +254,8 @@ sealed interface RecorderUiAction {
     data object ResumeRecording : RecorderUiAction
     data object StopRecording : RecorderUiAction
     data object MarkImportantFrame : RecorderUiAction
+    data object TakeScreenshot : RecorderUiAction
+    data object OpenEditor : RecorderUiAction
     data object ExportStoryboard : RecorderUiAction
     data object StartReplayBuffer : RecorderUiAction
     data object SaveReplayBuffer : RecorderUiAction

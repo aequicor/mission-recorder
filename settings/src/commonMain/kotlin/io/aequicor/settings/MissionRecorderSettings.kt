@@ -30,7 +30,7 @@ data class MissionRecorderSettings(
 data class DesktopUiSettings(
     val miniController: MiniControllerSettings = MiniControllerSettings(),
     val storyboardLayout: StoryboardLayoutSetting = StoryboardLayoutSetting.SeparatePngFiles,
-    val globalHotkeysEnabled: Boolean = false,
+    val globalHotkeysEnabled: Boolean = true,
     val globalHotkeys: GlobalHotkeySettings = GlobalHotkeySettings(),
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,

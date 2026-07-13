@@ -180,6 +180,11 @@ class FfmpegMediaEncoderTest {
         }
         encoder.finish(session, RecordingMetrics(videoFrames = (VIDEO_FRAME_COUNT * 2).toLong(), duration = 2.seconds))
 
+        assertEquals(
+            listOf(1_500_000L),
+            FfmpegEditorMediaService().findImportantFrameTimestamps(output.toString()),
+        )
+
         val result = FfmpegStoryboardExporter().export(
             StoryboardExportSettings(
                 inputVideo = output,

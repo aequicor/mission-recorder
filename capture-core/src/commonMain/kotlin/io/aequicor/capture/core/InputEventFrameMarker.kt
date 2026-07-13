@@ -84,6 +84,7 @@ public fun paintInputEventFrameMarker(
 
 /** Returns an independent copy of this frame marked for unconditional storyboard retention. */
 public fun VideoFrame.withInputEventFrameMarker(): VideoFrame {
+    if (nativeFrame != null) return copy(importantFrame = true)
     val markedPixels = requireNotNull(pixelData) { "Important video frame does not contain pixels." }.copyOf()
     require(
         paintInputEventFrameMarker(
@@ -94,7 +95,7 @@ public fun VideoFrame.withInputEventFrameMarker(): VideoFrame {
             pixelFormat = pixelFormat,
         ),
     ) { "Video frame is too small for the important-frame marker." }
-    return copy(pixelData = markedPixels)
+    return copy(pixelData = markedPixels, importantFrame = true)
 }
 
 private const val MARKER_CHANNEL_COUNT = 4

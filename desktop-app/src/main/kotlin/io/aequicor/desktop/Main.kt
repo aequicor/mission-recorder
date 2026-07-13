@@ -66,6 +66,10 @@ import io.aequicor.compose.ui.RecorderShortcutLabels
 import io.aequicor.compose.ui.RecorderStatus
 import io.aequicor.compose.ui.RecorderUiAction
 import io.aequicor.compose.ui.StoryboardMode
+import io.aequicor.compose.ui.VideoEditorAction
+import io.aequicor.compose.ui.VideoEditorScreen
+import io.aequicor.editor.ImportantFrameLayout
+import io.aequicor.editor.ImportantFrameId
 import io.aequicor.compose.resources.Res
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.mini_controller_title
@@ -73,6 +77,7 @@ import io.aequicor.compose.resources.app_name
 import io.aequicor.compose.resources.tray_exit
 import io.aequicor.compose.resources.tray_open
 import io.aequicor.media.desktop.ffmpeg.FfmpegMediaEncoder
+import io.aequicor.media.desktop.ffmpeg.FfmpegEditorMediaService
 import io.aequicor.media.desktop.ffmpeg.FfmpegSegmentedReplayBuffer
 import io.aequicor.media.desktop.ffmpeg.FfmpegStoryboardExporter
 import io.aequicor.media.desktop.ffmpeg.StoryboardExportSettings
@@ -135,24 +140,53 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             profileStore = RepositoryDesktopRecorderProfileStore(desktopUiSettings),
         )
     }
+    val editorViewModel = remember {
+        VideoEditorViewModel(
+            scope = recorderScope,
+            mediaService = FfmpegEditorMediaService(),
+            projectStore = JsonDesktopEditorProjectStore(),
+            fileSelector = AwtDesktopEditorFileSelector(),
+            audioPlayer = JavaSoundDesktopEditorAudioPlayer(),
+            imageClipboard = AwtDesktopImageClipboard(),
+            initialFrameLayout = when (startupSettings.recorderPreferences.storyboardMode) {
+                StoryboardMode.SeparatePngFiles -> ImportantFrameLayout.SeparatePngFiles
+                StoryboardMode.ContactSheet -> ImportantFrameLayout.ContactSheet
+            },
+        )
+    }
     val state by viewModel.state.collectAsState()
+    val editorState by editorViewModel.state.collectAsState()
+    val editorPlayhead = editorViewModel.playheadMicros.collectAsState()
     val previewImageResource = remember { mutableStateOf<DesktopPreviewImage?>(null) }
     val previewImage = remember { derivedStateOf { previewImageResource.value?.bitmap } }
+    val editorPreviewImageResource = remember { mutableStateOf<DesktopPreviewImage?>(null) }
+    val editorPreviewImage = remember { derivedStateOf { editorPreviewImageResource.value?.bitmap } }
+    val editorImportantFrameImageResources = remember {
+        mutableStateOf<Map<ImportantFrameId, DesktopPreviewImage>>(emptyMap())
+    }
+    val editorImportantFrameImages = remember {
+        derivedStateOf { editorImportantFrameImageResources.value.mapValues { it.value.bitmap } }
+    }
     val currentState by rememberUpdatedState(state)
     val hotkeyFactory = remember { DesktopGlobalHotkeyServiceFactory() }
     var closing by remember { mutableStateOf(false) }
     var showMainWindow by remember { mutableStateOf(true) }
+    var hiddenToTray by remember { mutableStateOf(false) }
+    var showEditor by remember { mutableStateOf(false) }
+    var openEditorAfterRecording by remember { mutableStateOf(false) }
     var mainWindowMinimized by remember { mutableStateOf(false) }
     var showMiniController by remember { mutableStateOf(false) }
     var compactedForRecording by remember { mutableStateOf(false) }
     var mainWindow by remember { mutableStateOf<java.awt.Window?>(null) }
-    var globalHotkeysEnabled by remember { mutableStateOf(startupSettings.globalHotkeysEnabled) }
+    var globalHotkeysEnabled by remember {
+        mutableStateOf(startupSettings.globalHotkeysEnabled && hotkeyFactory.isSupported)
+    }
     var globalHotkeyBindings by remember { mutableStateOf(startupSettings.globalHotkeyBindings) }
     var showHotkeySettingsDialog by remember { mutableStateOf(false) }
     val windowState = rememberWindowState(width = 1180.dp, height = 760.dp)
     val miniWindowState = rememberWindowState(
-        width = 72.dp,
-        height = 154.dp,
+        width = 344.dp,
+        height = 246.dp,
         position = WindowPosition(Alignment.TopEnd),
     )
     val miniControllerTitle = stringResource(Res.string.mini_controller_title)
@@ -167,9 +201,11 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             showMiniController = false
             scheduleForcedDesktopExit()
             viewModel.shutdown(::exitApplication)
+            editorViewModel.shutdown()
         }
     }
     val showFromTray = {
+        hiddenToTray = false
         compactedForRecording = false
         mainWindowMinimized = false
         showMiniController = false
@@ -177,9 +213,20 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         restoreMainWindow(mainWindow)
     }
     val hideToTray = {
+        hiddenToTray = true
         compactedForRecording = false
         showMainWindow = false
         showMiniController = false
+    }
+    val openEditor = { inputPath: String? ->
+        hiddenToTray = false
+        compactedForRecording = false
+        mainWindowMinimized = false
+        showMiniController = false
+        showMainWindow = true
+        showEditor = true
+        editorViewModel.open(inputPath)
+        restoreMainWindow(mainWindow)
     }
 
     DisposableEffect(Unit) {
@@ -187,6 +234,11 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
             recorderScope.cancel()
             previewImageResource.value?.close()
             previewImageResource.value = null
+            editorPreviewImageResource.value?.close()
+            editorPreviewImageResource.value = null
+            editorImportantFrameImageResources.value.values.forEach(DesktopPreviewImage::close)
+            editorImportantFrameImageResources.value = emptyMap()
+            editorViewModel.shutdown()
             audioAdapters.close()
             captureAdapters.close()
             capturePresentation.close()
@@ -224,20 +276,64 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
     }
 
+    LaunchedEffect(editorViewModel) {
+        var pendingImage: DesktopPreviewImage? = null
+        var retiredImage: DesktopPreviewImage? = null
+        try {
+            editorViewModel.previewFrame.collect { frame ->
+                withContext(Dispatchers.IO) {
+                    pendingImage = frame?.toDesktopPreviewImage()
+                }
+                retiredImage = editorPreviewImageResource.value
+                editorPreviewImageResource.value = pendingImage
+                pendingImage = null
+                repeat(PREVIEW_IMAGE_RETIREMENT_FRAMES) { withFrameNanos { } }
+                retiredImage?.close()
+                retiredImage = null
+            }
+        } finally {
+            pendingImage?.close()
+            retiredImage?.close()
+        }
+    }
+
+    LaunchedEffect(editorViewModel) {
+        var pendingImages = emptyMap<ImportantFrameId, DesktopPreviewImage>()
+        var retiredImages = emptyMap<ImportantFrameId, DesktopPreviewImage>()
+        try {
+            editorViewModel.importantFramePreviews.collect { previews ->
+                pendingImages = withContext(Dispatchers.IO) {
+                    previews.mapValues { it.value.toDesktopPreviewImage() }
+                }
+                retiredImages = editorImportantFrameImageResources.value
+                editorImportantFrameImageResources.value = pendingImages
+                pendingImages = emptyMap()
+                repeat(PREVIEW_IMAGE_RETIREMENT_FRAMES) { withFrameNanos { } }
+                retiredImages.values.forEach(DesktopPreviewImage::close)
+                retiredImages = emptyMap()
+            }
+        } finally {
+            pendingImages.values.forEach(DesktopPreviewImage::close)
+            retiredImages.values.forEach(DesktopPreviewImage::close)
+        }
+    }
+
     LaunchedEffect(state.selectedSourceId, state.frameRate) {
         if (state.previewStatus != PreviewUiStatus.Idle) {
             viewModel.onAction(RecorderUiAction.StopPreview)
         }
     }
 
-    LaunchedEffect(showMainWindow, mainWindowMinimized, state.canStartPreview) {
-        if (shouldStartPreview(showMainWindow, mainWindowMinimized, state.canStartPreview)) {
+    LaunchedEffect(showMainWindow, mainWindowMinimized, showEditor, state.canStartPreview) {
+        if (!showEditor && shouldStartPreview(showMainWindow, mainWindowMinimized, state.canStartPreview)) {
             viewModel.onAction(RecorderUiAction.StartPreview)
         }
     }
 
-    LaunchedEffect(showMainWindow, mainWindowMinimized, state.previewStatus) {
-        if (shouldStopPreview(showMainWindow, mainWindowMinimized, state.isPreviewRunning)) {
+    LaunchedEffect(showMainWindow, mainWindowMinimized, showEditor, state.previewStatus) {
+        if ((showEditor && state.isPreviewRunning) ||
+            shouldStopPreview(showMainWindow, mainWindowMinimized, state.isPreviewRunning)
+        ) {
             viewModel.onAction(RecorderUiAction.StopPreview)
         }
     }
@@ -315,13 +411,38 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
         val captureSource = viewModel.captureSource(state.selectedSourceId) ?: return@LaunchedEffect
         val frame = mainWindow as? Frame
-        if (frame != null && frame.extendedState and Frame.ICONIFIED == 0) {
+        if (
+            frame != null &&
+            frame.extendedState and Frame.ICONIFIED == 0 &&
+            shouldShowMiniController(applicationHiddenToTray = hiddenToTray)
+        ) {
             compactedForRecording = true
             showMiniController = true
             frame.extendedState = frame.extendedState or Frame.ICONIFIED
         }
         withContext(Dispatchers.IO) {
             capturePresentation.activate(captureSource)
+        }
+    }
+
+    LaunchedEffect(openEditorAfterRecording, state.status, state.lastOutputPath) {
+        if (!openEditorAfterRecording) {
+            return@LaunchedEffect
+        }
+        when (state.status) {
+            RecorderStatus.Completed -> {
+                val outputPath = state.lastOutputPath ?: return@LaunchedEffect
+                openEditorAfterRecording = false
+                openEditor(outputPath)
+            }
+            RecorderStatus.Failed,
+            RecorderStatus.Idle,
+            -> openEditorAfterRecording = false
+            RecorderStatus.Preparing,
+            RecorderStatus.Recording,
+            RecorderStatus.Paused,
+            RecorderStatus.Stopping,
+            -> Unit
         }
     }
 
@@ -387,15 +508,21 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
                 )
             }
         }
-        LaunchedEffect(window, state.showApplicationInRecording) {
+        LaunchedEffect(window, state.showApplicationInRecording, showEditor) {
             mainWindow = window
-            window.minimumSize = Dimension(760, 620)
+            window.minimumSize = if (showEditor) Dimension(960, 680) else Dimension(760, 620)
             setWindowVisibleInCapture(window, state.showApplicationInRecording)
         }
-        DisposableEffect(window) {
+        DisposableEffect(window, showEditor) {
             val windowListener = object : WindowAdapter() {
                 override fun windowLostFocus(event: WindowEvent) {
-                    if (!shouldCompactOnFocusLoss(focusMovedWithinApplication = event.oppositeWindow != null)) {
+                    if (showEditor) return
+                    if (
+                        !shouldCompactOnFocusLoss(
+                            focusMovedWithinApplication = event.oppositeWindow != null,
+                            applicationHiddenToTray = hiddenToTray,
+                        )
+                    ) {
                         return
                     }
                     val frame = event.window as? Frame ?: return
@@ -408,7 +535,9 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
 
                 override fun windowIconified(event: WindowEvent) {
                     mainWindowMinimized = true
-                    showMiniController = true
+                    if (shouldShowMiniController(applicationHiddenToTray = hiddenToTray)) {
+                        showMiniController = true
+                    }
                 }
 
                 override fun windowDeiconified(event: WindowEvent) {
@@ -426,13 +555,35 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
                 }
             }
         }
-        MissionRecorderScreen(
-            state = state,
-            onAction = viewModel::onAction,
-            previewImage = previewImage,
-            onConfigureShortcuts = { showHotkeySettingsDialog = true },
-            shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
-        )
+        if (showEditor) {
+            VideoEditorScreen(
+                state = editorState,
+                playheadMicros = editorPlayhead,
+                previewImage = editorPreviewImage,
+                importantFrameImages = editorImportantFrameImages.value,
+                onAction = { action ->
+                    if (action == VideoEditorAction.BackToRecorder) {
+                        editorViewModel.requestClose { showEditor = false }
+                    } else {
+                        editorViewModel.onAction(action)
+                    }
+                },
+            )
+        } else {
+            MissionRecorderScreen(
+                state = state,
+                onAction = { action ->
+                    if (action == RecorderUiAction.OpenEditor) {
+                        openEditor(state.lastOutputPath ?: state.storyboardInputPath)
+                    } else {
+                        viewModel.onAction(action)
+                    }
+                },
+                previewImage = previewImage,
+                onConfigureShortcuts = { showHotkeySettingsDialog = true },
+                shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
+            )
+        }
     }
 
     if (showMiniController) {
@@ -509,9 +660,18 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
                 MiniRecorderController(
                     state = state,
                     onAction = viewModel::onAction,
+                    previewImage = previewImage,
                     shortcutLabels = globalHotkeyBindings.toShortcutLabels(),
                     onExpand = showFromTray,
                     onHide = { showMiniController = false },
+                    onOpenEditor = {
+                        if (state.hasActiveRecording) {
+                            openEditorAfterRecording = true
+                            viewModel.onAction(RecorderUiAction.StopRecording)
+                        } else if (state.canOpenEditor) {
+                            openEditor(state.lastOutputPath ?: state.storyboardInputPath)
+                        }
+                    },
                 )
             }
         }
@@ -546,8 +706,13 @@ internal enum class DesktopCloseAction {
 internal fun desktopCloseAction(traySupported: Boolean): DesktopCloseAction =
     if (traySupported) DesktopCloseAction.HideToTray else DesktopCloseAction.MinimizeToTaskbar
 
-internal fun shouldCompactOnFocusLoss(focusMovedWithinApplication: Boolean): Boolean =
-    !focusMovedWithinApplication
+internal fun shouldCompactOnFocusLoss(
+    focusMovedWithinApplication: Boolean,
+    applicationHiddenToTray: Boolean,
+): Boolean = !applicationHiddenToTray && !focusMovedWithinApplication
+
+internal fun shouldShowMiniController(applicationHiddenToTray: Boolean): Boolean =
+    !applicationHiddenToTray
 
 internal fun shouldRestoreMainWindowFromMiniController(windowState: Int): Boolean =
     windowState and Frame.MAXIMIZED_BOTH != 0
@@ -600,6 +765,8 @@ private fun createDesktopRecorderViewModel(
         storyboardExporter = DesktopFfmpegStoryboardExporter(FfmpegStoryboardExporter()),
         nextOutputPath = ::nextOutputPath,
         nextReplayOutputPath = ::nextReplayOutputPath,
+        screenshotSaver = PngDesktopScreenshotSaver(),
+        nextScreenshotOutputPath = ::nextScreenshotOutputPath,
         captureRegionSelector = AwtCaptureRegionSelector(),
         audioLevels = audioAdapters.levelMonitor.levels,
         outputFileSelector = AwtDesktopOutputFileSelector(),
@@ -785,6 +952,17 @@ private fun nextReplayOutputPath(): String {
         "Mission Recorder",
         "replay-$timestamp.mp4",
     ).toString()
+}
+
+private fun nextScreenshotOutputPath(recordingOutputPath: String): String {
+    val timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
+    val outputDirectory = if (recordingOutputPath.isBlank()) {
+        Path.of(System.getProperty("user.home"), "Videos", "Mission Recorder")
+    } else {
+        Path.of(recordingOutputPath).toAbsolutePath().normalize().parent
+            ?: Path.of(System.getProperty("user.home"), "Videos", "Mission Recorder")
+    }
+    return outputDirectory.resolve("screenshot-$timestamp.png").toString()
 }
 
 private fun replayCachePath(): Path = Path.of(

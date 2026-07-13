@@ -183,6 +183,12 @@ internal fun FFmpegFrameRecorder.recordPcmFrame(frame: AudioFrame, timestampMicr
     }
 }
 
+internal fun FFmpegFrameRecorder.flushPcmFrames() {
+    while (FfmpegRecorderSupport.flushAudio(this)) {
+        // FFmpeg may emit more than one delayed AAC packet.
+    }
+}
+
 internal fun encoderFailed(message: String): RecordingException =
     RecordingException(RecordingError.EncoderFailed(message))
 

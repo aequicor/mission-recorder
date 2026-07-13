@@ -3,6 +3,7 @@ package io.aequicor.desktop
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asComposeImageBitmap
 import io.aequicor.capture.core.PixelFormat
+import io.aequicor.media.desktop.ffmpeg.EditorPreviewFrame
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
@@ -33,6 +34,14 @@ internal fun DesktopPreviewFrame.toDesktopPreviewImage(): DesktopPreviewImage {
         throw failure
     }
 }
+
+internal fun EditorPreviewFrame.toDesktopPreviewImage(): DesktopPreviewImage = DesktopPreviewFrame(
+    width = width,
+    height = height,
+    pixelFormat = PixelFormat.Bgra8888,
+    strideBytes = width * PREVIEW_CHANNEL_COUNT,
+    pixelData = bgraPixels,
+).toDesktopPreviewImage()
 
 private fun DesktopPreviewFrame.requireValidPixels() {
     val rowPixelBytes = width.toLong() * PREVIEW_CHANNEL_COUNT

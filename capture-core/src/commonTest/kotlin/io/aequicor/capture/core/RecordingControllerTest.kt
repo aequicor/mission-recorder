@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.test.Test
@@ -106,12 +107,59 @@ class RecordingControllerTest {
         controller.start(defaultSettings())
         runCurrent()
 
-        assertEquals(2, emittedFrames)
+        assertEquals(3, emittedFrames)
         assertEquals(1, encoder.startedFrames)
 
         encoder.releaseFirstFrame.complete(Unit)
         runCurrent()
         controller.stop()
+    }
+
+    @Test
+    fun releasesProcessedQueuedAndSuspendedFramesWhenEncodingFails() = runTest {
+        var createdFrames = 0
+        var releasedFrames = 0
+        val encoder = object : MediaEncoder {
+            override suspend fun open(session: RecordingSession, settings: RecordingSettings) = Unit
+
+            override suspend fun writeVideoFrame(frame: VideoFrame) {
+                throw RecordingException(RecordingError.EncoderFailed("Test encoder failure."))
+            }
+
+            override suspend fun writeAudioFrame(frame: AudioFrame) = Unit
+
+            override suspend fun finish(session: RecordingSession, metrics: RecordingMetrics): RecordingOutput =
+                RecordingOutput(session.settings.outputPath)
+
+            override suspend fun cancel(session: RecordingSession?) = Unit
+        }
+        val controller = RecordingController(
+            videoCaptureAdapter = object : VideoCaptureAdapter {
+                override fun frames(settings: RecordingSettings): Flow<VideoFrame> = flow {
+                    repeat(5) { index ->
+                        createdFrames += 1
+                        emit(
+                            defaultVideoFrame().copy(
+                                timestamp = MediaTimestamp(index * 33_333_333L),
+                                lease = VideoFrameLease { releasedFrames += 1 },
+                            ),
+                        )
+                    }
+                }
+            },
+            audioCaptureAdapter = FakeAudioCaptureAdapter(),
+            mediaEncoder = encoder,
+            scope = backgroundScope,
+            clock = FakeMediaClock(),
+            sessionIdFactory = FixedSessionIdFactory(),
+        )
+
+        controller.start(defaultSettings())
+        runCurrent()
+
+        assertEquals(5, createdFrames)
+        assertEquals(createdFrames, releasedFrames)
+        assertIs<RecordingState.Failed>(controller.recordingState.value)
     }
 
     @Test
@@ -279,7 +327,32 @@ class RecordingControllerTest {
 
         val stopped = assertIs<StopRecordingResult.Stopped>(controller.stop())
 
-        assertEquals(250.milliseconds, stopped.state.metrics.duration)
+        assertEquals(Duration.ZERO, stopped.state.metrics.duration)
+    }
+
+    @Test
+    fun excludesCaptureAndEncoderStartupFromEffectiveDuration() = runTest {
+        val videoFrames = Channel<VideoFrame>(Channel.UNLIMITED)
+        val clock = FakeMediaClock()
+        val controller = RecordingController(
+            videoCaptureAdapter = ChannelVideoCaptureAdapter(videoFrames),
+            audioCaptureAdapter = FakeAudioCaptureAdapter(),
+            mediaEncoder = FakeMediaEncoder(),
+            scope = backgroundScope,
+            clock = clock,
+            sessionIdFactory = FixedSessionIdFactory(),
+        )
+
+        controller.start(defaultSettings())
+        runCurrent()
+        clock.nowNanoseconds = 500_000_000
+        videoFrames.send(defaultVideoFrame().copy(timestamp = MediaTimestamp(10_000_000)))
+        runCurrent()
+        clock.nowNanoseconds = 600_000_000
+
+        val stopped = assertIs<StopRecordingResult.Stopped>(controller.stop())
+
+        assertEquals(110.milliseconds, stopped.state.metrics.duration)
     }
 
     @Test

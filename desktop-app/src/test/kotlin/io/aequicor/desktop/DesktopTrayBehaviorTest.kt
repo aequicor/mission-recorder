@@ -19,12 +19,33 @@ class DesktopTrayBehaviorTest {
 
     @Test
     fun compactsMainWindowWhenFocusMovesOutsideApplication() {
-        assertTrue(shouldCompactOnFocusLoss(focusMovedWithinApplication = false))
+        assertTrue(
+            shouldCompactOnFocusLoss(
+                focusMovedWithinApplication = false,
+                applicationHiddenToTray = false,
+            ),
+        )
     }
 
     @Test
     fun keepsMainWindowOpenForApplicationDialogs() {
-        assertFalse(shouldCompactOnFocusLoss(focusMovedWithinApplication = true))
+        assertFalse(
+            shouldCompactOnFocusLoss(
+                focusMovedWithinApplication = true,
+                applicationHiddenToTray = false,
+            ),
+        )
+    }
+
+    @Test
+    fun doesNotOpenMiniControllerWhenApplicationIsHiddenToTray() {
+        assertFalse(
+            shouldCompactOnFocusLoss(
+                focusMovedWithinApplication = false,
+                applicationHiddenToTray = true,
+            ),
+        )
+        assertFalse(shouldShowMiniController(applicationHiddenToTray = true))
     }
 
     @Test
