@@ -100,10 +100,9 @@ jobs:
           cache-provider: basic
 
       - name: Build release artifacts
-        run: >-
-          ${{ matrix.wrapper }} ${{ matrix.tasks }}
-          -Djavacpp.platform=${{ matrix.javacpp_platform }}
-          --stacktrace
+        env:
+          JAVACPP_PLATFORM: ${{ matrix.javacpp_platform }}
+        run: ${{ matrix.wrapper }} ${{ matrix.tasks }} --stacktrace
 
       - name: Print native packaging diagnostics
         if: failure() && runner.os == 'macOS'

@@ -3,10 +3,13 @@ plugins {
     alias(libs.plugins.kotlinPluginSerialization)
 }
 
-val javaCppPlatform = providers.systemProperty("javacpp.platform").orNull ?: currentJavaCppPlatform()
+val javaCppPlatform = providers.environmentVariable("JAVACPP_PLATFORM").orNull
+    ?: providers.systemProperty("javacpp.platform").orNull
+    ?: currentJavaCppPlatform()
 
 dependencies {
     implementation(project(":capture-core"))
+    implementation(project(":capture-platform-api"))
     implementation(project(":editor-core"))
     implementation(project(":replay-buffer"))
     implementation(libs.javacv)
