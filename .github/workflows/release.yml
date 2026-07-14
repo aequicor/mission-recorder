@@ -157,6 +157,11 @@ jobs:
             -name '*.deb' -o -name '*.zip' \
           \) -exec cp --target-directory=release-files {} +
           test "$(find release-files -maxdepth 1 -type f | wc -l)" -eq 6
+          while IFS= read -r -d '' file; do
+            normalized="${file// /.}"
+            test ! -e "$normalized"
+            mv "$file" "$normalized"
+          done < <(find release-files -maxdepth 1 -type f -name '* *' -print0)
 
           version="${GITHUB_REF_NAME#v}"
           awk -v version="$version" '
