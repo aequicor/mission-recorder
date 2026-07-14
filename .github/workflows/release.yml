@@ -145,11 +145,18 @@ jobs:
       - name: Validate assets and prepare release notes
         shell: bash
         run: |
-          test "$(find release-assets -maxdepth 1 -name '*.msi' | wc -l)" -eq 1
-          test "$(find release-assets -maxdepth 1 -name '*.exe' | wc -l)" -eq 1
-          test "$(find release-assets -maxdepth 1 -name '*.dmg' | wc -l)" -eq 2
-          test "$(find release-assets -maxdepth 1 -name '*.deb' | wc -l)" -eq 1
-          test "$(find release-assets -maxdepth 1 -name '*.zip' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name '*.msi' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name '*.exe' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name '*.dmg' | wc -l)" -eq 2
+          test "$(find release-assets -type f -name '*.deb' | wc -l)" -eq 1
+          test "$(find release-assets -type f -name '*.zip' | wc -l)" -eq 1
+
+          mkdir release-files
+          find release-assets -type f \( \
+            -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o \
+            -name '*.deb' -o -name '*.zip' \
+          \) -exec cp --target-directory=release-files {} +
+          test "$(find release-files -maxdepth 1 -type f | wc -l)" -eq 6
 
           version="${GITHUB_REF_NAME#v}"
           awk -v version="$version" '
@@ -160,14 +167,14 @@ jobs:
           ' CHANGELOG.md > release-notes.md
           test -s release-notes.md
 
-          cd release-assets
+          cd release-files
           sha256sum * > SHA256SUMS.txt
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME" release-assets/*
+          gh release create "$GITHUB_REF_NAME" release-files/*
           --verify-tag
           --title "Mission Recorder ${GITHUB_REF_NAME#v}"
           --notes-file release-notes.md
