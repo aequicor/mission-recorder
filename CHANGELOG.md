@@ -2,6 +2,12 @@
 
 Значимые пользовательские изменения Mission Recorder фиксируются в этом файле. Версии следуют [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Удалено
+
+- Консольный интерфейс, JVM CLI composition root и переносимый CLI ZIP; Mission Recorder распространяется только как desktop-приложение.
+
 ## [0.1.1] - 2026-07-14
 
 ### Исправлено
@@ -20,8 +26,7 @@
 - Replay buffer последних минут, global hotkeys, tray/PiP управление, recording border и screenshots.
 - Редактор раскадровки с preview, важными кадрами, undo/redo, экспортом PNG/contact sheet и копированием в clipboard.
 - Опциональные input overlays с double/long/drag жестами и приватный по умолчанию mouse-trail sidecar для раскадровки.
-- CLI для discovery, записи, replay/control, settings и экспорта кадров.
-- Автоматическая сборка Windows MSI/EXE, macOS DMG для Intel и Apple Silicon, Linux DEB и CLI ZIP с SHA-256 checksums.
+- Автоматическая сборка Windows MSI/EXE, macOS DMG для Intel и Apple Silicon и Linux DEB с SHA-256 checksums.
 
 ### Ограничения
 

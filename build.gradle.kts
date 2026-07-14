@@ -13,3 +13,9 @@ tasks.register("runGui") {
     description = "Runs the Mission Recorder Compose desktop GUI."
     dependsOn(":desktop-app:run")
 }
+
+tasks.register("run") {
+    group = "application"
+    description = "Runs the Mission Recorder Compose desktop application."
+    dependsOn(":desktop-app:run")
+}

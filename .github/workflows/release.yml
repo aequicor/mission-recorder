@@ -76,10 +76,8 @@ jobs:
           - id: linux-x64
             os: ubuntu-latest
             javacpp_platform: linux-x86_64
-            tasks: ":desktop-app:packageReleaseDeb :app:distZip"
-            paths: |
-              desktop-app/build/compose/binaries/main-release/deb/*.deb
-              app/build/distributions/*.zip
+            tasks: ":desktop-app:packageReleaseDeb"
+            paths: desktop-app/build/compose/binaries/main-release/deb/*.deb
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -149,14 +147,13 @@ jobs:
           test "$(find release-assets -type f -name '*.exe' | wc -l)" -eq 1
           test "$(find release-assets -type f -name '*.dmg' | wc -l)" -eq 2
           test "$(find release-assets -type f -name '*.deb' | wc -l)" -eq 1
-          test "$(find release-assets -type f -name '*.zip' | wc -l)" -eq 1
 
           mkdir release-files
           find release-assets -type f \( \
             -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o \
-            -name '*.deb' -o -name '*.zip' \
+            -name '*.deb' \
           \) -exec cp --target-directory=release-files {} +
-          test "$(find release-files -maxdepth 1 -type f | wc -l)" -eq 6
+          test "$(find release-files -maxdepth 1 -type f | wc -l)" -eq 5
           while IFS= read -r -d '' file; do
             normalized="${file// /.}"
             test ! -e "$normalized"

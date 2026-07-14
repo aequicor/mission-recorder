@@ -91,7 +91,9 @@ compose.desktop {
 }
 
 val guiRunRequested = gradle.startParameter.taskNames.any { requested ->
-    requested == "runGui" ||
+    requested == "run" ||
+        requested == ":run" ||
+        requested == "runGui" ||
         requested == ":runGui" ||
         requested == "desktop-app:run" ||
         requested == ":desktop-app:run"

@@ -10,9 +10,9 @@
           "source": "remote",
           "inputs": {
             "projectName": "mission-recorder",
-            "projectDescription": "Кроссплатформенная Kotlin-утилита для локального захвата экрана, звука и важных моментов на Windows, macOS, Linux и в перспективе Android; предоставляет CLI и Compose Multiplatform GUI.",
-            "architecture": "Многомодульная архитектура: платформонезависимые KMP-доменные ядра и контракты в commonMain, платформенные capture/audio/hotkey-адаптеры за узкими API, отдельные CLI и Compose UI, а app и desktop-app служат точками сборки зависимостей. Непрерывное состояние передается через StateFlow; владение нативными ресурсами не выходит за границы платформенных адаптеров.",
-            "modules": "capture-core, audio-core, replay-buffer, settings и hotkey-core — KMP-ядра; capture-platform-api — общие контракты discovery/permissions/routing; capture-*, audio-* и hotkey-* — платформенные адаптеры; media-desktop-ffmpeg, encoder и export — кодирование и экспорт; cli — команды и парсер; compose-ui — общий UI; app и desktop-app — CLI/desktop composition roots.",
+            "projectDescription": "Кроссплатформенное Kotlin-приложение для локального захвата экрана, звука и важных моментов на Windows, macOS, Linux и в перспективе Android; пользовательский интерфейс реализован на Compose Multiplatform.",
+            "architecture": "Многомодульная архитектура: платформонезависимые KMP-доменные ядра и контракты в commonMain, платформенные capture/audio/hotkey-адаптеры за узкими API, общий Compose UI и desktop-app как точка сборки зависимостей. Непрерывное состояние передается через StateFlow; владение нативными ресурсами не выходит за границы платформенных адаптеров.",
+            "modules": "capture-core, audio-core, replay-buffer, settings и hotkey-core — KMP-ядра; capture-platform-api — общие контракты discovery/permissions/routing; capture-*, audio-* и hotkey-* — платформенные адаптеры; media-desktop-ffmpeg, encoder и export — кодирование и экспорт; compose-ui — общий UI; desktop-app — desktop composition root.",
             "designSystem": "Compose Material 3 UI находится в compose-ui/src/commonMain. Основная палитра и тема определены в MissionRecorderScreen.kt: lapis lazuli #26619C, графитовые нейтрали, зеленый success и отдельный красный recording accent. Строки, Material Symbols font и drawable хранятся в Compose Multiplatform resources; UI поддерживает русскую и базовую локализации.",
             "stack": "kotlin",
             "technologies": [
