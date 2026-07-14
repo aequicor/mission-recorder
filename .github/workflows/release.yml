@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,7 +26,9 @@ jobs:
         run: |
           version="$(sed -n 's/^missionRecorderVersion=//p' gradle.properties)"
           test -n "$version"
-          test "v$version" = "$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            test "v$version" = "$GITHUB_REF_NAME"
+          fi
           grep -q "^## \[$version\]" CHANGELOG.md
 
       - name: Set up JDK 21
@@ -95,6 +98,14 @@ jobs:
       - name: Build release artifacts
         run: ${{ matrix.wrapper }} ${{ matrix.tasks }} --stacktrace
 
+      - name: Print native packaging diagnostics
+        if: failure() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          if [[ -d desktop-app/build/compose/logs ]]; then
+            find desktop-app/build/compose/logs -type f -print -exec cat {} \;
+          fi
+
       - name: Add macOS architecture to DMG name
         if: runner.os == 'macOS'
         shell: bash
@@ -113,6 +124,7 @@ jobs:
 
   publish:
     needs: package
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

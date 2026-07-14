@@ -2,6 +2,14 @@
 
 Значимые пользовательские изменения Mission Recorder фиксируются в этом файле. Версии следуют [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-07-14
+
+### Исправлено
+
+- macOS Apple Silicon packaging выбирает нативные JavaCV/FFmpeg-библиотеки для Darwin, а не несуществующий Windows ARM classifier.
+- macOS application bundle получает стабильный идентификатор `io.aequicor.missionrecorder`.
+- Release workflow можно запустить вручную как dry run без публикации; при сбое macOS packaging он выводит диагностические логи jpackage.
+
 ## [0.1.0] - 2026-07-14
 
 ### Добавлено
@@ -22,4 +30,5 @@
 - Android application packaging ещё не реализован.
 - Desktop-пакеты пока не подписаны и не notarized.
 
+[0.1.1]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.1
 [0.1.0]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.0

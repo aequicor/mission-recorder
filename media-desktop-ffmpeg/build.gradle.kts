@@ -28,8 +28,8 @@ fun currentJavaCppPlatform(): String {
         else -> error("Unsupported desktop architecture for FFmpeg: $architecture")
     }
     return when {
-        os.contains("win") -> "windows-$normalizedArchitecture"
-        os.contains("mac") -> "macosx-$normalizedArchitecture"
+        os.startsWith("windows") -> "windows-$normalizedArchitecture"
+        os.startsWith("mac") || os.startsWith("darwin") -> "macosx-$normalizedArchitecture"
         os.contains("linux") -> "linux-$normalizedArchitecture"
         else -> error("Unsupported desktop operating system for FFmpeg: $os")
     }

@@ -63,6 +63,7 @@ compose.desktop {
                 iconFile.set(project.file("src/main/resources/icons/mission-recorder.ico"))
             }
             macOS {
+                bundleID = "io.aequicor.missionrecorder"
                 iconFile.set(project.file("src/main/resources/icons/mission-recorder.icns"))
                 infoPlist {
                     extraKeysRawXml = """
