@@ -90,6 +90,7 @@ data class RecorderUiState(
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
     val showInputOverlay: Boolean = false,
+    val recordMouseTrail: Boolean = false,
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,
     val previewStatus: PreviewUiStatus = PreviewUiStatus.Idle,
@@ -177,7 +178,18 @@ data class RecorderUiState(
         get() = isPreviewRunning
 
     val canTakeScreenshot: Boolean
-        get() = previewStatus == PreviewUiStatus.Active && !isSavingScreenshot
+        get() = !hasBlockingOperation &&
+            !isRefreshingSources &&
+            !isSavingScreenshot &&
+            selectedSourceId != null
+
+    val canTakeScreenScreenshot: Boolean
+        get() = !hasBlockingOperation &&
+            !isRefreshingSources &&
+            !isSavingScreenshot &&
+            sources.any { source ->
+                source.kind == RecorderSourceKind.Screen || source.kind == RecorderSourceKind.Monitor
+            }
 
     val canSaveReplay: Boolean
         get() = replayStatus == ReplayUiStatus.Buffering && replayVideoFrames > 0
@@ -236,10 +248,12 @@ sealed interface RecorderUiAction {
     data class SetFrameRate(val frameRate: Int) : RecorderUiAction
     data class SetCaptureCursor(val enabled: Boolean) : RecorderUiAction
     data class SetShowInputOverlay(val enabled: Boolean) : RecorderUiAction
+    data class SetRecordMouseTrail(val enabled: Boolean) : RecorderUiAction
     data class SetShowApplicationInRecording(val enabled: Boolean) : RecorderUiAction
     data class SetShowCaptureBorder(val enabled: Boolean) : RecorderUiAction
     data class SetVideoBitrateMbps(val megabitsPerSecond: Int) : RecorderUiAction
     data class SetStoryboardInputPath(val path: String) : RecorderUiAction
+    data object ChooseStoryboardInputFile : RecorderUiAction
     data class SetStoryboardMode(val mode: StoryboardMode) : RecorderUiAction
     data class SetReplayDurationMinutes(val minutes: Int) : RecorderUiAction
     data object SelectRegion : RecorderUiAction
@@ -255,6 +269,8 @@ sealed interface RecorderUiAction {
     data object StopRecording : RecorderUiAction
     data object MarkImportantFrame : RecorderUiAction
     data object TakeScreenshot : RecorderUiAction
+    data object TakeScreenScreenshot : RecorderUiAction
+    data object SelectRegionAndTakeScreenshot : RecorderUiAction
     data object OpenEditor : RecorderUiAction
     data object ExportStoryboard : RecorderUiAction
     data object StartReplayBuffer : RecorderUiAction

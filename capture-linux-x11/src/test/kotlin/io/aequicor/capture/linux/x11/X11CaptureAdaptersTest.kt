@@ -110,6 +110,7 @@ class X11CaptureAdaptersTest {
 
         assertTrue(requireNotNull(frame.pixelData).containsNonWhiteColor())
         assertEquals(1, windowSystem.pressedInputReadCount)
+        assertTrue(!frame.importantFrame)
     }
 
     @Test

@@ -1,5 +1,6 @@
 plugins {
     id("buildsrc.convention.kotlin-jvm")
+    alias(libs.plugins.kotlinPluginSerialization)
 }
 
 val javaCppPlatform = providers.systemProperty("javacpp.platform").orNull ?: currentJavaCppPlatform()
@@ -11,6 +12,7 @@ dependencies {
     implementation(libs.javacv)
     implementation(libs.ffmpeg)
     implementation(libs.kotlinxCoroutines)
+    implementation(libs.kotlinxSerialization)
     runtimeOnly("org.bytedeco:javacpp:${libs.versions.javacv.get()}:$javaCppPlatform")
     runtimeOnly("org.bytedeco:ffmpeg:${libs.versions.ffmpeg.get()}:$javaCppPlatform")
     testImplementation(kotlin("test"))

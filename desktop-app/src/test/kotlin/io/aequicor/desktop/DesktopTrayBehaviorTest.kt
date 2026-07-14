@@ -1,5 +1,6 @@
 package io.aequicor.desktop
 
+import io.aequicor.compose.ui.RecorderUiAction
 import java.awt.Frame
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -53,6 +54,13 @@ class DesktopTrayBehaviorTest {
         assertTrue(shouldRestoreMainWindowFromMiniController(Frame.MAXIMIZED_BOTH))
         assertTrue(shouldRestoreMainWindowFromMiniController(Frame.MAXIMIZED_BOTH or Frame.ICONIFIED))
         assertFalse(shouldRestoreMainWindowFromMiniController(Frame.NORMAL))
+    }
+
+    @Test
+    fun hidesEditorWhenStartingARecording() {
+        assertTrue(shouldHideEditorWhenStartingRecording(RecorderUiAction.StartRecording))
+        assertTrue(shouldHideEditorWhenStartingRecording(RecorderUiAction.SelectRegionAndStartRecording))
+        assertFalse(shouldHideEditorWhenStartingRecording(RecorderUiAction.StopRecording))
     }
 
     @Test

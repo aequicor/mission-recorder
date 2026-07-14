@@ -8,6 +8,7 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.VideoFramePoint
 import io.aequicor.capture.platform.InputOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
@@ -40,11 +41,7 @@ internal class X11VideoCaptureAdapter(
             val captured = capture(selectedWindow, settings.captureSource.displayName)
             captured.validate()
             var pixels = captured.rgbaPixels
-            val cursor = if (settings.captureCursor || settings.showInputOverlay) {
-                windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
-            } else {
-                null
-            }
+            val cursor = windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
             val hotspotX = cursor?.x?.minus(captured.bounds.x)
             val hotspotY = cursor?.y?.minus(captured.bounds.y)
             if (settings.captureCursor && hotspotX != null && hotspotY != null) {
@@ -57,7 +54,12 @@ internal class X11VideoCaptureAdapter(
                 )
             }
             if (settings.showInputOverlay) {
-                val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
+                val label = inputOverlay.update(
+                    pressedInputs = windowSystem.pressedInputs(),
+                    timestampNanoseconds = nanoTime(),
+                    hotspotX = hotspotX,
+                    hotspotY = hotspotY,
+                )
                 if (label != null) {
                     inputOverlay.drawRgba(
                         pixels = pixels,
@@ -75,9 +77,6 @@ internal class X11VideoCaptureAdapter(
             } else if (captured.bounds.width != outputWidth || captured.bounds.height != outputHeight) {
                 pixels = pixels.fitInto(captured.bounds.width, captured.bounds.height, outputWidth, outputHeight)
             }
-            if (settings.showInputOverlay) {
-                inputOverlay.drawPendingEventMarkerRgba(pixels, outputWidth, outputHeight)
-            }
             emit(
                 VideoFrame(
                     timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
@@ -87,6 +86,14 @@ internal class X11VideoCaptureAdapter(
                     strideBytes = outputWidth * RGBA_CHANNELS,
                     sourceId = settings.captureSource.id,
                     pixelData = pixels,
+                    cursorPosition = hotspotX?.let { x ->
+                        hotspotY?.let { y ->
+                            VideoFramePoint(
+                                x = x * outputWidth / captured.bounds.width,
+                                y = y * outputHeight / captured.bounds.height,
+                            )
+                        }
+                    },
                 ),
             )
             nextFrameDeadline += intervalNanoseconds

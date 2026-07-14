@@ -182,6 +182,35 @@ class DesktopRecorderViewModelTest {
     }
 
     @Test
+    fun capturesScreenScreenshotWithoutRunningPreview() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val preview = FakeDesktopPreviewEngine()
+        val screenshotSaver = FakeDesktopScreenshotSaver()
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            previewEngine = preview,
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            screenshotSaver = screenshotSaver,
+            nextScreenshotOutputPath = { "recordings/screen.png" },
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.TakeScreenScreenshot)
+        runCurrent()
+
+        assertEquals(screen, assertNotNull(preview.settings).captureSource)
+        assertEquals("recordings/screen.png", screenshotSaver.outputPath)
+        assertEquals("recordings/screen.png", viewModel.state.value.lastScreenshotPath)
+        assertFalse(viewModel.state.value.isSavingScreenshot)
+    }
+
+    @Test
     fun preservesFullWidthQhdPreviewResolution() = runTest {
         val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
         val viewModel = DesktopRecorderViewModel(
@@ -889,6 +918,48 @@ class DesktopRecorderViewModelTest {
 
         val settings = assertNotNull(engine.startedSettings)
         assertEquals(region, (settings.captureSource as CaptureSource.Region).region)
+    }
+
+    @Test
+    fun capturesScreenshotAfterRegionSelection() = runTest {
+        val region = CaptureRegion(
+            x = 120,
+            y = 80,
+            width = 640,
+            height = 360,
+            monitorId = CaptureSourceId("monitor:1"),
+            scaleFactor = 1.0,
+            coordinateSpace = CoordinateSpace.LogicalPixels,
+        )
+        val preview = FakeDesktopPreviewEngine(width = 640, height = 360)
+        val screenshotSaver = FakeDesktopScreenshotSaver()
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(emptyList()),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            previewEngine = preview,
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            captureRegionSelector = CaptureRegionSelector {
+                CaptureRegionSelection.Selected(region)
+            },
+            screenshotSaver = screenshotSaver,
+            nextScreenshotOutputPath = { "recordings/region.png" },
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.SelectRegionAndTakeScreenshot)
+        runCurrent()
+
+        val captureSource = assertNotNull(preview.settings).captureSource as CaptureSource.Region
+        assertEquals(region, captureSource.region)
+        assertEquals("recordings/region.png", screenshotSaver.outputPath)
+        assertEquals("recordings/region.png", viewModel.state.value.lastScreenshotPath)
+        assertFalse(viewModel.state.value.isSelectingRegion)
+        assertFalse(viewModel.state.value.isSavingScreenshot)
     }
 
     @Test

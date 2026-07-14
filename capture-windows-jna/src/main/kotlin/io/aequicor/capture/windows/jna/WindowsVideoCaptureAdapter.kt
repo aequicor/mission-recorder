@@ -9,6 +9,7 @@ import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
 import io.aequicor.capture.core.VideoFrameLease
+import io.aequicor.capture.core.VideoFramePoint
 import io.aequicor.capture.platform.InputOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
@@ -64,6 +65,9 @@ class WindowsVideoCaptureAdapter internal constructor(
                 val lease = VideoFrameLease(captured::release)
                 try {
                     captured.validate()
+                    val cursor = windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
+                    val hotspotX = cursor?.x?.minus(captured.bounds.x)
+                    val hotspotY = cursor?.y?.minus(captured.bounds.y)
                     if (captured.nativeFrame != null) {
                         emit(
                             VideoFrame(
@@ -74,6 +78,9 @@ class WindowsVideoCaptureAdapter internal constructor(
                                 strideBytes = 0,
                                 sourceId = settings.captureSource.id,
                                 nativeFrame = captured.nativeFrame,
+                                cursorPosition = hotspotX?.let { x ->
+                                    hotspotY?.let { y -> VideoFramePoint(x, y) }
+                                },
                                 lease = lease,
                             ),
                         )
@@ -81,13 +88,6 @@ class WindowsVideoCaptureAdapter internal constructor(
                         continue
                     }
                     var bgraPixels = requireNotNull(captured.bgraPixels)
-                    val cursor = if (settings.captureCursor || settings.showInputOverlay) {
-                        windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
-                    } else {
-                        null
-                    }
-                    val hotspotX = cursor?.x?.minus(captured.bounds.x)
-                    val hotspotY = cursor?.y?.minus(captured.bounds.y)
                     if (settings.captureCursor && hotspotX != null && hotspotY != null) {
                         RgbaCursorPainter.drawBgra(
                             bgraPixels = bgraPixels,
@@ -98,7 +98,12 @@ class WindowsVideoCaptureAdapter internal constructor(
                         )
                     }
                     if (settings.showInputOverlay) {
-                        val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
+                        val label = inputOverlay.update(
+                            pressedInputs = windowSystem.pressedInputs(),
+                            timestampNanoseconds = nanoTime(),
+                            hotspotX = hotspotX,
+                            hotspotY = hotspotY,
+                        )
                         if (label != null) {
                             inputOverlay.drawBgra(
                                 pixels = bgraPixels,
@@ -110,7 +115,6 @@ class WindowsVideoCaptureAdapter internal constructor(
                             )
                         }
                     }
-
                     if (outputWidth == 0 || outputHeight == 0) {
                         outputWidth = captured.bounds.width
                         outputHeight = captured.bounds.height
@@ -122,10 +126,6 @@ class WindowsVideoCaptureAdapter internal constructor(
                             targetHeight = outputHeight,
                         )
                     }
-                    if (settings.showInputOverlay) {
-                        inputOverlay.drawPendingEventMarkerBgra(bgraPixels, outputWidth, outputHeight)
-                    }
-
                     emit(
                         VideoFrame(
                             timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
@@ -135,6 +135,14 @@ class WindowsVideoCaptureAdapter internal constructor(
                             strideBytes = outputWidth * RGBA_CHANNEL_COUNT,
                             sourceId = settings.captureSource.id,
                             pixelData = bgraPixels,
+                            cursorPosition = hotspotX?.let { x ->
+                                hotspotY?.let { y ->
+                                    VideoFramePoint(
+                                        x = x * outputWidth / captured.bounds.width,
+                                        y = y * outputHeight / captured.bounds.height,
+                                    )
+                                }
+                            },
                             lease = lease,
                         ),
                     )

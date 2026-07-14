@@ -49,6 +49,7 @@ internal class DesktopUiSettingsRepository(
                     ?: DEFAULT_DESKTOP_FRAME_RATE,
                 captureCursor = profile.video.captureCursor,
                 showInputOverlay = profile.video.showInputOverlay,
+                recordMouseTrail = profile.video.recordMouseTrail,
                 replayDurationMinutes = (profile.replay.durationSeconds / SECONDS_PER_MINUTE)
                     .coerceIn(MIN_REPLAY_MINUTES.toLong(), MAX_REPLAY_MINUTES.toLong())
                     .toInt(),
@@ -58,6 +59,7 @@ internal class DesktopUiSettingsRepository(
                 },
                 encoderSettings = profile.encoder.toEncoderSettings(),
             ),
+            recentEditorMediaPaths = settings.desktopUi.recentEditorMediaPaths,
             globalHotkeysEnabled = settings.desktopUi.globalHotkeysEnabled,
             globalHotkeyBindings = settings.desktopUi.globalHotkeys.toBindings(),
             showApplicationInRecording = settings.desktopUi.showApplicationInRecording,
@@ -173,6 +175,7 @@ internal class DesktopUiSettingsRepository(
                         frameRate = preferences.frameRate,
                         captureCursor = preferences.captureCursor,
                         showInputOverlay = preferences.showInputOverlay,
+                        recordMouseTrail = preferences.recordMouseTrail,
                     ),
                     replay = profile.replay.copy(
                         durationSeconds = preferences.replayDurationMinutes * SECONDS_PER_MINUTE,
@@ -222,6 +225,15 @@ internal class DesktopUiSettingsRepository(
         store.save(settings.copy(desktopUi = settings.desktopUi.copy(showCaptureBorder = enabled)))
     }
 
+    fun saveRecentEditorMediaPath(path: String) = synchronized(lock) {
+        val normalized = Path.of(path).toAbsolutePath().normalize().toString()
+        val settings = store.loadOrDefault()
+        val recentPaths = (listOf(normalized) + settings.desktopUi.recentEditorMediaPaths)
+            .distinct()
+            .take(MAX_RECENT_EDITOR_MEDIA_PATHS)
+        store.save(settings.copy(desktopUi = settings.desktopUi.copy(recentEditorMediaPaths = recentPaths)))
+    }
+
     private fun MissionRecorderSettings.toProfileCatalog(): DesktopRecorderProfileCatalog {
         val selectedProfile = requireNotNull(profiles.firstOrNull { profile -> profile.id == defaultProfileId }) {
             "Default recording profile is missing."
@@ -243,6 +255,7 @@ internal class DesktopUiSettingsRepository(
                     ?: DEFAULT_DESKTOP_FRAME_RATE,
                 captureCursor = video.captureCursor,
                 showInputOverlay = video.showInputOverlay,
+                recordMouseTrail = video.recordMouseTrail,
                 replayDurationMinutes = (replay.durationSeconds / SECONDS_PER_MINUTE)
                     .coerceIn(MIN_REPLAY_MINUTES.toLong(), MAX_REPLAY_MINUTES.toLong())
                     .toInt(),
@@ -268,6 +281,7 @@ internal class DesktopUiSettingsRepository(
             frameRate = snapshot.preferences.frameRate,
             captureCursor = snapshot.preferences.captureCursor,
             showInputOverlay = snapshot.preferences.showInputOverlay,
+            recordMouseTrail = snapshot.preferences.recordMouseTrail,
         ),
         audio = AudioSettings(snapshot.audioSources.map { source -> source.toAudioSourceSettings() }),
         output = output.copy(
@@ -442,3 +456,4 @@ private fun environmentPath(name: String): Path? =
         ?.let { value -> Path.of(value) }
 
 private const val SECONDS_PER_MINUTE = 60L
+private const val MAX_RECENT_EDITOR_MEDIA_PATHS = 12

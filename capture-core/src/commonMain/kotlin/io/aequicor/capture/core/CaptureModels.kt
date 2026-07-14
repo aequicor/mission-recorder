@@ -136,6 +136,8 @@ data class RecordingSettings(
     val captureCursor: Boolean = true,
     /** Whether global keyboard and mouse presses are rendered next to the cursor in video frames. */
     val showInputOverlay: Boolean = false,
+    /** Whether cursor coordinates are saved beside the recording for storyboard rendering. */
+    val recordMouseTrail: Boolean = false,
     val replayDuration: Duration? = null,
     val encoder: EncoderSettings = EncoderSettings(),
 )

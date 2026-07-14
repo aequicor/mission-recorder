@@ -94,6 +94,7 @@ class WindowsVideoCaptureAdapterTest {
 
         assertTrue(requireNotNull(frame.pixelData).containsNonWhiteColor())
         assertEquals(1, system.pressedInputReadCount)
+        assertTrue(!frame.importantFrame)
     }
 
     @Test

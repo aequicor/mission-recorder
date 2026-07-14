@@ -247,11 +247,14 @@ class RecordingController(
             if (current.isPaused || state.value !is RecordingState.Recording) {
                 return@withLock
             }
-            val adjustedFrame = frame
-                .withPauseOffset(current.accumulatedPausedNanoseconds)
-                .let { adjusted ->
-                    if (current.importantFramePending) adjusted.withInputEventFrameMarker() else adjusted
+            val shouldMarkImportantFrame = current.importantFramePending || frame.importantFrame
+            val adjustedFrame = frame.withPauseOffset(current.accumulatedPausedNanoseconds).let { adjusted ->
+                if (shouldMarkImportantFrame) {
+                    adjusted.withInputEventFrameMarker()
+                } else {
+                    adjusted
                 }
+            }
             mediaEncoder.writeVideoFrame(adjustedFrame)
             updateVideoMetrics(
                 active = active,

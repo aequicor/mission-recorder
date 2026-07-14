@@ -9,6 +9,7 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.VideoFramePoint
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -57,10 +58,9 @@ class AwtVideoCaptureAdapter internal constructor(
 
         while (currentCoroutineContext().isActive) {
             val image = screenGrabber.capture(rectangle)
+            val pointer = pointerLocationProvider.location()?.takeIf(rectangle::contains)
             if (settings.captureCursor) {
-                pointerLocationProvider.location()?.let { location ->
-                    image.drawCursor(location, rectangle)
-                }
+                pointer?.let { location -> image.drawCursor(location, rectangle) }
             }
             emit(
                 VideoFrame(
@@ -71,6 +71,9 @@ class AwtVideoCaptureAdapter internal constructor(
                     strideBytes = image.width * 4,
                     sourceId = settings.captureSource.id,
                     pixelData = image.toRgbaBytes(),
+                    cursorPosition = pointer?.let { location ->
+                        VideoFramePoint(location.x - rectangle.x, location.y - rectangle.y)
+                    },
                 ),
             )
             nextFrameDeadline += intervalNanoseconds

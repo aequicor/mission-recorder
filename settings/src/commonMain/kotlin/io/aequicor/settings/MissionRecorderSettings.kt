@@ -30,6 +30,8 @@ data class MissionRecorderSettings(
 data class DesktopUiSettings(
     val miniController: MiniControllerSettings = MiniControllerSettings(),
     val storyboardLayout: StoryboardLayoutSetting = StoryboardLayoutSetting.SeparatePngFiles,
+    /** Most recently opened or recorded videos, newest first, for the desktop storyboard workspace. */
+    val recentEditorMediaPaths: List<String> = emptyList(),
     val globalHotkeysEnabled: Boolean = true,
     val globalHotkeys: GlobalHotkeySettings = GlobalHotkeySettings(),
     val showApplicationInRecording: Boolean = false,
@@ -163,6 +165,8 @@ data class VideoSettings(
     val captureCursor: Boolean = true,
     /** Opt-in profile setting for recording keyboard and mouse press labels in the video. */
     val showInputOverlay: Boolean = false,
+    /** Opt-in profile setting for saving cursor movement for storyboard-only trails. */
+    val recordMouseTrail: Boolean = false,
 )
 
 @Serializable
@@ -279,6 +283,7 @@ fun RecordingProfileSettings.toRecordingSettings(outputPath: String): RecordingS
         frameRate = video.frameRate,
         captureCursor = video.captureCursor,
         showInputOverlay = video.showInputOverlay,
+        recordMouseTrail = video.recordMouseTrail,
         replayDuration = replay.takeIf { it.enabled }?.durationSeconds?.seconds,
         encoder = encoder.toEncoderSettings(),
     )

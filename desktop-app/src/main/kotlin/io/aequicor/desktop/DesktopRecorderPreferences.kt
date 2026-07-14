@@ -13,6 +13,7 @@ internal data class DesktopRecorderPreferences(
     val frameRate: Int = DEFAULT_DESKTOP_FRAME_RATE,
     val captureCursor: Boolean = true,
     val showInputOverlay: Boolean = false,
+    val recordMouseTrail: Boolean = false,
     val replayDurationMinutes: Int = DEFAULT_REPLAY_MINUTES,
     val storyboardMode: StoryboardMode = StoryboardMode.SeparatePngFiles,
     val encoderSettings: EncoderSettings = EncoderSettings(),
@@ -27,6 +28,7 @@ internal data class DesktopRecorderPreferences(
 
 internal data class DesktopStartupSettings(
     val recorderPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
+    val recentEditorMediaPaths: List<String> = emptyList(),
     val globalHotkeysEnabled: Boolean = true,
     val globalHotkeyBindings: List<GlobalHotkeyBinding> = defaultDesktopGlobalHotkeys,
     val showApplicationInRecording: Boolean = false,

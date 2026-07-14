@@ -25,11 +25,15 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -40,20 +44,15 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -63,7 +62,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -78,7 +76,13 @@ import io.aequicor.compose.resources.add_current_frame
 import io.aequicor.compose.resources.all_frames
 import io.aequicor.compose.resources.all_or_no_frames
 import io.aequicor.compose.resources.cancel
-import io.aequicor.compose.resources.copy_storyboard_to_clipboard
+import io.aequicor.compose.resources.compression_high
+import io.aequicor.compose.resources.compression_low
+import io.aequicor.compose.resources.compression_medium
+import io.aequicor.compose.resources.compression_none
+import io.aequicor.compose.resources.copy_multiple_files_to_clipboard
+import io.aequicor.compose.resources.copy_single_file_to_clipboard
+import io.aequicor.compose.resources.delete
 import io.aequicor.compose.resources.dismiss
 import io.aequicor.compose.resources.editor_montage_title
 import io.aequicor.compose.resources.editor_preview
@@ -89,6 +93,10 @@ import io.aequicor.compose.resources.empty_editor
 import io.aequicor.compose.resources.export_section
 import io.aequicor.compose.resources.export_separate_files
 import io.aequicor.compose.resources.export_single_file
+import io.aequicor.compose.resources.frame_export_destination
+import io.aequicor.compose.resources.frame_output_format
+import io.aequicor.compose.resources.frame_jpeg_compression
+import io.aequicor.compose.resources.frame_resolution
 import io.aequicor.compose.resources.forward_ten_seconds
 import io.aequicor.compose.resources.important_frame
 import io.aequicor.compose.resources.important_frames_filter
@@ -97,13 +105,15 @@ import io.aequicor.compose.resources.mark_important_frame
 import io.aequicor.compose.resources.media_library
 import io.aequicor.compose.resources.next_frame
 import io.aequicor.compose.resources.no_export_frames
+import io.aequicor.compose.resources.no_recordings_in_history
 import io.aequicor.compose.resources.ordinary_frame
-import io.aequicor.compose.resources.original_size_frames_destination
 import io.aequicor.compose.resources.pause
 import io.aequicor.compose.resources.play
 import io.aequicor.compose.resources.preparing_storyboard_frames
 import io.aequicor.compose.resources.previous_frame
 import io.aequicor.compose.resources.redo
+import io.aequicor.compose.resources.recording_history
+import io.aequicor.compose.resources.remove_important_frame
 import io.aequicor.compose.resources.rewind_ten_seconds
 import io.aequicor.compose.resources.selected_frames_count
 import io.aequicor.compose.resources.storyboard
@@ -113,8 +123,12 @@ import io.aequicor.compose.resources.video_editor
 import io.aequicor.editor.EditorClip
 import io.aequicor.editor.EditorProject
 import io.aequicor.editor.EditorTrackKind
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameId
 import io.aequicor.editor.ImportantFrameLayout
+import io.aequicor.editor.JpegCompression
+import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 
@@ -151,6 +165,7 @@ private object EditorDimens {
     val ControlRadius = 8.dp
     val StoryboardWidth = 416.dp
     val CompactStoryboardWidth = 360.dp
+    val RecordingHistoryWidth = 228.dp
     val TimelineHorizontalInset = 16.dp
     val TimelinePlayheadRadius = 10.dp
     val TimelinePlayheadStrokeWidth = 3.dp
@@ -226,7 +241,7 @@ private fun EditorHeader(state: VideoEditorUiState, onAction: (VideoEditorAction
                 onClick = { onAction(VideoEditorAction.BackToRecorder) },
                 modifier = Modifier.width(108.dp).testTag("editor-back"),
             ) {
-                MaterialSymbol("arrow_back", null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.sp)
+                MaterialIcon(MaterialIcons.ArrowBack, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(Res.string.editor_recording), maxLines = 1)
             }
@@ -254,14 +269,14 @@ private fun EditorHeader(state: VideoEditorUiState, onAction: (VideoEditorAction
                 )
             }
             HeaderIconButton(
-                symbol = "undo",
+                icon = MaterialIcons.Undo,
                 description = stringResource(Res.string.undo),
                 enabled = state.canUndo && !state.isExporting,
                 tag = "editor-undo",
                 onClick = { onAction(VideoEditorAction.Undo) },
             )
             HeaderIconButton(
-                symbol = "redo",
+                icon = MaterialIcons.Redo,
                 description = stringResource(Res.string.redo),
                 enabled = state.canRedo && !state.isExporting,
                 tag = "editor-redo",
@@ -272,7 +287,7 @@ private fun EditorHeader(state: VideoEditorUiState, onAction: (VideoEditorAction
                 enabled = !state.isImportingMedia && !state.isExporting,
                 modifier = Modifier.width(100.dp).testTag("editor-add-media"),
             ) {
-                MaterialSymbol("add_circle", null, color = MaterialTheme.colorScheme.primary, size = 18.sp)
+                MaterialIcon(MaterialIcons.AddCircle, null, color = MaterialTheme.colorScheme.primary, size = 18.dp)
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(Res.string.media_library), maxLines = 1)
             }
@@ -282,7 +297,7 @@ private fun EditorHeader(state: VideoEditorUiState, onAction: (VideoEditorAction
 
 @Composable
 private fun HeaderIconButton(
-    symbol: String,
+    icon: DrawableResource,
     description: String,
     enabled: Boolean,
     tag: String,
@@ -293,7 +308,7 @@ private fun HeaderIconButton(
         enabled = enabled,
         modifier = Modifier.size(44.dp).testTag(tag).semantics { contentDescription = description },
     ) {
-        MaterialSymbol(symbol, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 20.sp)
+        MaterialIcon(icon, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 20.dp)
     }
 }
 
@@ -316,6 +331,11 @@ private fun StoryboardWorkspace(
             modifier = Modifier.fillMaxSize().padding(EditorDimens.WorkspacePadding),
             horizontalArrangement = Arrangement.spacedBy(EditorDimens.WorkspaceGap),
         ) {
+            RecordingHistoryPanel(
+                state = state,
+                onAction = onAction,
+                modifier = Modifier.width(EditorDimens.RecordingHistoryWidth).fillMaxHeight(),
+            )
             VideoReviewPanel(
                 state = state,
                 playheadMicros = playheadMicros,
@@ -332,6 +352,105 @@ private fun StoryboardWorkspace(
         }
     }
 }
+
+@Composable
+private fun RecordingHistoryPanel(
+    state: VideoEditorUiState,
+    onAction: (VideoEditorAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val primaryPath = state.project.primaryAssetId
+        ?.let { assetId -> state.project.assets.firstOrNull { it.id == assetId } }
+        ?.path
+    EditorPanel(modifier) {
+        Text(
+            text = stringResource(Res.string.recording_history),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(12.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth().weight(1f).testTag("editor-recording-history"),
+            shape = RoundedCornerShape(EditorDimens.ControlRadius),
+            color = EditorColors.RecessedSurface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        ) {
+            if (state.recentMediaPaths.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        text = stringResource(Res.string.no_recordings_in_history),
+                        modifier = Modifier.padding(16.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    itemsIndexed(
+                        items = state.recentMediaPaths,
+                        key = { _, path -> path },
+                    ) { index, path ->
+                        RecentRecordingRow(
+                            path = path,
+                            selected = path == primaryPath,
+                            enabled = !state.isImportingMedia && !state.isExporting,
+                            onClick = { onAction(VideoEditorAction.OpenRecentMedia(path)) },
+                            modifier = Modifier.testTag("editor-recording-history-item-$index"),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RecentRecordingRow(
+    path: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(7.dp),
+        color = EditorColors.RaisedSurface,
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        ),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+            Text(
+                text = recentMediaDisplayName(path),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = path,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun recentMediaDisplayName(path: String): String = path
+    .replace('\\', '/')
+    .substringAfterLast('/')
+    .ifBlank { path }
 
 @Composable
 private fun VideoReviewPanel(
@@ -354,12 +473,16 @@ private fun VideoReviewPanel(
             modifier = Modifier.fillMaxWidth().weight(1f),
         )
         Spacer(Modifier.height(16.dp))
-        PlaybackTransport(
-            state = state,
-            playheadMicros = playheadMicros,
-            onAction = onAction,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-        )
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val compactTransport = maxWidth < 520.dp
+            PlaybackTransport(
+                state = state,
+                playheadMicros = playheadMicros,
+                onAction = onAction,
+                compact = compactTransport,
+                modifier = Modifier.fillMaxWidth().height(if (compactTransport) 100.dp else 52.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
         ReviewTimeline(
             state = state,
@@ -414,6 +537,7 @@ private fun PlaybackTransport(
     state: VideoEditorUiState,
     playheadMicros: () -> Long,
     onAction: (VideoEditorAction) -> Unit,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -422,34 +546,112 @@ private fun PlaybackTransport(
         color = EditorColors.RecessedSurface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
     ) {
-        Row(
-            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        if (compact) {
+            CompactPlaybackTransport(state = state, playheadMicros = playheadMicros, onAction = onAction)
+        } else {
+            FullPlaybackTransport(state = state, playheadMicros = playheadMicros, onAction = onAction)
+        }
+    }
+}
+
+@Composable
+private fun FullPlaybackTransport(
+    state: VideoEditorUiState,
+    playheadMicros: () -> Long,
+    onAction: (VideoEditorAction) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = formatEditorTimestamp(playheadMicros()),
+            modifier = Modifier.width(96.dp),
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        Spacer(Modifier.weight(1f))
+        TransportButton(
+            icon = MaterialIcons.SkipPrevious,
+            description = stringResource(Res.string.previous_frame),
+            tag = "editor-previous-frame",
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            onClick = { onAction(VideoEditorAction.StepFrames(-1)) },
+        )
+        TransportButton(
+            icon = MaterialIcons.ReplayTen,
+            description = stringResource(Res.string.rewind_ten_seconds),
+            tag = "editor-rewind-10",
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            onClick = { onAction(VideoEditorAction.Seek(playheadMicros() - TEN_SECONDS_MICROS)) },
+        )
+        TransportButton(
+            icon = if (state.isPlaying) MaterialIcons.Pause else MaterialIcons.Play,
+            description = stringResource(if (state.isPlaying) Res.string.pause else Res.string.play),
+            tag = "editor-playback",
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            primary = true,
+            onClick = { onAction(VideoEditorAction.TogglePlayback) },
+        )
+        TransportButton(
+            icon = MaterialIcons.ForwardTen,
+            description = stringResource(Res.string.forward_ten_seconds),
+            tag = "editor-forward-10",
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            onClick = { onAction(VideoEditorAction.Seek(playheadMicros() + TEN_SECONDS_MICROS)) },
+        )
+        TransportButton(
+            icon = MaterialIcons.SkipNext,
+            description = stringResource(Res.string.next_frame),
+            tag = "editor-next-frame",
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            onClick = { onAction(VideoEditorAction.StepFrames(1)) },
+        )
+        Spacer(Modifier.weight(1f))
+        TextButton(
+            onClick = { onAction(VideoEditorAction.MarkImportantFrame) },
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            modifier = Modifier.width(152.dp).testTag("editor-mark-frame"),
         ) {
+            MaterialIcon(MaterialIcons.Star, null, color = EditorColors.Important, size = 18.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(Res.string.mark_important_frame), color = EditorColors.Important, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun CompactPlaybackTransport(
+    state: VideoEditorUiState,
+    playheadMicros: () -> Long,
+    onAction: (VideoEditorAction) -> Unit,
+) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = formatEditorTimestamp(playheadMicros()),
-                modifier = Modifier.width(96.dp),
+                modifier = Modifier.width(72.dp),
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.labelMedium,
+                style = MaterialTheme.typography.labelSmall,
             )
-            Spacer(Modifier.weight(1f))
             TransportButton(
-                symbol = "skip_previous",
+                icon = MaterialIcons.SkipPrevious,
                 description = stringResource(Res.string.previous_frame),
                 tag = "editor-previous-frame",
                 enabled = state.project.durationMicros > 0L && !state.isExporting,
                 onClick = { onAction(VideoEditorAction.StepFrames(-1)) },
             )
             TransportButton(
-                symbol = "replay_10",
+                icon = MaterialIcons.ReplayTen,
                 description = stringResource(Res.string.rewind_ten_seconds),
                 tag = "editor-rewind-10",
                 enabled = state.project.durationMicros > 0L && !state.isExporting,
                 onClick = { onAction(VideoEditorAction.Seek(playheadMicros() - TEN_SECONDS_MICROS)) },
             )
             TransportButton(
-                symbol = if (state.isPlaying) "pause" else "play_arrow",
+                icon = if (state.isPlaying) MaterialIcons.Pause else MaterialIcons.Play,
                 description = stringResource(if (state.isPlaying) Res.string.pause else Res.string.play),
                 tag = "editor-playback",
                 enabled = state.project.durationMicros > 0L && !state.isExporting,
@@ -457,36 +659,35 @@ private fun PlaybackTransport(
                 onClick = { onAction(VideoEditorAction.TogglePlayback) },
             )
             TransportButton(
-                symbol = "forward_10",
+                icon = MaterialIcons.ForwardTen,
                 description = stringResource(Res.string.forward_ten_seconds),
                 tag = "editor-forward-10",
                 enabled = state.project.durationMicros > 0L && !state.isExporting,
                 onClick = { onAction(VideoEditorAction.Seek(playheadMicros() + TEN_SECONDS_MICROS)) },
             )
             TransportButton(
-                symbol = "skip_next",
+                icon = MaterialIcons.SkipNext,
                 description = stringResource(Res.string.next_frame),
                 tag = "editor-next-frame",
                 enabled = state.project.durationMicros > 0L && !state.isExporting,
                 onClick = { onAction(VideoEditorAction.StepFrames(1)) },
             )
-            Spacer(Modifier.weight(1f))
-            TextButton(
-                onClick = { onAction(VideoEditorAction.MarkImportantFrame) },
-                enabled = state.project.durationMicros > 0L && !state.isExporting,
-                modifier = Modifier.width(152.dp).testTag("editor-mark-frame"),
-            ) {
-                MaterialSymbol("star", null, color = EditorColors.Important, size = 18.sp)
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(Res.string.mark_important_frame), color = EditorColors.Important, maxLines = 1)
-            }
+        }
+        TextButton(
+            onClick = { onAction(VideoEditorAction.MarkImportantFrame) },
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            modifier = Modifier.align(Alignment.End).height(36.dp).testTag("editor-mark-frame"),
+        ) {
+            MaterialIcon(MaterialIcons.Star, null, color = EditorColors.Important, size = 18.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(Res.string.mark_important_frame), color = EditorColors.Important, maxLines = 1)
         }
     }
 }
 
 @Composable
 private fun TransportButton(
-    symbol: String,
+    icon: DrawableResource,
     description: String,
     tag: String,
     enabled: Boolean,
@@ -500,11 +701,11 @@ private fun TransportButton(
             contentDescription = description
         },
     ) {
-        MaterialSymbol(
-            symbol = symbol,
+        MaterialIcon(
+            icon = icon,
             description = null,
             color = if (primary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            size = if (primary) 26.sp else 22.sp,
+            size = if (primary) 26.dp else 22.dp,
         )
     }
 }
@@ -631,6 +832,7 @@ private fun StoryboardPanel(
 ) {
     val availableFrames = state.frameExportCandidates.filter { it.timelineMicros <= state.project.durationMicros }
     val visibleFrames = if (state.showOnlyImportantFrames) availableFrames.filter(FrameExportCandidate::important) else availableFrames
+    val importantFrameIdsByTimestamp = state.project.importantFrames.associate { it.timelineMicros to it.id }
     EditorPanel(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -670,14 +872,14 @@ private fun StoryboardPanel(
             Checkbox(
                 checked = state.allFrameExportCandidatesIncluded,
                 onCheckedChange = { onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(it)) },
-                enabled = availableFrames.isNotEmpty() && !state.isExporting,
+                enabled = visibleFrames.isNotEmpty() && !state.isExporting,
                 modifier = Modifier.size(24.dp).testTag("editor-storyboard-toggle-all-checkbox"),
             )
             TextButton(
                 onClick = {
                     onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(!state.allFrameExportCandidatesIncluded))
                 },
-                enabled = availableFrames.isNotEmpty() && !state.isExporting,
+                enabled = visibleFrames.isNotEmpty() && !state.isExporting,
                 modifier = Modifier.widthIn(min = 0.dp).testTag("editor-storyboard-toggle-all"),
                 contentPadding = PaddingValues(horizontal = 4.dp),
             ) {
@@ -719,6 +921,9 @@ private fun StoryboardPanel(
                             onSelect = { onAction(VideoEditorAction.SelectFrameExportCandidate(candidate.id)) },
                             onIncludedChange = {
                                 onAction(VideoEditorAction.SetFrameExportCandidateIncluded(candidate.id, it))
+                            },
+                            onRemoveImportant = importantFrameIdsByTimestamp[candidate.timelineMicros]?.let { markerId ->
+                                { onAction(VideoEditorAction.RemoveImportantFrame(markerId)) }
                             },
                         )
                     }
@@ -763,6 +968,7 @@ private fun StoryboardFrameRow(
     enabled: Boolean,
     onSelect: () -> Unit,
     onIncludedChange: (Boolean) -> Unit,
+    onRemoveImportant: (() -> Unit)?,
 ) {
     Surface(
         onClick = onSelect,
@@ -819,25 +1025,43 @@ private fun StoryboardFrameRow(
                     )
                 }
             }
+            onRemoveImportant?.let { onRemove ->
+                val description = stringResource(Res.string.remove_important_frame)
+                IconButton(
+                    onClick = onRemove,
+                    enabled = enabled,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .testTag("editor-storyboard-remove-important-${candidate.id.value}")
+                        .semantics { contentDescription = description },
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.delete),
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun StoryboardExportFooter(state: VideoEditorUiState, onAction: (VideoEditorAction) -> Unit) {
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(8.dp))
     TextButton(
         onClick = { onAction(VideoEditorAction.AddCurrentFrameForExport) },
         enabled = state.project.durationMicros > 0L && !state.isExporting,
         modifier = Modifier.fillMaxWidth().height(40.dp).testTag("editor-add-current-frame"),
     ) {
-        MaterialSymbol("add", null, color = EditorColors.Important, size = 18.sp)
+        MaterialIcon(MaterialIcons.Add, null, color = EditorColors.Important, size = 18.dp)
         Spacer(Modifier.width(6.dp))
         Text(stringResource(Res.string.add_current_frame), color = EditorColors.Important)
     }
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(8.dp))
     HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(12.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = stringResource(Res.string.export_section),
@@ -851,8 +1075,53 @@ private fun StoryboardExportFooter(state: VideoEditorUiState, onAction: (VideoEd
             style = MaterialTheme.typography.labelMedium,
         )
     }
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(8.dp))
     val exportEnabled = state.includedFrameExportCount > 0 && !state.isPreparingFrameExport && !state.isExporting
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ExportOptionSelector(
+            label = stringResource(Res.string.frame_output_format),
+            options = listOf(
+                ExportOption(FrameImageFormat.Png, "PNG", "png"),
+                ExportOption(FrameImageFormat.Jpeg, "JPEG", "jpeg"),
+            ),
+            selected = state.frameOutputFormat,
+            enabled = !state.isExporting,
+            testTag = "editor-export-format",
+            onSelected = { format -> onAction(VideoEditorAction.SetFrameOutputFormat(format)) },
+            modifier = Modifier.weight(1f),
+        )
+        ExportOptionSelector(
+            label = stringResource(Res.string.frame_resolution),
+            options = FRAME_RESOLUTION_PERCENT_OPTIONS.map { percent ->
+                ExportOption(percent, "$percent%", percent.toString())
+            },
+            selected = state.frameResolutionPercent,
+            enabled = !state.isExporting,
+            testTag = "editor-export-resolution",
+            onSelected = { percent -> onAction(VideoEditorAction.SetFrameResolutionPercent(percent)) },
+            modifier = Modifier.weight(1f),
+        )
+        if (state.frameOutputFormat == FrameImageFormat.Jpeg) {
+            ExportOptionSelector(
+                label = stringResource(Res.string.frame_jpeg_compression),
+                options = listOf(
+                    ExportOption(JpegCompression.None, stringResource(Res.string.compression_none), "none"),
+                    ExportOption(JpegCompression.Low, stringResource(Res.string.compression_low), "low"),
+                    ExportOption(JpegCompression.Medium, stringResource(Res.string.compression_medium), "medium"),
+                    ExportOption(JpegCompression.High, stringResource(Res.string.compression_high), "high"),
+                ),
+                selected = state.frameJpegCompression,
+                enabled = !state.isExporting,
+                testTag = "editor-export-compression",
+                onSelected = { compression -> onAction(VideoEditorAction.SetFrameJpegCompression(compression)) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -863,34 +1132,62 @@ private fun StoryboardExportFooter(state: VideoEditorUiState, onAction: (VideoEd
             modifier = Modifier.weight(1f).height(48.dp).testTag("editor-export-contact-sheet"),
             contentPadding = PaddingValues(horizontal = 8.dp),
         ) {
-            MaterialSymbol("download", null, color = Color.White, size = 18.sp)
+            MaterialIcon(MaterialIcons.Download, null, color = Color.White, size = 18.dp)
             Spacer(Modifier.width(6.dp))
             Text(stringResource(Res.string.export_single_file), maxLines = 2, style = MaterialTheme.typography.labelMedium)
         }
         OutlinedButton(
-            onClick = { onAction(VideoEditorAction.CopyStoryboardToClipboard) },
+            onClick = {
+                onAction(VideoEditorAction.CopyStoryboardToClipboard(ImportantFrameLayout.ContactSheet))
+            },
             enabled = exportEnabled,
-            modifier = Modifier.weight(1f).height(48.dp).testTag("editor-copy-storyboard"),
+            modifier = Modifier.weight(1f).height(48.dp).testTag("editor-copy-contact-sheet"),
             contentPadding = PaddingValues(horizontal = 8.dp),
         ) {
-            MaterialSymbol("content_copy", null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.sp)
+            MaterialIcon(MaterialIcons.ContentCopy, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
             Spacer(Modifier.width(6.dp))
             Text(
-                text = stringResource(Res.string.copy_storyboard_to_clipboard),
+                text = stringResource(Res.string.copy_single_file_to_clipboard),
                 maxLines = 2,
                 style = MaterialTheme.typography.labelMedium,
             )
         }
     }
     Spacer(Modifier.height(8.dp))
-    OutlinedButton(
-        onClick = { onAction(VideoEditorAction.ExportStoryboard(ImportantFrameLayout.SeparatePngFiles)) },
-        enabled = exportEnabled,
-        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("editor-export-frames"),
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        MaterialSymbol("download", null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 20.sp)
-        Spacer(Modifier.width(8.dp))
-        Text(stringResource(Res.string.export_separate_files), maxLines = 1)
+        OutlinedButton(
+            onClick = { onAction(VideoEditorAction.ExportStoryboard(ImportantFrameLayout.SeparatePngFiles)) },
+            enabled = exportEnabled,
+            modifier = Modifier.weight(1f).height(48.dp).testTag("editor-export-frames"),
+            contentPadding = PaddingValues(horizontal = 8.dp),
+        ) {
+            MaterialIcon(MaterialIcons.Download, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(Res.string.export_separate_files),
+                maxLines = 2,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        OutlinedButton(
+            onClick = {
+                onAction(VideoEditorAction.CopyStoryboardToClipboard(ImportantFrameLayout.SeparatePngFiles))
+            },
+            enabled = exportEnabled,
+            modifier = Modifier.weight(1f).height(48.dp).testTag("editor-copy-frames"),
+            contentPadding = PaddingValues(horizontal = 8.dp),
+        ) {
+            MaterialIcon(MaterialIcons.ContentCopy, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = stringResource(Res.string.copy_multiple_files_to_clipboard),
+                maxLines = 2,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
     }
     if (state.isExporting) {
         Spacer(Modifier.height(8.dp))
@@ -903,7 +1200,14 @@ private fun StoryboardExportFooter(state: VideoEditorUiState, onAction: (VideoEd
     } else {
         Spacer(Modifier.height(10.dp))
         Text(
-            text = stringResource(Res.string.original_size_frames_destination),
+            text = stringResource(
+                Res.string.frame_export_destination,
+                state.frameResolutionPercent,
+                when (state.frameOutputFormat) {
+                    FrameImageFormat.Png -> "PNG"
+                    FrameImageFormat.Jpeg -> "JPEG"
+                },
+            ),
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             style = MaterialTheme.typography.labelSmall,
@@ -912,6 +1216,61 @@ private fun StoryboardExportFooter(state: VideoEditorUiState, onAction: (VideoEd
         )
     }
 }
+
+@Composable
+private fun <T> ExportOptionSelector(
+    label: String,
+    options: List<ExportOption<T>>,
+    selected: T,
+    enabled: Boolean,
+    testTag: String,
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val expanded = remember { mutableStateOf(false) }
+    val selectedLabel = options.firstOrNull { option -> option.value == selected }?.label.orEmpty()
+    Column(modifier.testTag(testTag)) {
+        Text(
+            text = label,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(2.dp))
+        Box {
+            OutlinedButton(
+                onClick = { expanded.value = true },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth().height(44.dp).testTag("$testTag-toggle"),
+                contentPadding = PaddingValues(horizontal = 8.dp),
+            ) {
+                Text(selectedLabel, modifier = Modifier.weight(1f), maxLines = 1)
+                MaterialIcon(MaterialIcons.ExpandMore, null, color = MaterialTheme.colorScheme.onSurfaceVariant, size = 16.dp)
+            }
+            DropdownMenu(
+                expanded = expanded.value,
+                onDismissRequest = { expanded.value = false },
+            ) {
+                options.forEach { option ->
+                    DropdownMenuItem(
+                        text = { Text(option.label, maxLines = 1) },
+                        onClick = {
+                            expanded.value = false
+                            onSelected(option.value)
+                        },
+                        modifier = Modifier.testTag("$testTag-${option.testTagSuffix}"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private data class ExportOption<T>(
+    val value: T,
+    val label: String,
+    val testTagSuffix: String,
+)
 
 @Composable
 private fun EditorPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
@@ -923,166 +1282,6 @@ private fun EditorPanel(modifier: Modifier = Modifier, content: @Composable Colu
     ) {
         Column(Modifier.fillMaxSize().padding(24.dp), content = content)
     }
-}
-
-@Composable
-private fun MaterialSymbol(
-    symbol: String,
-    description: String?,
-    color: Color,
-    size: androidx.compose.ui.unit.TextUnit,
-) {
-    val iconSize = with(LocalDensity.current) { size.toDp() }
-    val iconModifier = Modifier
-        .size(iconSize)
-        .let { current ->
-            if (description == null) current else current.semantics { contentDescription = description }
-        }
-    if (symbol == "replay_10" || symbol == "forward_10") {
-        Box(modifier = iconModifier, contentAlignment = Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()) { drawTenSecondIcon(symbol = symbol, color = color) }
-            Text(
-                text = "10",
-                color = color,
-                fontSize = size * 0.36f,
-                lineHeight = size * 0.36f,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    } else {
-        Canvas(iconModifier) { drawEditorIcon(symbol = symbol, color = color) }
-    }
-}
-
-private fun DrawScope.drawEditorIcon(symbol: String, color: Color) {
-    val unit = size.minDimension
-    val stroke = Stroke(width = unit * 0.1f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    fun point(x: Float, y: Float) = Offset(unit * x, unit * y)
-    when (symbol) {
-        "arrow_back" -> {
-            drawLine(color, point(0.18f, 0.5f), point(0.82f, 0.5f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.18f, 0.5f), point(0.42f, 0.26f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.18f, 0.5f), point(0.42f, 0.74f), stroke.width, StrokeCap.Round)
-        }
-        "add_circle" -> {
-            drawCircle(color, radius = unit * 0.4f, style = stroke)
-            drawLine(color, point(0.3f, 0.5f), point(0.7f, 0.5f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.5f, 0.3f), point(0.5f, 0.7f), stroke.width, StrokeCap.Round)
-        }
-        "undo", "redo" -> drawHistoryIcon(symbol = symbol, color = color, stroke = stroke)
-        "skip_previous", "skip_next" -> {
-            val previous = symbol == "skip_previous"
-            val barX = if (previous) 0.22f else 0.78f
-            drawLine(color, point(barX, 0.22f), point(barX, 0.78f), stroke.width, StrokeCap.Round)
-            val path = Path().apply {
-                if (previous) {
-                    moveTo(unit * 0.72f, unit * 0.2f)
-                    lineTo(unit * 0.34f, unit * 0.5f)
-                    lineTo(unit * 0.72f, unit * 0.8f)
-                } else {
-                    moveTo(unit * 0.28f, unit * 0.2f)
-                    lineTo(unit * 0.66f, unit * 0.5f)
-                    lineTo(unit * 0.28f, unit * 0.8f)
-                }
-                close()
-            }
-            drawPath(path, color)
-        }
-        "play_arrow" -> drawPath(
-            path = Path().apply {
-                moveTo(unit * 0.3f, unit * 0.18f)
-                lineTo(unit * 0.78f, unit * 0.5f)
-                lineTo(unit * 0.3f, unit * 0.82f)
-                close()
-            },
-            color = color,
-        )
-        "pause" -> {
-            drawLine(color, point(0.35f, 0.2f), point(0.35f, 0.8f), unit * 0.16f, StrokeCap.Butt)
-            drawLine(color, point(0.65f, 0.2f), point(0.65f, 0.8f), unit * 0.16f, StrokeCap.Butt)
-        }
-        "star" -> drawPath(
-            path = Path().apply {
-                moveTo(unit * 0.5f, unit * 0.08f)
-                lineTo(unit * 0.62f, unit * 0.36f)
-                lineTo(unit * 0.92f, unit * 0.38f)
-                lineTo(unit * 0.69f, unit * 0.58f)
-                lineTo(unit * 0.76f, unit * 0.9f)
-                lineTo(unit * 0.5f, unit * 0.72f)
-                lineTo(unit * 0.24f, unit * 0.9f)
-                lineTo(unit * 0.31f, unit * 0.58f)
-                lineTo(unit * 0.08f, unit * 0.38f)
-                lineTo(unit * 0.38f, unit * 0.36f)
-                close()
-            },
-            color = color,
-        )
-        "download" -> {
-            drawLine(color, point(0.5f, 0.12f), point(0.5f, 0.66f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.5f, 0.66f), point(0.28f, 0.44f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.5f, 0.66f), point(0.72f, 0.44f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.2f, 0.86f), point(0.8f, 0.86f), stroke.width, StrokeCap.Round)
-        }
-        "content_copy" -> {
-            drawRect(
-                color = color,
-                topLeft = point(0.34f, 0.14f),
-                size = Size(unit * 0.5f, unit * 0.58f),
-                style = stroke,
-            )
-            drawRect(
-                color = color,
-                topLeft = point(0.16f, 0.32f),
-                size = Size(unit * 0.5f, unit * 0.58f),
-                style = stroke,
-            )
-        }
-        "add" -> {
-            drawLine(color, point(0.18f, 0.5f), point(0.82f, 0.5f), stroke.width, StrokeCap.Round)
-            drawLine(color, point(0.5f, 0.18f), point(0.5f, 0.82f), stroke.width, StrokeCap.Round)
-        }
-    }
-}
-
-private fun DrawScope.drawHistoryIcon(symbol: String, color: Color, stroke: Stroke) {
-    val unit = size.minDimension
-    val undo = symbol == "undo"
-    val path = Path().apply {
-        val startX = if (undo) 0.28f else 0.72f
-        moveTo(unit * startX, unit * 0.32f)
-        cubicTo(
-            unit * if (undo) 0.72f else 0.28f,
-            unit * 0.18f,
-            unit * if (undo) 0.86f else 0.14f,
-            unit * 0.5f,
-            unit * if (undo) 0.76f else 0.24f,
-            unit * 0.76f,
-        )
-    }
-    drawPath(path, color, style = stroke)
-    val arrowX = if (undo) 0.28f else 0.72f
-    val outerX = if (undo) 0.48f else 0.52f
-    drawLine(color, Offset(unit * arrowX, unit * 0.32f), Offset(unit * outerX, unit * 0.14f), stroke.width, StrokeCap.Round)
-    drawLine(color, Offset(unit * arrowX, unit * 0.32f), Offset(unit * outerX, unit * 0.48f), stroke.width, StrokeCap.Round)
-}
-
-private fun DrawScope.drawTenSecondIcon(symbol: String, color: Color) {
-    val unit = size.minDimension
-    val forward = symbol == "forward_10"
-    val stroke = Stroke(width = unit * 0.09f, cap = StrokeCap.Round)
-    drawArc(
-        color = color,
-        startAngle = if (forward) 205f else -25f,
-        sweepAngle = if (forward) 270f else -270f,
-        useCenter = false,
-        topLeft = Offset(unit * 0.14f, unit * 0.14f),
-        size = Size(unit * 0.72f, unit * 0.72f),
-        style = stroke,
-    )
-    val arrowX = if (forward) 0.78f else 0.22f
-    val outerX = if (forward) 0.58f else 0.42f
-    drawLine(color, Offset(unit * arrowX, unit * 0.16f), Offset(unit * outerX, unit * 0.1f), stroke.width, StrokeCap.Round)
-    drawLine(color, Offset(unit * arrowX, unit * 0.16f), Offset(unit * arrowX, unit * 0.36f), stroke.width, StrokeCap.Round)
 }
 
 private fun buildReviewSegments(project: EditorProject): List<ReviewSegment> {
@@ -1173,3 +1372,4 @@ private data class ReviewSegment(
 
 private const val MICROS_PER_SECOND = 1_000_000L
 private const val TEN_SECONDS_MICROS = 10L * MICROS_PER_SECOND
+private val FRAME_RESOLUTION_PERCENT_OPTIONS = listOf(25, 50, 75, 100)

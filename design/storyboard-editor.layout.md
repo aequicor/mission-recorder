@@ -182,19 +182,4 @@ Text id row_01_checkbox_1 «✓» name «✓» 14 by 16 position 2 0 absolute co
 
 ## Image: id image_4 name «upload_file.svg» 24 by 24 position 652.7841796875 227.85289001464844 absolute media (asset res/upload_file.svg)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+## Image: id image_7 name «close_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24.svg» 24 by 24 position 114.97293090820312 107.93476867675781 absolute media (asset res/close_24dp_1F1F1F_FILL0_wght400_GRAD0_opsz24-5.svg)

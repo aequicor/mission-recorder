@@ -8,7 +8,9 @@ import io.aequicor.editor.EditorProject
 import io.aequicor.editor.EditorTextAlignment
 import io.aequicor.editor.EditorTrack
 import io.aequicor.editor.EditorTrackKind
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameLayout
+import io.aequicor.editor.JpegCompression
 import io.aequicor.editor.MediaAsset
 import io.aequicor.editor.MediaAssetKind
 import io.aequicor.editor.Transition
@@ -44,7 +46,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.util.Comparator
+import javax.imageio.IIOImage
 import javax.imageio.ImageIO
+import javax.imageio.ImageWriteParam
 import kotlin.coroutines.coroutineContext
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
@@ -95,10 +99,20 @@ data class EditorExportProgress(
         get() = if (totalUnits <= 0L) 0f else (completedUnits.toDouble() / totalUnits).toFloat().coerceIn(0f, 1f)
 }
 
+/** One separately rendered editor frame and its position on the project timeline. */
+data class EditorExportedFrame(
+    val timelineMicros: Long,
+    val outputPath: String,
+)
+
 /** Completed editor export. */
 data class EditorExportResult(
     val outputPath: String,
     val renderedFrames: Int,
+    /** Files produced by the export; a video or contact sheet contains one entry. */
+    val outputPaths: List<String> = listOf(outputPath),
+    /** Timeline-aware outputs for a separate-files frame export. */
+    val exportedFrames: List<EditorExportedFrame> = emptyList(),
 )
 
 /** Failure raised for invalid media or editor export settings. */
@@ -398,32 +412,61 @@ class FfmpegEditorMediaService(
         target.parent?.createDirectories()
         val temporary = temporarySibling(target)
         val renderer = ProjectFrameRenderer(request.project)
+        val outputWidth = (request.project.canvasWidth.toDouble() * request.resolutionPercent / 100.0)
+            .roundToInt()
+            .coerceAtLeast(1)
+        val outputHeight = (request.project.canvasHeight.toDouble() * request.resolutionPercent / 100.0)
+            .roundToInt()
+            .coerceAtLeast(1)
+        val extension = request.outputFormat.fileExtension
         try {
-            when (request.layout) {
+            val outputs = when (request.layout) {
                 ImportantFrameLayout.SeparatePngFiles -> {
                     Files.createDirectory(temporary)
-                    timestamps.forEachIndexed { index, timestamp ->
+                    val exportedFrames = timestamps.mapIndexed { index, timestamp ->
                         coroutineContext.ensureActive()
-                        val image = renderer.render(timestamp).withTimecode(timestamp)
-                        val name = "frame-${(index + 1).toString().padStart(6, '0')}.png"
-                        require(ImageIO.write(image, "png", temporary.resolve(name).toFile())) {
-                            "PNG writer is not available."
-                        }
+                        val image = renderer.render(timestamp, outputWidth, outputHeight).withTimecode(timestamp)
+                        val name = "frame-${(index + 1).toString().padStart(6, '0')}.$extension"
+                        writeFrameImage(
+                            image = image,
+                            output = temporary.resolve(name),
+                            format = request.outputFormat,
+                            jpegCompression = request.jpegCompression,
+                        )
                         onProgress(EditorExportProgress(index + 1L, timestamps.size.toLong()))
+                        EditorExportedFrame(
+                            timelineMicros = timestamp,
+                            outputPath = target.resolve(name).toString(),
+                        )
                     }
+                    FrameExportOutputs(
+                        outputPaths = exportedFrames.map(EditorExportedFrame::outputPath),
+                        exportedFrames = exportedFrames,
+                    )
                 }
                 ImportantFrameLayout.ContactSheet -> {
                     val frames = timestamps.mapIndexed { index, timestamp ->
                         coroutineContext.ensureActive()
-                        renderer.render(timestamp).withTimecode(timestamp).also {
+                        renderer.render(timestamp, outputWidth, outputHeight).withTimecode(timestamp).also {
                             onProgress(EditorExportProgress(index + 1L, timestamps.size.toLong()))
                         }
                     }
-                    writeContactSheet(frames, temporary)
+                    writeContactSheet(
+                        frames = frames,
+                        output = temporary,
+                        format = request.outputFormat,
+                        jpegCompression = request.jpegCompression,
+                    )
+                    FrameExportOutputs(outputPaths = listOf(target.toString()))
                 }
             }
             commitOutput(temporary, target, request.overwrite)
-            return EditorExportResult(target.toString(), timestamps.size)
+            return EditorExportResult(
+                outputPath = target.toString(),
+                renderedFrames = timestamps.size,
+                outputPaths = outputs.outputPaths,
+                exportedFrames = outputs.exportedFrames,
+            )
         } catch (cancelled: CancellationException) {
             deleteRecursively(temporary)
             throw cancelled
@@ -435,6 +478,11 @@ class FfmpegEditorMediaService(
         }
     }
 }
+
+private data class FrameExportOutputs(
+    val outputPaths: List<String>,
+    val exportedFrames: List<EditorExportedFrame> = emptyList(),
+)
 
 private class FfmpegEditorPreviewSession(
     project: EditorProject,
@@ -456,6 +504,8 @@ private class FfmpegEditorPreviewSession(
 private class ProjectFrameRenderer(private val project: EditorProject) : AutoCloseable {
     private val videoSources = mutableMapOf<EditorClipId, VideoFrameCursor>()
     private val images = mutableMapOf<String, BufferedImage>()
+    private val mouseTrails = mutableMapOf<String, MouseTrail>()
+    private val assetsWithoutMouseTrail = mutableSetOf<String>()
     private var previewCanvas: BufferedImage? = null
 
     fun render(
@@ -520,7 +570,10 @@ private class ProjectFrameRenderer(private val project: EditorProject) : AutoClo
             val sourceMicros = media.sourceStartMicros +
                 ((timelineMicros - media.timelineStartMicros) * media.speed).toLong()
             val source = sourceImage(media.id, asset, sourceMicros) ?: return@forEach
-            val transformed = source.applyEffects(media.effects).crop(media.transform.crop)
+            val sourceWithMouseTrail = source.withMouseTrail(
+                points = mouseTrailPointsFor(media, asset, timelineMicros, sourceMicros),
+            )
+            val transformed = sourceWithMouseTrail.applyEffects(media.effects).crop(media.transform.crop)
             val targetWidth = max(1, (transformed.width * media.transform.scale).roundToInt())
             val targetHeight = max(1, (transformed.height * media.transform.scale).roundToInt())
             val x = (media.transform.positionX * project.canvasWidth - targetWidth / 2f).roundToInt()
@@ -530,6 +583,34 @@ private class ProjectFrameRenderer(private val project: EditorProject) : AutoClo
             graphics.composite = AlphaComposite.SrcOver.derive(alpha)
             graphics.drawImage(transformed, x, y, targetWidth, targetHeight, null)
             graphics.composite = previousComposite
+        }
+    }
+
+    private fun mouseTrailPointsFor(
+        clip: EditorClip.Media,
+        asset: MediaAsset,
+        timelineMicros: Long,
+        sourceMicros: Long,
+    ): List<RecordedMousePoint> {
+        if (project.importantFrames.none { marker -> marker.timelineMicros == timelineMicros }) return emptyList()
+        val previousMarkerMicros = project.importantFrames
+            .lastOrNull { marker -> marker.timelineMicros < timelineMicros }
+            ?.timelineMicros
+            ?: clip.timelineStartMicros
+        val segmentStartMicros = max(previousMarkerMicros, clip.timelineStartMicros)
+        val segmentStartSourceMicros = clip.sourceStartMicros +
+            ((segmentStartMicros - clip.timelineStartMicros) * clip.speed).toLong()
+        return mouseTrailFor(asset)?.pointsBetween(segmentStartSourceMicros, sourceMicros).orEmpty()
+    }
+
+    private fun mouseTrailFor(asset: MediaAsset): MouseTrail? {
+        mouseTrails[asset.path]?.let { return it }
+        if (asset.path in assetsWithoutMouseTrail) return null
+        return MouseTrail.load(asset.path)?.also { trail ->
+            mouseTrails[asset.path] = trail
+        } ?: run {
+            assetsWithoutMouseTrail += asset.path
+            null
         }
     }
 
@@ -818,6 +899,18 @@ private fun BufferedImage.deepCopy(type: Int = BufferedImage.TYPE_INT_ARGB): Buf
     return output
 }
 
+private fun BufferedImage.withMouseTrail(points: List<RecordedMousePoint>): BufferedImage {
+    if (points.size < 2) return this
+    return deepCopy().also { image ->
+        val graphics = image.createGraphics()
+        try {
+            graphics.drawMouseTrail(points)
+        } finally {
+            graphics.dispose()
+        }
+    }
+}
+
 private fun BufferedImage.toBgraFrame(): EditorPreviewFrame {
     val pixels = requireNotNull((raster.dataBuffer as? DataBufferInt)?.data) {
         "Editor preview requires an integer ARGB canvas."
@@ -856,7 +949,12 @@ private fun BufferedImage.withTimecode(timestampMicros: Long): BufferedImage {
     return output
 }
 
-private fun writeContactSheet(frames: List<BufferedImage>, output: Path) {
+private fun writeContactSheet(
+    frames: List<BufferedImage>,
+    output: Path,
+    format: FrameImageFormat,
+    jpegCompression: JpegCompression,
+) {
     val width = frames.maxOf(BufferedImage::getWidth)
     val height = frames.sumOf(BufferedImage::getHeight) + (frames.size - 1) * CONTACT_SHEET_GAP
     val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
@@ -872,8 +970,56 @@ private fun writeContactSheet(frames: List<BufferedImage>, output: Path) {
     } finally {
         graphics.dispose()
     }
-    require(ImageIO.write(image, "png", output.toFile())) { "PNG writer is not available." }
+    writeFrameImage(image, output, format, jpegCompression)
 }
+
+private fun writeFrameImage(
+    image: BufferedImage,
+    output: Path,
+    format: FrameImageFormat,
+    jpegCompression: JpegCompression,
+) {
+    when (format) {
+        FrameImageFormat.Png -> require(ImageIO.write(image, "png", output.toFile())) {
+            "PNG writer is not available."
+        }
+        FrameImageFormat.Jpeg -> writeJpeg(image, output, jpegCompression)
+    }
+}
+
+private fun writeJpeg(image: BufferedImage, output: Path, compression: JpegCompression) {
+    val writers = ImageIO.getImageWritersByFormatName("jpeg")
+    require(writers.hasNext()) { "JPEG writer is not available." }
+    val writer = writers.next()
+    try {
+        ImageIO.createImageOutputStream(output.toFile()).use { stream ->
+            requireNotNull(stream) { "JPEG output stream could not be created." }
+            writer.output = stream
+            val parameters = writer.defaultWriteParam
+            if (parameters.canWriteCompressed()) {
+                parameters.compressionMode = ImageWriteParam.MODE_EXPLICIT
+                parameters.compressionQuality = compression.imageIoQuality
+            }
+            writer.write(null, IIOImage(image, null, null), parameters)
+        }
+    } finally {
+        writer.dispose()
+    }
+}
+
+private val JpegCompression.imageIoQuality: Float
+    get() = when (this) {
+        JpegCompression.None -> 1f
+        JpegCompression.Low -> 0.9f
+        JpegCompression.Medium -> 0.75f
+        JpegCompression.High -> 0.5f
+    }
+
+private val FrameImageFormat.fileExtension: String
+    get() = when (this) {
+        FrameImageFormat.Png -> "png"
+        FrameImageFormat.Jpeg -> "jpg"
+    }
 
 private fun formatTimecode(timestampMicros: Long): String {
     val totalMilliseconds = timestampMicros.coerceAtLeast(0L) / 1_000L

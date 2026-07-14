@@ -3,8 +3,8 @@ package io.aequicor.capture.core
 /**
  * Pixel marker embedded into a frame selected for unconditional storyboard retention.
  *
- * Capture adapters add it for newly pressed desktop inputs, while recording controllers
- * add the same marker for explicit important-frame actions. The marker is small and short-lived.
+ * Recording controllers add it only after an explicit important-frame action. The marker is
+ * small and short-lived.
  */
 public object InputEventFrameMarker {
     public const val MARGIN_PIXELS: Int = 4
@@ -37,7 +37,7 @@ public object InputEventFrameMarker {
     )
 }
 
-/** Paints the storyboard input-event marker over a complete RGBA8888 or BGRA8888 frame. */
+/** Paints the storyboard important-frame marker over a complete RGBA8888 or BGRA8888 frame. */
 public fun paintInputEventFrameMarker(
     pixels: ByteArray,
     frameWidth: Int,

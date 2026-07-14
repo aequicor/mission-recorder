@@ -11,6 +11,8 @@
     <string name="preview_preparing">Preparing preview</string>
     <string name="preview_image_description">Live preview of the selected capture source</string>
     <string name="take_screenshot">Take screenshot</string>
+    <string name="take_screen_screenshot">Capture screen</string>
+    <string name="select_region_screenshot">Select area and capture</string>
     <string name="saving_screenshot">Saving screenshot</string>
     <string name="screenshot_saved_to">Screenshot saved to %1$s</string>
     <string name="select_area">Select area</string>
@@ -38,6 +40,7 @@
     <string name="megabits_per_second">%1$d Mbps</string>
     <string name="capture_cursor">Show cursor in video</string>
     <string name="show_input_overlay">Show keyboard and mouse presses</string>
+    <string name="record_mouse_trail">Record mouse trail for storyboard</string>
     <string name="show_capture_border">Show recording area border</string>
     <string name="show_application_in_recording">Show Mission Recorder in video</string>
     <string name="frames_per_second">%1$d FPS</string>
@@ -79,6 +82,7 @@
     <string name="stopping">Stopping</string>
     <string name="dismiss">Dismiss</string>
     <string name="status_idle">Ready</string>
+    <string name="status">Status</string>
     <string name="status_preparing">Preparing</string>
     <string name="status_recording">Recording</string>
     <string name="status_paused">Paused</string>
@@ -92,6 +96,7 @@
     <string name="saved_to">Saved to %1$s</string>
     <string name="storyboard">Storyboard</string>
     <string name="storyboard_input_video">Video file</string>
+    <string name="choose_video_file">Choose video</string>
     <string name="storyboard_separate_png">Separate PNG files</string>
     <string name="storyboard_contact_sheet">Single PNG</string>
     <string name="create_storyboard">Create storyboard</string>
@@ -112,6 +117,8 @@
     <string name="open_editor">Storyboard</string>
     <string name="finish_and_open_editor">Stop and open storyboard</string>
     <string name="video_editor">Video editor</string>
+    <string name="recording_history">Recording history</string>
+    <string name="no_recordings_in_history">Choose a video or finish a recording to see it here.</string>
     <string name="back_to_recorder">Back to recorder</string>
     <string name="editor_recording">Recording</string>
     <string name="editor_montage_title">Montage · %1$s</string>
@@ -128,9 +135,17 @@
     <string name="include_in_storyboard">In storyboard</string>
     <string name="export_section">Export</string>
     <string name="export_single_file">Export one file</string>
-    <string name="copy_storyboard_to_clipboard">Copy to clipboard</string>
+    <string name="copy_single_file_to_clipboard">Copy one file</string>
     <string name="export_separate_files">Export multiple files</string>
-    <string name="original_size_frames_destination">Original size · Recordings / Frames</string>
+    <string name="copy_multiple_files_to_clipboard">Copy multiple files</string>
+    <string name="frame_output_format">Format</string>
+    <string name="frame_resolution">Resolution</string>
+    <string name="frame_jpeg_compression">JPEG compression</string>
+    <string name="compression_none">None</string>
+    <string name="compression_low">Low</string>
+    <string name="compression_medium">Medium</string>
+    <string name="compression_high">High</string>
+    <string name="frame_export_destination">%1$d%% · %2$s · Recordings / Frames</string>
     <string name="media_library">Media</string>
     <string name="add_media">Add media</string>
     <string name="add_to_timeline">Add to timeline</string>
@@ -144,13 +159,14 @@
     <string name="split_clip">Split</string>
     <string name="delete_clip">Delete clip</string>
     <string name="mark_important_frame">Important frame</string>
+    <string name="remove_important_frame">Remove from important frames</string>
     <string name="important_frame_captured">Important frame saved</string>
     <string name="undo">Undo</string>
     <string name="redo">Redo</string>
     <string name="export_video">Export video</string>
     <string name="export_frames">Export frames</string>
     <string name="select_frames_to_export">Select the frames to export.</string>
-    <string name="storyboard_frames_selected_by_default">Storyboard frames are selected automatically. Important frames are added to them.</string>
+    <string name="storyboard_frames_selected_by_default">Storyboard and important frames are not selected by default.</string>
     <string name="preparing_storyboard_frames">Preparing storyboard frames…</string>
     <string name="no_export_frames">The video has no frames available for export.</string>
     <string name="add_current_frame">Add current frame</string>

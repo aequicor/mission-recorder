@@ -15,6 +15,7 @@ import io.aequicor.editor.EditorReducer
 import io.aequicor.editor.EditorTrack
 import io.aequicor.editor.EditorTrackId
 import io.aequicor.editor.EditorTrackKind
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameId
 import io.aequicor.editor.ImportantFrameLayout
 import io.aequicor.editor.ImportantFrameMarker
@@ -22,13 +23,16 @@ import io.aequicor.editor.MediaAsset
 import io.aequicor.editor.MediaAssetId
 import io.aequicor.editor.MediaAssetKind
 import io.aequicor.media.desktop.ffmpeg.EditorExportProgress
+import io.aequicor.media.desktop.ffmpeg.EditorExportResult
 import io.aequicor.media.desktop.ffmpeg.EditorMediaProbe
 import io.aequicor.media.desktop.ffmpeg.EditorMediaService
 import io.aequicor.media.desktop.ffmpeg.EditorPreviewAudio
 import io.aequicor.media.desktop.ffmpeg.EditorPreviewFrame
 import io.aequicor.media.desktop.ffmpeg.EditorPreviewSession
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
@@ -42,6 +46,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.Comparator
 import java.util.UUID
 import kotlin.io.path.name
 import kotlin.io.path.nameWithoutExtension
@@ -53,13 +59,24 @@ internal class VideoEditorViewModel(
     private val fileSelector: DesktopEditorFileSelector,
     private val audioPlayer: DesktopEditorAudioPlayer,
     private val imageClipboard: DesktopImageClipboard,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     initialFrameLayout: ImportantFrameLayout = ImportantFrameLayout.SeparatePngFiles,
+    initialRecentMediaPaths: List<String> = emptyList(),
+    private val onRecentMediaPath: (String) -> Unit = {},
+    private val mediaCreationTimeMillis: (String) -> Long? = ::readMediaCreationTimeMillis,
     private val idFactory: () -> String = { UUID.randomUUID().toString() },
     private val nanoTime: () -> Long = System::nanoTime,
 ) {
     private var history = EditorHistory(emptyEditorProject())
     private val mutableState = MutableStateFlow(
-        VideoEditorUiState(project = history.project, frameLayout = initialFrameLayout),
+        VideoEditorUiState(
+            project = history.project,
+            frameLayout = initialFrameLayout,
+            recentMediaPaths = sortMediaPathsByCreationTime(
+                paths = initialRecentMediaPaths,
+                creationTimeMillis = mediaCreationTimeMillis,
+            ),
+        ),
     )
     private val mutablePlayheadMicros = MutableStateFlow(0L)
     private val mutablePreviewFrame = MutableStateFlow<EditorPreviewFrame?>(null)
@@ -95,6 +112,7 @@ internal class VideoEditorViewModel(
             try {
                 val project = projectStore.load(normalized) ?: createProjectFromPrimaryMedia(normalized)
                 replaceProject(project)
+                registerRecentMediaPath(normalized)
                 renderPreview(0L)
                 importRecordedImportantFrames()
                 prepareStoryboard()
@@ -109,6 +127,7 @@ internal class VideoEditorViewModel(
     fun onAction(action: VideoEditorAction) {
         when (action) {
             VideoEditorAction.BackToRecorder -> Unit
+            is VideoEditorAction.OpenRecentMedia -> open(action.path)
             VideoEditorAction.AddMedia -> addMedia()
             is VideoEditorAction.SelectAsset -> mutableState.update { it.copy(selectedAssetId = action.assetId) }
             is VideoEditorAction.RelinkAsset -> relinkAsset(action.assetId)
@@ -147,7 +166,7 @@ internal class VideoEditorViewModel(
             is VideoEditorAction.SetImportantFrameIncluded -> apply(
                 EditorAction.SetImportantFrameIncluded(action.markerId, action.included),
             )
-            is VideoEditorAction.RemoveImportantFrame -> apply(EditorAction.RemoveImportantFrame(action.markerId))
+            is VideoEditorAction.RemoveImportantFrame -> removeImportantFrame(action.markerId)
             is VideoEditorAction.MoveClip -> apply(
                 EditorAction.MoveClip(action.clipId, action.trackId, action.timelineStartMicros),
             )
@@ -178,6 +197,15 @@ internal class VideoEditorViewModel(
                 it.copy(timelinePixelsPerSecond = action.pixelsPerSecond.coerceIn(30f, 240f))
             }
             is VideoEditorAction.SetFrameLayout -> mutableState.update { it.copy(frameLayout = action.layout) }
+            is VideoEditorAction.SetFrameOutputFormat -> mutableState.update {
+                it.copy(frameOutputFormat = action.format)
+            }
+            is VideoEditorAction.SetFrameResolutionPercent -> mutableState.update {
+                it.copy(frameResolutionPercent = action.percent.coerceIn(1, 100))
+            }
+            is VideoEditorAction.SetFrameJpegCompression -> mutableState.update {
+                it.copy(frameJpegCompression = action.compression)
+            }
             VideoEditorAction.Undo -> undo()
             VideoEditorAction.Redo -> redo()
             VideoEditorAction.ExportVideo -> mutableState.update { it.copy(showVideoExportDialog = true) }
@@ -195,10 +223,11 @@ internal class VideoEditorViewModel(
                     .map(FrameExportCandidate::timelineMicros),
                 )
             }
-            VideoEditorAction.CopyStoryboardToClipboard -> copyStoryboardToClipboard(
-                mutableState.value.frameExportCandidates
+            is VideoEditorAction.CopyStoryboardToClipboard -> copyStoryboardToClipboard(
+                timestampsMicros = mutableState.value.frameExportCandidates
                     .filter { it.included && it.timelineMicros <= history.project.durationMicros }
                     .map(FrameExportCandidate::timelineMicros),
+                layout = action.layout,
             )
             VideoEditorAction.ConfirmFrameExport -> {
                 val timestamps = mutableState.value.frameExportCandidates
@@ -211,6 +240,21 @@ internal class VideoEditorViewModel(
             VideoEditorAction.CancelExport -> cancelExport()
             VideoEditorAction.DismissError -> mutableState.update { it.copy(errorMessage = null) }
         }
+    }
+
+    fun registerRecentMediaPath(path: String) {
+        val normalized = path.trim().takeIf(String::isNotEmpty)
+            ?.let { value -> runCatching { normalizedPath(value) }.getOrNull() }
+            ?: return
+        mutableState.update { state ->
+            state.copy(
+                recentMediaPaths = sortMediaPathsByCreationTime(
+                    paths = state.recentMediaPaths + normalized,
+                    creationTimeMillis = mediaCreationTimeMillis,
+                ),
+            )
+        }
+        onRecentMediaPath(normalized)
     }
 
     fun requestClose(onClosed: () -> Unit) {
@@ -293,6 +337,7 @@ internal class VideoEditorViewModel(
                 ImportantFrameMarker(
                     id = ImportantFrameId(newId("recorded-frame")),
                     timelineMicros = timestamp,
+                    included = false,
                 )
             }
             .toList()
@@ -442,11 +487,25 @@ internal class VideoEditorViewModel(
             upsertImportantFrameCandidate(existing)
             return existing.id
         }
-        val marker = ImportantFrameMarker(ImportantFrameId(newId("frame")), timestamp)
+        val marker = ImportantFrameMarker(
+            id = ImportantFrameId(newId("frame")),
+            timelineMicros = timestamp,
+            included = false,
+        )
         apply(EditorAction.AddImportantFrame(marker), render = false)
         mutableState.update { it.copy(selectedImportantFrameId = marker.id, selectedClipId = null) }
         upsertImportantFrameCandidate(marker)
         return marker.id
+    }
+
+    private fun removeImportantFrame(markerId: ImportantFrameId) {
+        if (history.project.importantFrames.none { it.id == markerId }) return
+        apply(EditorAction.RemoveImportantFrame(markerId))
+        mutableState.update { state ->
+            state.copy(
+                selectedImportantFrameId = state.selectedImportantFrameId?.takeUnless { it == markerId },
+            )
+        }
     }
 
     private fun addCurrentFrameForExport() {
@@ -492,19 +551,21 @@ internal class VideoEditorViewModel(
 
     private fun setAllFrameExportCandidatesIncluded(included: Boolean) {
         val currentState = mutableState.value
-        val availableTimestamps = currentState.frameExportCandidates
+        val visibleCandidates = currentState.frameExportCandidates
             .filter { it.timelineMicros <= history.project.durationMicros }
-            .mapTo(mutableSetOf(), FrameExportCandidate::timelineMicros)
+            .filter { !currentState.showOnlyImportantFrames || it.important }
+        val visibleCandidateIds = visibleCandidates.mapTo(mutableSetOf(), FrameExportCandidate::id)
+        val visibleTimestamps = visibleCandidates.mapTo(mutableSetOf(), FrameExportCandidate::timelineMicros)
         val updatedProject = history.project.copy(
             importantFrames = history.project.importantFrames.map { marker ->
-                if (marker.timelineMicros in availableTimestamps) marker.copy(included = included) else marker
+                if (marker.timelineMicros in visibleTimestamps) marker.copy(included = included) else marker
             },
         )
         if (updatedProject != history.project) mutateProject(updatedProject)
         mutableState.update { state ->
             state.copy(
                 frameExportCandidates = state.frameExportCandidates.map { candidate ->
-                    if (candidate.timelineMicros <= history.project.durationMicros) {
+                    if (candidate.id in visibleCandidateIds) {
                         candidate.copy(included = included)
                     } else {
                         candidate
@@ -958,38 +1019,65 @@ internal class VideoEditorViewModel(
 
     private fun exportFrames(timestampsMicros: List<Long>) {
         if (timestampsMicros.isEmpty()) return
+        val exportSettings = mutableState.value
         export { primary ->
-            val layout = mutableState.value.frameLayout
-            val path = fileSelector.chooseFrameOutput(primary.path, layout) ?: return@export null
+            val path = fileSelector.chooseFrameOutput(
+                primaryMediaPath = primary.path,
+                layout = exportSettings.frameLayout,
+                outputFormat = exportSettings.frameOutputFormat,
+            ) ?: return@export null
             io.aequicor.editor.EditorExportRequest.Frames(
                 project = history.project,
                 outputPath = path,
                 overwrite = Files.exists(Path.of(path)),
-                layout = layout,
+                layout = exportSettings.frameLayout,
+                outputFormat = exportSettings.frameOutputFormat,
+                resolutionPercent = exportSettings.frameResolutionPercent,
+                jpegCompression = exportSettings.frameJpegCompression,
                 timestampsMicros = timestampsMicros,
             )
         }
     }
 
-    private fun copyStoryboardToClipboard(timestampsMicros: List<Long>) {
+    private fun copyStoryboardToClipboard(
+        timestampsMicros: List<Long>,
+        layout: ImportantFrameLayout,
+    ) {
         if (timestampsMicros.isEmpty() || exportJob != null) return
+        val orderedTimestampsMicros = timestampsMicros.distinct().sorted()
         val project = history.project
         if (project.primaryAssetId?.let { id -> project.assets.firstOrNull { it.id == id } } == null) return
+        val exportSettings = mutableState.value
         exportJob = scope.launch {
             saveNow()
             mutableState.update { it.copy(isExporting = true, exportProgress = 0f, errorMessage = null) }
-            var temporaryOutput: Path? = null
+            var temporaryDirectory: Path? = null
             try {
-                temporaryOutput = Files.createTempFile("mission-recorder-storyboard-", ".png")
+                val clipboardDirectory = withContext(ioDispatcher) {
+                    Files.createTempDirectory("mission-recorder-clipboard-")
+                }
+                temporaryDirectory = clipboardDirectory
+                val temporaryOutput = when (layout) {
+                    ImportantFrameLayout.ContactSheet -> clipboardDirectory.resolve(
+                        when (exportSettings.frameOutputFormat) {
+                            FrameImageFormat.Png -> "contact-sheet.png"
+                            FrameImageFormat.Jpeg -> "contact-sheet.jpg"
+                        },
+                    )
+                    ImportantFrameLayout.SeparatePngFiles -> clipboardDirectory.resolve("frames")
+                }
                 val request = io.aequicor.editor.EditorExportRequest.Frames(
                     project = project,
                     outputPath = temporaryOutput.toString(),
-                    overwrite = true,
-                    layout = ImportantFrameLayout.ContactSheet,
-                    timestampsMicros = timestampsMicros,
+                    layout = layout,
+                    outputFormat = exportSettings.frameOutputFormat,
+                    resolutionPercent = exportSettings.frameResolutionPercent,
+                    jpegCompression = exportSettings.frameJpegCompression,
+                    timestampsMicros = orderedTimestampsMicros,
                 )
-                mediaService.export(request, ::applyExportProgress)
-                imageClipboard.copyPng(temporaryOutput.toString())
+                val result = mediaService.export(request, ::applyExportProgress)
+                val clipboardPaths = result.clipboardPaths(layout, orderedTimestampsMicros)
+                imageClipboard.copyImages(clipboardPaths)
                 mutableState.update { it.copy(isExporting = false, exportProgress = 1f) }
             } catch (cancelled: CancellationException) {
                 mutableState.update { it.copy(isExporting = false, exportProgress = 0f) }
@@ -998,7 +1086,11 @@ internal class VideoEditorViewModel(
                 reportFailure(failure)
                 mutableState.update { it.copy(isExporting = false, exportProgress = 0f) }
             } finally {
-                temporaryOutput?.let { path -> runCatching { Files.deleteIfExists(path) } }
+                temporaryDirectory?.let { path ->
+                    withContext(NonCancellable + ioDispatcher) {
+                        runCatching { deleteRecursively(path) }
+                    }
+                }
                 exportJob = null
             }
         }
@@ -1070,6 +1162,36 @@ internal class VideoEditorViewModel(
     private fun newId(prefix: String): String = "$prefix:${idFactory()}"
 }
 
+private data class MediaPathCreationTime(
+    val path: String,
+    val originalIndex: Int,
+    val creationTimeMillis: Long?,
+)
+
+private fun sortMediaPathsByCreationTime(
+    paths: List<String>,
+    creationTimeMillis: (String) -> Long?,
+): List<String> = paths
+    .distinct()
+    .mapIndexed { index, path ->
+        MediaPathCreationTime(
+            path = path,
+            originalIndex = index,
+            creationTimeMillis = runCatching { creationTimeMillis(path) }.getOrNull(),
+        )
+    }
+    .sortedWith(
+        compareByDescending<MediaPathCreationTime> { it.creationTimeMillis != null }
+            .thenByDescending { it.creationTimeMillis ?: Long.MIN_VALUE }
+            .thenBy(MediaPathCreationTime::originalIndex),
+    )
+    .take(MAX_RECENT_EDITOR_MEDIA_PATHS)
+    .map(MediaPathCreationTime::path)
+
+private fun readMediaCreationTimeMillis(path: String): Long? = runCatching {
+    Files.readAttributes(Path.of(path), BasicFileAttributes::class.java).creationTime().toMillis()
+}.getOrNull()
+
 private fun emptyEditorProject(): EditorProject = EditorProject(
     name = "Untitled edit",
     primaryAssetId = null,
@@ -1087,6 +1209,26 @@ private fun defaultTrackName(kind: EditorTrackKind, number: Int): String = when 
 private fun nearestFrameRate(value: Double): Int = listOf(24, 30, 60).minBy { kotlin.math.abs(it - value) }
 private fun normalizedPath(path: String): String = Path.of(path).toAbsolutePath().normalize().toString()
 
+private fun EditorExportResult.clipboardPaths(
+    layout: ImportantFrameLayout,
+    orderedTimestampsMicros: List<Long>,
+): List<String> = when (layout) {
+    ImportantFrameLayout.ContactSheet -> listOf(
+        requireNotNull(outputPaths.singleOrNull()) { "Contact-sheet export must produce exactly one file." },
+    )
+    ImportantFrameLayout.SeparatePngFiles -> {
+        val framesByTimestamp = exportedFrames.associateBy { frame -> frame.timelineMicros }
+        require(
+            framesByTimestamp.size == exportedFrames.size && framesByTimestamp.keys == orderedTimestampsMicros.toSet(),
+        ) { "Frame export outputs do not match the requested timeline positions." }
+        orderedTimestampsMicros.map { timestamp ->
+            requireNotNull(framesByTimestamp[timestamp]) {
+                "Frame export did not produce the requested timeline position $timestamp."
+            }.outputPath
+        }
+    }
+}
+
 private const val DEFAULT_EDITOR_WIDTH = 1920
 private const val DEFAULT_EDITOR_HEIGHT = 1080
 private const val DEFAULT_IMAGE_DURATION_MICROS = 5_000_000L
@@ -1102,3 +1244,11 @@ private const val NANOS_PER_SECOND = 1_000_000_000L
 private const val NANOS_PER_MILLISECOND = 1_000_000L
 private const val NANOS_PER_MICROSECOND = 1_000L
 private const val STORYBOARD_CANDIDATE_ID_PREFIX = "storyboard:"
+private const val MAX_RECENT_EDITOR_MEDIA_PATHS = 12
+
+private fun deleteRecursively(path: Path) {
+    if (!Files.exists(path)) return
+    Files.walk(path).use { paths ->
+        paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
+    }
+}

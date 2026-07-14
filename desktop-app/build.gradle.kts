@@ -45,6 +45,9 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "io.aequicor.desktop.MainKt"
+        buildTypes.release.proguard {
+            configurationFiles.from(project.file("proguard-rules.pro"))
+        }
         jvmArgs += listOf(
             "-Dfile.encoding=UTF-8",
             "-Dstdout.encoding=UTF-8",
@@ -53,7 +56,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "Mission Recorder"
-            packageVersion = "0.1.0"
+            packageVersion = project.version.toString()
             description = "Local open-source screen recorder"
             vendor = "Mission Recorder"
             windows {

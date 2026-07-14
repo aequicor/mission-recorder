@@ -3,10 +3,13 @@ package io.aequicor.compose.ui
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.dragAndDrop
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -16,8 +19,10 @@ import io.aequicor.editor.EditorProject
 import io.aequicor.editor.EditorTrack
 import io.aequicor.editor.EditorTrackId
 import io.aequicor.editor.EditorTrackKind
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameId
 import io.aequicor.editor.ImportantFrameMarker
+import io.aequicor.editor.JpegCompression
 import io.aequicor.editor.MediaAsset
 import io.aequicor.editor.MediaAssetId
 import io.aequicor.editor.MediaAssetKind
@@ -28,7 +33,7 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalTestApi::class)
 class VideoEditorScreenTest {
     @Test
-    fun exposesNavigationMediaAndThreeStoryboardExportActions() = runComposeUiTest {
+    fun exposesNavigationMediaAndFourStoryboardExportActions() = runComposeUiTest {
         val actions = mutableListOf<VideoEditorAction>()
         val playhead = mutableStateOf(0L)
         val preview = mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
@@ -36,7 +41,10 @@ class VideoEditorScreenTest {
             VideoEditorScreen(
                 state = VideoEditorUiState(
                     project = project(),
-                    frameExportCandidates = listOf(FrameExportCandidate(ImportantFrameId("storyboard:0"), 0L)),
+                    frameExportCandidates = listOf(
+                        FrameExportCandidate(ImportantFrameId("storyboard:0"), 0L, included = true),
+                    ),
+                    frameOutputFormat = FrameImageFormat.Jpeg,
                 ),
                 playheadMicros = playhead,
                 previewImage = preview,
@@ -46,28 +54,65 @@ class VideoEditorScreenTest {
 
         onNodeWithTag("editor-add-media").assertIsEnabled().performClick()
         val singleFile = onNodeWithTag("editor-export-contact-sheet").assertIsEnabled()
-        val clipboard = onNodeWithTag("editor-copy-storyboard").assertIsEnabled()
+        val singleFileClipboard = onNodeWithTag("editor-copy-contact-sheet").assertIsEnabled()
         val multipleFiles = onNodeWithTag("editor-export-frames").assertIsEnabled()
+        val multipleFilesClipboard = onNodeWithTag("editor-copy-frames").assertIsEnabled()
         val singleFileBounds = singleFile.fetchSemanticsNode().boundsInRoot
-        val clipboardBounds = clipboard.fetchSemanticsNode().boundsInRoot
+        val singleFileClipboardBounds = singleFileClipboard.fetchSemanticsNode().boundsInRoot
         val multipleFilesBounds = multipleFiles.fetchSemanticsNode().boundsInRoot
-        assertTrue(singleFileBounds.right <= clipboardBounds.left)
-        assertTrue(multipleFilesBounds.top >= maxOf(singleFileBounds.bottom, clipboardBounds.bottom))
+        val multipleFilesClipboardBounds = multipleFilesClipboard.fetchSemanticsNode().boundsInRoot
+        assertTrue(singleFileBounds.right <= singleFileClipboardBounds.left)
+        assertTrue(multipleFilesBounds.right <= multipleFilesClipboardBounds.left)
+        assertTrue(
+            multipleFilesBounds.top >= maxOf(singleFileBounds.bottom, singleFileClipboardBounds.bottom),
+        )
+        onNodeWithTag("editor-export-format-toggle").performClick()
+        onNodeWithTag("editor-export-format-jpeg").performClick()
+        onNodeWithTag("editor-export-resolution-toggle").performClick()
+        onNodeWithTag("editor-export-resolution-50").performClick()
+        onNodeWithTag("editor-export-compression-toggle").performClick()
+        onNodeWithTag("editor-export-compression-high").performClick()
         singleFile.performClick()
-        clipboard.performClick()
+        singleFileClipboard.performClick()
         multipleFiles.performClick()
+        multipleFilesClipboard.performClick()
         onNodeWithTag("editor-back").performClick()
 
         assertEquals(
             listOf(
                 VideoEditorAction.AddMedia,
+                VideoEditorAction.SetFrameOutputFormat(FrameImageFormat.Jpeg),
+                VideoEditorAction.SetFrameResolutionPercent(50),
+                VideoEditorAction.SetFrameJpegCompression(JpegCompression.High),
                 VideoEditorAction.ExportStoryboard(io.aequicor.editor.ImportantFrameLayout.ContactSheet),
-                VideoEditorAction.CopyStoryboardToClipboard,
+                VideoEditorAction.CopyStoryboardToClipboard(io.aequicor.editor.ImportantFrameLayout.ContactSheet),
                 VideoEditorAction.ExportStoryboard(io.aequicor.editor.ImportantFrameLayout.SeparatePngFiles),
+                VideoEditorAction.CopyStoryboardToClipboard(
+                    io.aequicor.editor.ImportantFrameLayout.SeparatePngFiles,
+                ),
                 VideoEditorAction.BackToRecorder,
             ),
             actions,
         )
+    }
+
+    @Test
+    fun hidesJpegCompressionForPngOutput() = runComposeUiTest {
+        setContent {
+            VideoEditorScreen(
+                state = VideoEditorUiState(
+                    project = project(),
+                    frameOutputFormat = FrameImageFormat.Png,
+                ),
+                playheadMicros = mutableStateOf(0L),
+                previewImage = mutableStateOf(null),
+                onAction = {},
+            )
+        }
+
+        onNodeWithTag("editor-export-format").assertIsDisplayed()
+        onNodeWithTag("editor-export-resolution").assertIsDisplayed()
+        onAllNodesWithTag("editor-export-compression").assertCountEquals(0)
     }
 
     @Test
@@ -128,15 +173,50 @@ class VideoEditorScreenTest {
     }
 
     @Test
+    fun togglesOnlyVisibleImportantFramesFromToolbar() = runComposeUiTest {
+        val actions = mutableListOf<VideoEditorAction>()
+        setContent {
+            VideoEditorScreen(
+                state = VideoEditorUiState(
+                    project = project(),
+                    frameExportCandidates = listOf(
+                        FrameExportCandidate(ImportantFrameId("storyboard:0"), 0L, included = false),
+                        FrameExportCandidate(
+                            ImportantFrameId("frame:1"),
+                            1_000_000L,
+                            included = true,
+                            important = true,
+                        ),
+                    ),
+                    showOnlyImportantFrames = true,
+                ),
+                playheadMicros = mutableStateOf(0L),
+                previewImage = mutableStateOf(null),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("editor-storyboard-toggle-all-checkbox").assertIsOn()
+        onNodeWithTag("editor-storyboard-toggle-all").performClick()
+
+        assertEquals(
+            listOf<VideoEditorAction>(VideoEditorAction.SetAllFrameExportCandidatesIncluded(false)),
+            actions,
+        )
+    }
+
+    @Test
     fun storyboardFiltersSelectsAddsAndExportsFrames() = runComposeUiTest {
         val actions = mutableListOf<VideoEditorAction>()
         val storyboardCandidate = FrameExportCandidate(
             id = ImportantFrameId("storyboard:0"),
             timelineMicros = 0L,
+            included = true,
         )
         val importantCandidate = FrameExportCandidate(
             id = ImportantFrameId("frame:1"),
             timelineMicros = 1_000_000L,
+            included = true,
             important = true,
         )
         setContent {
@@ -252,6 +332,59 @@ class VideoEditorScreenTest {
 
         assertEquals(
             listOf<VideoEditorAction>(VideoEditorAction.SelectFrameExportCandidate(ImportantFrameId("frame:1"))),
+            actions,
+        )
+    }
+
+    @Test
+    fun importantFrameDeleteButtonRemovesTheUnderlyingMarker() = runComposeUiTest {
+        val actions = mutableListOf<VideoEditorAction>()
+        setContent {
+            VideoEditorScreen(
+                state = VideoEditorUiState(
+                    project = project(),
+                    frameExportCandidates = listOf(
+                        FrameExportCandidate(
+                            id = ImportantFrameId("storyboard:1000000"),
+                            timelineMicros = 1_000_000,
+                            important = true,
+                        ),
+                    ),
+                ),
+                playheadMicros = mutableStateOf(0L),
+                previewImage = mutableStateOf(null),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("editor-storyboard-remove-important-storyboard:1000000").performClick()
+
+        assertEquals(
+            listOf<VideoEditorAction>(VideoEditorAction.RemoveImportantFrame(ImportantFrameId("frame:1"))),
+            actions,
+        )
+    }
+
+    @Test
+    fun displaysAndOpensRecordingsFromTheHistoryPanel() = runComposeUiTest {
+        val actions = mutableListOf<VideoEditorAction>()
+        setContent {
+            VideoEditorScreen(
+                state = VideoEditorUiState(
+                    project = project(),
+                    recentMediaPaths = listOf("recordings/last.mp4", "recordings/older.mp4"),
+                ),
+                playheadMicros = mutableStateOf(0L),
+                previewImage = mutableStateOf(null),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("editor-recording-history").assertIsDisplayed()
+        onNodeWithTag("editor-recording-history-item-0").assertIsEnabled().performClick()
+
+        assertEquals(
+            listOf<VideoEditorAction>(VideoEditorAction.OpenRecentMedia("recordings/last.mp4")),
             actions,
         )
     }

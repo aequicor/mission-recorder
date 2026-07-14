@@ -6,8 +6,10 @@ import io.aequicor.editor.EditorClipId
 import io.aequicor.editor.EditorClip
 import io.aequicor.editor.EditorProject
 import io.aequicor.editor.EditorTrackId
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameId
 import io.aequicor.editor.ImportantFrameLayout
+import io.aequicor.editor.JpegCompression
 import io.aequicor.editor.MediaAssetId
 import io.aequicor.editor.Transition
 
@@ -28,7 +30,7 @@ enum class EditorAutosaveStatus {
 data class FrameExportCandidate(
     val id: ImportantFrameId,
     val timelineMicros: Long,
-    val included: Boolean = true,
+    val included: Boolean = false,
     val important: Boolean = false,
 )
 
@@ -51,6 +53,10 @@ data class VideoEditorUiState(
     val exportProgress: Float = 0f,
     val timelinePixelsPerSecond: Float = 80f,
     val frameLayout: ImportantFrameLayout = ImportantFrameLayout.SeparatePngFiles,
+    val frameOutputFormat: FrameImageFormat = FrameImageFormat.Png,
+    val frameResolutionPercent: Int = 100,
+    val frameJpegCompression: JpegCompression = JpegCompression.Medium,
+    val recentMediaPaths: List<String> = emptyList(),
     val canUndo: Boolean = false,
     val canRedo: Boolean = false,
     val lastExportPath: String? = null,
@@ -63,11 +69,20 @@ data class VideoEditorUiState(
         get() = frameExportCandidates.count { it.included && it.timelineMicros <= project.durationMicros }
 
     val allFrameExportCandidatesIncluded: Boolean
-        get() = availableFrameExportCount > 0 && includedFrameExportCount == availableFrameExportCount
+        get() {
+            val availableCandidates = frameExportCandidates.filter { it.timelineMicros <= project.durationMicros }
+            val visibleCandidates = if (showOnlyImportantFrames) {
+                availableCandidates.filter(FrameExportCandidate::important)
+            } else {
+                availableCandidates
+            }
+            return visibleCandidates.isNotEmpty() && visibleCandidates.all(FrameExportCandidate::included)
+        }
 }
 
 sealed interface VideoEditorAction {
     data object BackToRecorder : VideoEditorAction
+    data class OpenRecentMedia(val path: String) : VideoEditorAction
     data object AddMedia : VideoEditorAction
     data class SelectAsset(val assetId: MediaAssetId) : VideoEditorAction
     data class RelinkAsset(val assetId: MediaAssetId) : VideoEditorAction
@@ -119,6 +134,9 @@ sealed interface VideoEditorAction {
     data class SetTrackMuted(val trackId: EditorTrackId, val muted: Boolean) : VideoEditorAction
     data class SetTimelineZoom(val pixelsPerSecond: Float) : VideoEditorAction
     data class SetFrameLayout(val layout: ImportantFrameLayout) : VideoEditorAction
+    data class SetFrameOutputFormat(val format: FrameImageFormat) : VideoEditorAction
+    data class SetFrameResolutionPercent(val percent: Int) : VideoEditorAction
+    data class SetFrameJpegCompression(val compression: JpegCompression) : VideoEditorAction
     data object Undo : VideoEditorAction
     data object Redo : VideoEditorAction
     data object ExportVideo : VideoEditorAction
@@ -126,7 +144,7 @@ sealed interface VideoEditorAction {
     data object DismissVideoExportDialog : VideoEditorAction
     data object ExportFrames : VideoEditorAction
     data class ExportStoryboard(val layout: ImportantFrameLayout) : VideoEditorAction
-    data object CopyStoryboardToClipboard : VideoEditorAction
+    data class CopyStoryboardToClipboard(val layout: ImportantFrameLayout) : VideoEditorAction
     data object ConfirmFrameExport : VideoEditorAction
     data object DismissFrameExportDialog : VideoEditorAction
     data object CancelExport : VideoEditorAction

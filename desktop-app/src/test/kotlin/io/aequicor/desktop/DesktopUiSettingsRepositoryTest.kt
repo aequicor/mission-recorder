@@ -35,6 +35,7 @@ class DesktopUiSettingsRepositoryTest {
                 frameRate = 60,
                 captureCursor = false,
                 showInputOverlay = true,
+                recordMouseTrail = true,
                 replayDurationMinutes = 9,
                 encoderSettings = EncoderSettings(videoBitrateBitsPerSecond = 16_000_000),
             ),
@@ -108,6 +109,20 @@ class DesktopUiSettingsRepositoryTest {
     }
 
     @Test
+    fun persistsRecentEditorMediaNewestFirstAcrossReloads() {
+        val path = Files.createTempDirectory("mission-recorder-editor-history").resolve("settings.json")
+        val repository = DesktopUiSettingsRepository(MissionRecorderSettingsStore(path))
+        val first = Path.of("recordings", "first.mp4").toAbsolutePath().normalize().toString()
+        val second = Path.of("recordings", "second.mp4").toAbsolutePath().normalize().toString()
+
+        repository.saveRecentEditorMediaPath(first)
+        repository.saveRecentEditorMediaPath(second)
+        repository.saveRecentEditorMediaPath(first)
+
+        assertEquals(listOf(first, second), repository.loadStartupSettings().recentEditorMediaPaths)
+    }
+
+    @Test
     fun persistsRecorderAndHotkeyPreferencesWithoutLosingWindowPosition() {
         val path = Files.createTempDirectory("mission-recorder-desktop-preferences").resolve("settings.json")
         val store = MissionRecorderSettingsStore(path)
@@ -117,6 +132,7 @@ class DesktopUiSettingsRepositoryTest {
             frameRate = 60,
             captureCursor = false,
             showInputOverlay = true,
+            recordMouseTrail = true,
             replayDurationMinutes = 12,
             storyboardMode = StoryboardMode.ContactSheet,
             encoderSettings = EncoderSettings(
@@ -146,6 +162,7 @@ class DesktopUiSettingsRepositoryTest {
         assertEquals(60, persistedProfile.video.frameRate)
         assertEquals(false, persistedProfile.video.captureCursor)
         assertTrue(persistedProfile.video.showInputOverlay)
+        assertTrue(persistedProfile.video.recordMouseTrail)
         assertEquals(12 * 60L, persistedProfile.replay.durationSeconds)
         assertEquals(18_000_000, persistedProfile.encoder.videoBitrateBitsPerSecond)
         assertEquals(160_000, persistedProfile.encoder.audioBitrateBitsPerSecond)

@@ -233,6 +233,20 @@ public enum class ImportantFrameLayout {
     ContactSheet,
 }
 
+/** File encoding used for rendered editor frames. */
+public enum class FrameImageFormat {
+    Png,
+    Jpeg,
+}
+
+/** JPEG compression level; higher values trade image quality for smaller files. */
+public enum class JpegCompression {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
 /** Request to render either the full project or selected timeline frames. */
 public sealed interface EditorExportRequest {
     public val project: EditorProject
@@ -255,11 +269,20 @@ public sealed interface EditorExportRequest {
         override val outputPath: String,
         override val overwrite: Boolean = false,
         public val layout: ImportantFrameLayout = ImportantFrameLayout.SeparatePngFiles,
+        public val outputFormat: FrameImageFormat = FrameImageFormat.Png,
+        /** Output dimensions as a percentage of the project canvas, from 1 through 100. */
+        public val resolutionPercent: Int = 100,
+        /** Applied only to JPEG output; PNG uses lossless platform encoding. */
+        public val jpegCompression: JpegCompression = JpegCompression.Medium,
         /** Sorted during export; duplicate and out-of-range positions are ignored. */
         public val timestampsMicros: List<Long> = project.importantFrames
             .filter(ImportantFrameMarker::included)
             .map(ImportantFrameMarker::timelineMicros),
-    ) : EditorExportRequest
+    ) : EditorExportRequest {
+        init {
+            require(resolutionPercent in 1..100) { "Frame resolution must be between 1 and 100 percent." }
+        }
+    }
 }
 
 /** Current sidecar project format. */

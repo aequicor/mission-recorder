@@ -77,7 +77,15 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
                     current.pendingAudioFrames.sortedBy { it.timestamp }.forEach(started::writeAudioFrame)
                     current.pendingAudioFrames.clear()
                 }
-                nativeRecorder.writeVideoFrame(nativeFrame, frame.timestamp.nanoseconds, frame.importantFrame)
+                nativeRecorder.writeVideoFrame(
+                    frame = nativeFrame,
+                    timestampNanoseconds = frame.timestamp.nanoseconds,
+                    importantFrame = frame.importantFrame,
+                )
+                current.mouseTrailRecorder?.record(
+                    timestampMicros = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND,
+                    position = frame.cursorPosition,
+                )
                 return@withLock
             }
             if (current.nativeRecorder != null) {
@@ -107,6 +115,10 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
                 frame.pixelFormat.toFfmpegPixelFormat(),
             )
             current.lastVideoTimestampMicros = timestampMicros
+            current.mouseTrailRecorder?.record(
+                timestampMicros = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND,
+                position = frame.cursorPosition,
+            )
         } catch (recording: RecordingException) {
             throw recording
         } catch (throwable: Throwable) {
@@ -145,7 +157,18 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
             }
             current.rgbaFrameBuffer?.close()
             current.rgbaFrameBuffer = null
+            val mouseTrailWritten = current.mouseTrailRecorder?.write(current.temporary) == true
             moveOutput(current.temporary, current.output, current.settings.overwriteOutput)
+            val outputTrail = mouseTrailSidecarPath(current.output)
+            if (mouseTrailWritten) {
+                moveOutput(
+                    mouseTrailSidecarPath(current.temporary),
+                    outputTrail,
+                    current.settings.overwriteOutput,
+                )
+            } else if (current.settings.overwriteOutput) {
+                Files.deleteIfExists(outputTrail)
+            }
             context = null
             RecordingOutput(current.output.toString())
         } catch (throwable: Throwable) {
@@ -154,6 +177,7 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
             runCatching { current.rgbaFrameBuffer?.close() }
             current.rgbaFrameBuffer = null
             current.temporary.toFile().delete()
+            Files.deleteIfExists(mouseTrailSidecarPath(current.temporary))
             context = null
             throw encoderFailed(throwable.message ?: "FFmpeg failed to finish the MP4 file.")
         }
@@ -249,6 +273,7 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
         runCatching { context.rgbaFrameBuffer?.close() }
         context.rgbaFrameBuffer = null
         runCatching { Files.deleteIfExists(context.temporary) }
+        runCatching { Files.deleteIfExists(mouseTrailSidecarPath(context.temporary)) }
     }
 
     private fun moveOutput(source: Path, target: Path, overwrite: Boolean) {
@@ -274,6 +299,8 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
         val settings: RecordingSettings,
         val pendingAudioFrames: MutableList<AudioFrame> = mutableListOf(),
         val audioBatcher: PcmAudioFrameBatcher = PcmAudioFrameBatcher(),
+        val mouseTrailRecorder: MouseTrailRecorder? = settings.recordMouseTrail.takeIf { it }
+            ?.let { MouseTrailRecorder() },
         var recorder: FFmpegFrameRecorder? = null,
         var nativeRecorder: D3d11NvencRecorder? = null,
         var rgbaFrameBuffer: RgbaFrameBuffer? = null,

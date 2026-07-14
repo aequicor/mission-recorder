@@ -20,7 +20,15 @@ data class VideoFrame(
     val pixelData: ByteArray? = null,
     val nativeFrame: Any? = null,
     val importantFrame: Boolean = false,
+    /** Cursor hotspot in this frame's pixel coordinate space, when the platform can provide it. */
+    val cursorPosition: VideoFramePoint? = null,
     val lease: VideoFrameLease? = null,
+)
+
+/** A cursor position expressed in pixels relative to a [VideoFrame]. */
+data class VideoFramePoint(
+    val x: Int,
+    val y: Int,
 )
 
 /**

@@ -1,8 +1,10 @@
 package io.aequicor.compose.ui
 
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
@@ -22,6 +24,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.unit.dp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -143,74 +146,129 @@ class MissionRecorderScreenTest {
                         RecorderSourceUi("screen:test", "Test screen", RecorderSourceKind.Screen),
                     ),
                     selectedSourceId = "screen:test",
-                    microphones = listOf(RecorderMicrophoneUi("mic:test", "Test microphone")),
-                    selectedMicrophoneId = "mic:test",
-                    systemAudioAvailable = true,
-                    systemAudioEnabled = true,
-                    systemAudioMuted = true,
                     outputPath = "recordings/test.mp4",
-                    status = RecorderStatus.Recording,
-                    elapsedMilliseconds = 65_000,
+                    lastOutputPath = "recordings/finished.mp4",
+                    status = RecorderStatus.Completed,
                 ),
                 onAction = actions::add,
                 onExpand = { expandRequests++ },
                 onHide = { hideRequests++ },
                 onOpenEditor = { openEditorRequests++ },
+                modifier = Modifier.size(width = 100.dp, height = 289.dp),
             )
         }
 
         onAllNodesWithTag("mini-microphone-mute").assertCountEquals(0)
         onAllNodesWithTag("mini-system-audio-mute").assertCountEquals(0)
+        onAllNodesWithTag("mini-pause-toggle").assertCountEquals(0)
+        onAllNodesWithTag("mini-mark-important-frame").assertCountEquals(0)
         onNodeWithTag("mini-expand").assertIsEnabled().performClick()
         onNodeWithTag("mini-hide").assertIsEnabled().performClick()
-        onNodeWithTag("mini-pause-toggle").assertIsEnabled().performClick()
+        onNodeWithTag("mini-screen-screenshot").assertIsEnabled().performClick()
+        onNodeWithTag("mini-region-screenshot").assertIsEnabled().performClick()
         onNodeWithTag("mini-record-toggle").assertIsEnabled().performClick()
         onNodeWithTag("mini-open-editor-icon", useUnmergedTree = true).assertIsDisplayed()
         onNodeWithTag("mini-open-editor").assertIsEnabled().performClick()
-        onNodeWithTag("mini-mark-important-frame").assertIsEnabled().performClick()
 
-        val transportCenter = onNodeWithTag("mini-transport-controls").fetchSemanticsNode().boundsInRoot.center.x
-        val pauseCenter = onNodeWithTag("mini-pause-toggle").fetchSemanticsNode().boundsInRoot.center.x
-        val recordCenter = onNodeWithTag("mini-record-toggle").fetchSemanticsNode().boundsInRoot.center.x
-        val editorCenter = onNodeWithTag("mini-open-editor").fetchSemanticsNode().boundsInRoot.center.x
-        assertTrue(kotlin.math.abs(transportCenter - recordCenter) < 0.5f)
-        assertTrue(kotlin.math.abs((recordCenter - pauseCenter) - (editorCenter - recordCenter)) < 0.5f)
+        val transportCenter = onNodeWithTag("mini-transport-controls").fetchSemanticsNode().boundsInRoot.center
+        val screenshotGroupCenter = onNodeWithTag("mini-screenshot-group").fetchSemanticsNode().boundsInRoot.center
+        val screenScreenshotCenter = onNodeWithTag("mini-screen-screenshot").fetchSemanticsNode().boundsInRoot.center
+        val regionScreenshotCenter = onNodeWithTag("mini-region-screenshot").fetchSemanticsNode().boundsInRoot.center
+        val recordCenter = onNodeWithTag("mini-record-toggle").fetchSemanticsNode().boundsInRoot.center
+        val editorCenter = onNodeWithTag("mini-open-editor").fetchSemanticsNode().boundsInRoot.center
+        val transportBounds = onNodeWithTag("mini-transport-controls").fetchSemanticsNode().boundsInRoot
+        val screenshotGroupBounds = onNodeWithTag("mini-screenshot-group").fetchSemanticsNode().boundsInRoot
+        val recordButtonBounds = onNodeWithTag("mini-record-toggle").fetchSemanticsNode().boundsInRoot
+        val editorButtonBounds = onNodeWithTag("mini-open-editor").fetchSemanticsNode().boundsInRoot
+        val statusBounds = onNodeWithTag("mini-status-container").fetchSemanticsNode().boundsInRoot
+        val hideButtonBounds = onNodeWithTag("mini-hide").fetchSemanticsNode().boundsInRoot
+        val expandButtonBounds = onNodeWithTag("mini-expand").fetchSemanticsNode().boundsInRoot
+        assertTrue(kotlin.math.abs(transportCenter.x - recordCenter.x) < 0.5f)
+        assertTrue(kotlin.math.abs(transportCenter.x - screenshotGroupCenter.x) < 1f)
+        assertTrue(kotlin.math.abs(editorCenter.x - recordCenter.x) < 0.5f)
+        assertTrue(screenshotGroupBounds.width > recordButtonBounds.width)
+        assertTrue(kotlin.math.abs(recordButtonBounds.width - editorButtonBounds.width) < 0.5f)
+        assertTrue(kotlin.math.abs(transportBounds.height / transportBounds.width - 232f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(editorButtonBounds.width / transportBounds.width - 48f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(recordButtonBounds.width / transportBounds.width - 48f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(screenshotGroupBounds.width / transportBounds.width - 100f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(screenshotGroupBounds.height / transportBounds.width - 48f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(statusBounds.width / transportBounds.width - 68f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(statusBounds.height / transportBounds.width - 26f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(hideButtonBounds.width / transportBounds.width - 24f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(expandButtonBounds.width / transportBounds.width - 24f / 100f) < 0.01f)
+        assertTrue(kotlin.math.abs(expandButtonBounds.right - 100f) < 0.5f)
+        assertTrue(kotlin.math.abs(expandButtonBounds.left - hideButtonBounds.right - 4f) < 0.5f)
+        assertTrue(screenScreenshotCenter.x < transportCenter.x)
+        assertTrue(transportCenter.x < regionScreenshotCenter.x)
+        assertTrue(kotlin.math.abs(screenScreenshotCenter.y - regionScreenshotCenter.y) < 0.5f)
+        assertTrue(editorCenter.y < recordCenter.y)
+        assertTrue(recordCenter.y < screenshotGroupCenter.y)
 
         assertEquals(1, expandRequests)
         assertEquals(1, hideRequests)
         assertEquals(1, openEditorRequests)
         assertEquals(
             listOf(
-                RecorderUiAction.PauseRecording,
-                RecorderUiAction.StopRecording,
-                RecorderUiAction.MarkImportantFrame,
+                RecorderUiAction.TakeScreenScreenshot,
+                RecorderUiAction.SelectRegionAndTakeScreenshot,
+                RecorderUiAction.StartRecording,
             ),
             actions,
         )
     }
 
     @Test
-    fun miniControllerShowsImportantFrameCaptureFeedbackAfterShortcut() = runComposeUiTest {
-        var captureSequence by mutableStateOf(0L)
+    fun miniControllerPinsScreenshotGroupToTransportBottom() = runComposeUiTest {
         setContent {
             MiniRecorderController(
-                state = RecorderUiState(
-                    status = RecorderStatus.Recording,
-                    importantFrameCaptureSequence = captureSequence,
-                ),
+                state = RecorderUiState(),
                 onAction = {},
+                modifier = Modifier.size(width = 70.dp, height = 220.dp),
             )
         }
 
-        captureSequence += 1L
+        val transportBottom = onNodeWithTag("mini-transport-controls").fetchSemanticsNode().boundsInRoot.bottom
+        val screenshotGroupBottom = onNodeWithTag("mini-screenshot-group").fetchSemanticsNode().boundsInRoot.bottom
 
-        onAllNodesWithTag("mini-important-frame-capture-effect").assertCountEquals(1)
+        assertTrue(kotlin.math.abs(screenshotGroupBottom - transportBottom) < 0.5f)
+    }
+
+    @Test
+    fun miniControllerKeepsEditorAndRecordButtonsSeparateAtWindowSize() = runComposeUiTest {
+        setContent {
+            MiniRecorderController(
+                state = RecorderUiState(),
+                onAction = {},
+                modifier = Modifier.size(width = 70.dp, height = 220.dp),
+            )
+        }
+
+        val editorBounds = onNodeWithTag("mini-open-editor").fetchSemanticsNode().boundsInRoot
+        val recordLayoutBounds = onNodeWithTag("mini-record-layout").fetchSemanticsNode().boundsInRoot
+        val recordBounds = onNodeWithTag("mini-record-toggle").fetchSemanticsNode().boundsInRoot
+        val screenshotBounds = onNodeWithTag("mini-screenshot-group").fetchSemanticsNode().boundsInRoot
+        val editorRecordGap = recordBounds.top - editorBounds.bottom
+        val recordScreenshotGap = screenshotBounds.top - recordBounds.bottom
+
+        assertTrue(kotlin.math.abs(editorBounds.width - 48f) < 0.5f)
+        assertTrue(kotlin.math.abs(editorBounds.height - 48f) < 0.5f)
+        assertTrue(kotlin.math.abs(recordLayoutBounds.height - 48f) < 0.5f)
+        assertTrue(kotlin.math.abs(recordBounds.width - 48f) < 0.5f)
+        assertTrue(kotlin.math.abs(recordBounds.height - 48f) < 0.5f)
+        assertTrue(kotlin.math.abs(recordBounds.bottom - recordLayoutBounds.bottom) < 0.5f)
+        assertTrue(editorRecordGap >= 7f)
+        assertTrue(
+            kotlin.math.abs(editorRecordGap - recordScreenshotGap) <= 1f,
+            "Expected proportional gaps, got $editorRecordGap and $recordScreenshotGap",
+        )
     }
 
     @Test
     fun recordingShortcutTooltipIncludesActionAndGesture() {
         assertEquals("Stop · Ctrl+Shift+F9", shortcutTooltipLabel("Stop", "Ctrl+Shift+F9"))
         assertEquals("Pause · Ctrl+Shift+F10", shortcutTooltipLabel("Pause", "Ctrl+Shift+F10"))
+        assertEquals("Ctrl+Shift+F9", shortcutTooltipLabel("Ctrl+Shift+F9", null))
     }
 
     @Test
@@ -228,8 +286,8 @@ class MissionRecorderScreenTest {
             )
         }
 
-        onNodeWithTag("mini-pause-toggle").assertIsNotEnabled()
-        onNodeWithTag("mini-mark-important-frame").assertIsNotEnabled()
+        onNodeWithTag("mini-screen-screenshot").assertIsEnabled()
+        onNodeWithTag("mini-region-screenshot").assertIsEnabled()
         onNodeWithTag("mini-open-editor").assertIsNotEnabled()
         onNodeWithTag("mini-record-toggle").assertIsEnabled()
     }
@@ -254,7 +312,7 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun miniControllerDisplaysPreviewFrame() = runComposeUiTest {
+    fun miniControllerDoesNotShowPreviewFrame() = runComposeUiTest {
         val previewImage = mutableStateOf<ImageBitmap?>(ImageBitmap(width = 2, height = 2))
         setContent {
             MiniRecorderController(
@@ -264,7 +322,7 @@ class MissionRecorderScreenTest {
             )
         }
 
-        onAllNodesWithTag("mini-preview-image").assertCountEquals(1)
+        onAllNodesWithTag("mini-preview-image").assertCountEquals(0)
     }
 
     @Test
@@ -499,11 +557,14 @@ class MissionRecorderScreenTest {
     }
 
     @Test
-    fun enablesScreenshotForActivePreviewAndHoistsAction() = runComposeUiTest {
+    fun enablesScreenshotForSelectedSourceAndHoistsAction() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {
             MissionRecorderScreen(
-                state = RecorderUiState(previewStatus = PreviewUiStatus.Active),
+                state = RecorderUiState(
+                    sources = listOf(RecorderSourceUi("screen:test", "Test screen", RecorderSourceKind.Screen)),
+                    selectedSourceId = "screen:test",
+                ),
                 onAction = actions::add,
             )
         }
@@ -541,6 +602,21 @@ class MissionRecorderScreenTest {
         onNodeWithTag("show-input-overlay").performScrollTo().assertIsEnabled().performClick()
 
         assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetShowInputOverlay(true)), actions)
+    }
+
+    @Test
+    fun hoistsMouseTrailRecordingToggle() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(captureCursor = false, recordMouseTrail = false),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("record-mouse-trail").performScrollTo().assertIsEnabled().performClick()
+
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetRecordMouseTrail(true)), actions)
     }
 
     @Test
@@ -662,6 +738,36 @@ class MissionRecorderScreenTest {
         onNodeWithTag("open-video-editor").performScrollTo().assertIsEnabled().performClick()
 
         assertEquals(listOf<RecorderUiAction>(RecorderUiAction.OpenEditor), actions)
+    }
+
+    @Test
+    fun exposesVideoInputAndPickerAboveStoryboardButton() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(storyboardInputPath = "recordings/last.mp4"),
+                onAction = actions::add,
+            )
+        }
+
+        val videoInput = onNodeWithTag("storyboard-input-video").performScrollTo().assertIsDisplayed()
+        val videoPicker = onNodeWithTag("choose-storyboard-input-video").performScrollTo().assertIsEnabled()
+        val inputBounds = videoInput.fetchSemanticsNode().boundsInRoot
+        val pickerBounds = videoPicker.fetchSemanticsNode().boundsInRoot
+        assertTrue(pickerBounds.top >= inputBounds.bottom)
+        assertEquals(inputBounds.width, pickerBounds.width, absoluteTolerance = 0.5f)
+        onAllNodesWithText("folder_open", substring = true, useUnmergedTree = true).assertCountEquals(0)
+
+        videoPicker.performClick()
+        onNodeWithTag("open-video-editor").performScrollTo().assertIsEnabled().performClick()
+
+        assertEquals(
+            listOf<RecorderUiAction>(
+                RecorderUiAction.ChooseStoryboardInputFile,
+                RecorderUiAction.OpenEditor,
+            ),
+            actions,
+        )
     }
 
     @Test

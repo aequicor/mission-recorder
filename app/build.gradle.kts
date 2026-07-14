@@ -33,9 +33,16 @@ dependencies {
 
 application {
     mainClass = "io.aequicor.app.AppKt"
+    applicationName = "mission-recorder"
     applicationDefaultJvmArgs = listOf(
         "-Dfile.encoding=UTF-8",
         "-Dstdout.encoding=UTF-8",
         "-Dstderr.encoding=UTF-8",
     )
+}
+
+distributions {
+    named("main") {
+        distributionBaseName = "mission-recorder-cli"
+    }
 }

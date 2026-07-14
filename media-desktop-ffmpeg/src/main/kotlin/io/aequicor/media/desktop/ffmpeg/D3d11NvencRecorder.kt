@@ -103,7 +103,11 @@ internal class D3d11NvencRecorder(
         }
     }
 
-    fun writeVideoFrame(frame: AVFrame, timestampNanoseconds: Long, importantFrame: Boolean = false) {
+    fun writeVideoFrame(
+        frame: AVFrame,
+        timestampNanoseconds: Long,
+        importantFrame: Boolean = false,
+    ) {
         check(!closed) { "Zero-copy recorder is closed." }
         if (frame.width() != width || frame.height() != height || frame.format() != codecContext.pix_fmt()) {
             throw encoderFailed("Native D3D11 video frame format changed during recording.")

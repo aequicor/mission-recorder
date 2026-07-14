@@ -1,6 +1,5 @@
 package io.aequicor.capture.platform
 
-import io.aequicor.capture.core.InputEventFrameMarker
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -37,25 +36,112 @@ class InputOverlayRendererTest {
     }
 
     @Test
-    fun paintsEventMarkerOnlyOnFirstFrameOfNewInput() {
+    fun labelsMovedMouseButtonAsDrag() {
         val renderer = InputOverlayRenderer()
-        val first = ByteArray(160 * 120 * 4) { 0xff.toByte() }
-        val held = first.copyOf()
 
-        val label = renderer.update(listOf("LMB"), timestampNanoseconds = 0)
-        renderer.drawRgba(first, 160, 120, hotspotX = 80, hotspotY = 60, text = requireNotNull(label))
-        renderer.drawPendingEventMarkerRgba(first, 160, 120)
-        renderer.update(listOf("LMB"), timestampNanoseconds = 1)
-        renderer.drawRgba(held, 160, 120, hotspotX = 80, hotspotY = 60, text = requireNotNull(label))
-        renderer.drawPendingEventMarkerRgba(held, 160, 120)
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20),
+        )
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 1, hotspotX = 27, hotspotY = 20),
+        )
+        assertEquals(
+            "ЛКМ + drag",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 2, hotspotX = 28, hotspotY = 20),
+        )
+    }
 
-        val markerOffset = (
-            (InputEventFrameMarker.MARGIN_PIXELS + InputEventFrameMarker.CELL_SIZE_PIXELS / 2) * 160 +
-                InputEventFrameMarker.MARGIN_PIXELS + InputEventFrameMarker.CELL_SIZE_PIXELS / 2
-            ) * 4
-        assertEquals(InputEventFrameMarker.ACCENT_RED, first[markerOffset].toInt() and 0xff)
-        assertEquals(InputEventFrameMarker.ACCENT_GREEN, first[markerOffset + 1].toInt() and 0xff)
-        assertEquals(InputEventFrameMarker.ACCENT_BLUE, first[markerOffset + 2].toInt() and 0xff)
-        assertEquals(0xff, held[markerOffset].toInt() and 0xff)
+    @Test
+    fun keepsModifiersAndMouseButtonInDragLabel() {
+        val renderer = InputOverlayRenderer()
+
+        assertEquals(
+            "Ctrl + ЛКМ",
+            renderer.update(listOf("Ctrl", "LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20),
+        )
+        assertEquals(
+            "Ctrl + ЛКМ + drag",
+            renderer.update(listOf("Ctrl", "LMB"), timestampNanoseconds = 1, hotspotX = 28, hotspotY = 20),
+        )
+    }
+
+    @Test
+    fun labelsSecondNearbyClickAsDouble() {
+        val renderer = InputOverlayRenderer()
+
+        renderer.update(listOf("LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20)
+        renderer.update(emptyList(), timestampNanoseconds = 50_000_000, hotspotX = 20, hotspotY = 20)
+
+        assertEquals(
+            "(double) ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 300_000_000, hotspotX = 22, hotspotY = 21),
+        )
+    }
+
+    @Test
+    fun doesNotLabelLateOrDistantSecondClickAsDouble() {
+        val renderer = InputOverlayRenderer()
+
+        renderer.update(listOf("LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20)
+        renderer.update(emptyList(), timestampNanoseconds = 50_000_000, hotspotX = 20, hotspotY = 20)
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 550_000_001, hotspotX = 20, hotspotY = 20),
+        )
+        renderer.update(emptyList(), timestampNanoseconds = 600_000_000, hotspotX = 20, hotspotY = 20)
+
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 700_000_000, hotspotX = 28, hotspotY = 20),
+        )
+    }
+
+    @Test
+    fun labelsHeldMouseButtonAsLongPress() {
+        val renderer = InputOverlayRenderer()
+
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20),
+        )
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 499_999_999, hotspotX = 20, hotspotY = 20),
+        )
+        assertEquals(
+            "(long) ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 500_000_000, hotspotX = 20, hotspotY = 20),
+        )
+    }
+
+    @Test
+    fun recognizesLongPressOnReleaseAndDoesNotReuseItAsFirstClick() {
+        val renderer = InputOverlayRenderer()
+
+        renderer.update(listOf("LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20)
+        assertEquals(
+            "(long) ЛКМ",
+            renderer.update(emptyList(), timestampNanoseconds = 500_000_000, hotspotX = 20, hotspotY = 20),
+        )
+
+        assertEquals(
+            "ЛКМ",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 600_000_000, hotspotX = 20, hotspotY = 20),
+        )
+    }
+
+    @Test
+    fun dragTakesPrecedenceOverLongPress() {
+        val renderer = InputOverlayRenderer()
+
+        renderer.update(listOf("LMB"), timestampNanoseconds = 0, hotspotX = 20, hotspotY = 20)
+        renderer.update(listOf("LMB"), timestampNanoseconds = 1, hotspotX = 28, hotspotY = 20)
+
+        assertEquals(
+            "ЛКМ + drag",
+            renderer.update(listOf("LMB"), timestampNanoseconds = 500_000_000, hotspotX = 28, hotspotY = 20),
+        )
     }
 }

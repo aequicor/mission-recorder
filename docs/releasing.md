@@ -1,0 +1,53 @@
+# Релизы
+
+Этот документ — источник истины для выпуска Mission Recorder. Версия задаётся один раз в `missionRecorderVersion` внутри `gradle.properties`; native packages, CLI archive и Git tag обязаны использовать то же значение.
+
+## Артефакты
+
+Tag `vMAJOR.MINOR.PATCH` запускает `.github/workflows/release.yml`. Workflow сначала выполняет чистые `check` и `build`, затем собирает:
+
+- Windows x64: MSI и EXE;
+- macOS Intel: DMG с суффиксом `macos-x64`;
+- macOS Apple Silicon: DMG с суффиксом `macos-arm64`;
+- Ubuntu/Debian x64: DEB;
+- переносимый CLI ZIP, которому нужен JDK 21.
+
+После успешной сборки workflow извлекает секцию версии из `CHANGELOG.md`, создаёт `SHA256SUMS.txt` и публикует GitHub Release. Исходные архивы GitHub добавляет автоматически.
+
+## Проверка перед тегом
+
+1. Обновить `missionRecorderVersion` и добавить датированную секцию той же версии в `CHANGELOG.md`.
+2. Проверить, что README описывает фактически поддерживаемые платформы и известные ограничения.
+3. Из чистого checkout выполнить:
+
+   ```powershell
+   .\gradlew.bat clean check build
+   ```
+
+4. Собрать пакет текущей платформы и установить его:
+
+   ```powershell
+   .\gradlew.bat :desktop-app:packageReleaseMsi :desktop-app:packageReleaseExe :app:distZip
+   ```
+
+   На macOS используются `packageReleaseDmg`, на Linux — `packageReleaseDeb`.
+
+5. В установленном приложении вручную проверить запуск, preview, короткую запись с остановкой, открытие MP4 и выход через tray. Проверки устройств и разрешений выполняются на реальном целевом хосте.
+6. Просмотреть staged diff и убедиться, что в нём нет секретов, локальных recordings, settings и временных design-файлов.
+7. После публикации проверить все assets и `SHA256SUMS.txt`, установить хотя бы пакет основной платформы и убедиться, что release workflow завершился успешно.
+
+## Публикация
+
+Release commit сначала попадает в `master`. Затем создаётся annotated tag на этом commit и отправляется отдельно:
+
+```powershell
+git tag -a v0.1.0 -m "Mission Recorder 0.1.0"
+git push origin master
+git push origin v0.1.0
+```
+
+Tag нельзя перемещать или переиспользовать. Если workflow упал, исправление выпускается новым patch-релизом. Публикацию нельзя считать завершённой, пока GitHub Release не содержит все шесть бинарных assets и checksum-файл.
+
+## Подпись пакетов
+
+Пока signing credentials не настроены, workflow выпускает unsigned Windows packages и unsigned/unnotarized macOS DMG. Сертификаты и пароли должны передаваться только через GitHub Actions secrets; добавлять их в Gradle, repository files или logs запрещено.

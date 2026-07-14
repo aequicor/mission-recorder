@@ -36,7 +36,7 @@ data class StoryboardExportSettings(
     val outputPath: Path,
     val layout: StoryboardLayout,
     val interval: Duration = 1.seconds,
-    /** Maximum number of regularly sampled frames; marked input-event frames are always retained. */
+    /** Maximum number of regularly sampled frames; explicit important-frame markers are always retained. */
     val maxFrames: Int = 120,
 )
 

@@ -1,7 +1,5 @@
 package io.aequicor.capture.platform
 
-import io.aequicor.capture.core.PixelFormat
-import io.aequicor.capture.core.paintInputEventFrameMarker
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Font
@@ -10,7 +8,8 @@ import java.awt.image.BufferedImage
 import kotlin.math.max
 
 /**
- * Tracks newly pressed desktop inputs and paints a short-lived label next to the cursor.
+ * Tracks newly pressed desktop inputs, double clicks, long presses, and drags, then paints a
+ * short-lived label next to the cursor.
  *
  * A renderer instance owns one capture session's transient state and is not thread-safe.
  */
@@ -21,22 +20,111 @@ public class InputOverlayRenderer(
     private var visibleText: String? = null
     private var visibleUntilNanoseconds: Long = Long.MIN_VALUE
     private var cachedLabel: RenderedLabel? = null
-    private var eventMarkerPending: Boolean = false
+    private var dragStart: PointerPosition? = null
+    private var dragging: Boolean = false
+    private var mousePresses: Map<String, MousePress> = emptyMap()
+    private var recentClicks: Map<String, CompletedClick> = emptyMap()
 
     init {
         require(visibleDurationNanoseconds > 0) { "Input overlay duration must be positive." }
     }
 
     /** Updates pressed inputs and returns the label that should be visible at [timestampNanoseconds]. */
-    public fun update(pressedInputs: List<String>, timestampNanoseconds: Long): String? {
+    public fun update(
+        pressedInputs: List<String>,
+        timestampNanoseconds: Long,
+        hotspotX: Int? = null,
+        hotspotY: Int? = null,
+    ): String? {
         val currentInputs = pressedInputs.filter(String::isNotBlank).toCollection(linkedSetOf())
-        if (currentInputs.any { input -> input !in previousInputs }) {
-            visibleText = currentInputs.toDisplayText()
-            visibleUntilNanoseconds = timestampNanoseconds + visibleDurationNanoseconds
-            eventMarkerPending = true
+        val pointer = if (hotspotX != null && hotspotY != null) PointerPosition(hotspotX, hotspotY) else null
+        val currentMouseButtons = currentInputs.filterTo(linkedSetOf(), MOUSE_BUTTON_LABELS::contains)
+        val previousMouseButtons = previousInputs.filterTo(linkedSetOf(), MOUSE_BUTTON_LABELS::contains)
+        val newlyPressedInputs = currentInputs - previousInputs
+        val newlyPressedMouseButtons = currentMouseButtons - previousMouseButtons
+        val releasedMouseButtons = previousMouseButtons - currentMouseButtons
+
+        val releasedLongPresses = releasedMouseButtons.filter { button ->
+            val press = mousePresses[button]
+            press != null && !press.dragged && press.gesture != MouseGesture.Long &&
+                press.hasLastedUntil(timestampNanoseconds, LONG_PRESS_DURATION_NANOSECONDS)
+        }
+        if (releasedLongPresses.isNotEmpty()) {
+            val longPresses = mousePresses + releasedLongPresses.associateWith { button ->
+                requireNotNull(mousePresses[button]).copy(gesture = MouseGesture.Long)
+            }
+            mousePresses = longPresses
+            showLabel(previousInputs, longPresses, includeDrag = false, timestampNanoseconds)
+        }
+        releasedMouseButtons.forEach { button ->
+            val press = mousePresses[button]
+            recentClicks = if (press != null && !press.dragged && press.gesture == null) {
+                recentClicks + (button to CompletedClick(timestampNanoseconds, press.position))
+            } else {
+                recentClicks - button
+            }
+            mousePresses = mousePresses - button
+        }
+        newlyPressedMouseButtons.forEach { button ->
+            val recentClick = recentClicks[button]
+            val isDoubleClick = recentClick?.isFollowedBy(timestampNanoseconds, pointer) == true
+            mousePresses = mousePresses +
+                (button to MousePress(
+                    startedAtNanoseconds = timestampNanoseconds,
+                    position = pointer,
+                    gesture = if (isDoubleClick) MouseGesture.Double else null,
+                ))
+            if (recentClick != null) {
+                recentClicks = recentClicks - button
+            }
+        }
+
+        val mouseButtonPressed = currentMouseButtons.isNotEmpty()
+        val mouseButtonWasPressed = previousMouseButtons.isNotEmpty()
+        var dragStarted = false
+        if (!mouseButtonPressed) {
+            dragStart = null
+            dragging = false
+        } else if (!mouseButtonWasPressed) {
+            dragStart = pointer
+            dragging = false
+        } else if (!dragging && pointer != null && dragStart?.isAtLeast(DRAG_START_DISTANCE_PIXELS, pointer) == true) {
+            dragging = true
+            dragStarted = true
+            mousePresses = mousePresses.mapValues { (_, press) -> press.copy(dragged = true, gesture = null) }
+            recentClicks = recentClicks - currentMouseButtons
+        }
+
+        val newLongPresses = if (dragging) {
+            emptyList()
+        } else {
+            currentMouseButtons.filter { button ->
+                val press = mousePresses[button]
+                press != null && press.gesture != MouseGesture.Long &&
+                    press.hasLastedUntil(timestampNanoseconds, LONG_PRESS_DURATION_NANOSECONDS)
+            }
+        }
+        if (newLongPresses.isNotEmpty()) {
+            mousePresses = mousePresses + newLongPresses.associateWith { button ->
+                requireNotNull(mousePresses[button]).copy(gesture = MouseGesture.Long)
+            }
+            recentClicks = recentClicks - newLongPresses.toSet()
+        }
+        if (newlyPressedInputs.isNotEmpty() || dragStarted || newLongPresses.isNotEmpty()) {
+            showLabel(currentInputs, mousePresses, includeDrag = dragging, timestampNanoseconds)
         }
         previousInputs = currentInputs
         return visibleText?.takeIf { timestampNanoseconds <= visibleUntilNanoseconds }
+    }
+
+    private fun showLabel(
+        inputs: Set<String>,
+        presses: Map<String, MousePress>,
+        includeDrag: Boolean,
+        timestampNanoseconds: Long,
+    ) {
+        visibleText = inputs.toDisplayText(presses, includeDrag)
+        visibleUntilNanoseconds = timestampNanoseconds + visibleDurationNanoseconds
     }
 
     /** Paints [text] over an RGBA8888 frame, positioning it near the cursor hotspot. */
@@ -59,16 +147,6 @@ public class InputOverlayRenderer(
         text: String,
     ): Unit = draw(pixels, frameWidth, frameHeight, hotspotX, hotspotY, text, blueFirst = true)
 
-    /** Paints and consumes a pending input-event marker over an RGBA8888 frame. */
-    public fun drawPendingEventMarkerRgba(pixels: ByteArray, frameWidth: Int, frameHeight: Int) {
-        drawPendingEventMarker(pixels, frameWidth, frameHeight, blueFirst = false)
-    }
-
-    /** Paints and consumes a pending input-event marker over a BGRA8888 frame. */
-    public fun drawPendingEventMarkerBgra(pixels: ByteArray, frameWidth: Int, frameHeight: Int) {
-        drawPendingEventMarker(pixels, frameWidth, frameHeight, blueFirst = true)
-    }
-
     private fun draw(
         pixels: ByteArray,
         frameWidth: Int,
@@ -89,24 +167,6 @@ public class InputOverlayRenderer(
         val x = labelX(hotspotX, label.width, frameWidth)
         val y = labelY(hotspotY, label.height, frameHeight)
         blendLabel(pixels, frameWidth, frameHeight, x, y, label, blueFirst)
-    }
-
-    private fun drawPendingEventMarker(
-        destination: ByteArray,
-        frameWidth: Int,
-        frameHeight: Int,
-        blueFirst: Boolean,
-    ) {
-        val painted = eventMarkerPending && paintInputEventFrameMarker(
-            pixels = destination,
-            frameWidth = frameWidth,
-            frameHeight = frameHeight,
-            strideBytes = frameWidth * RGBA_CHANNEL_COUNT,
-            pixelFormat = if (blueFirst) PixelFormat.Bgra8888 else PixelFormat.Rgba8888,
-        )
-        if (painted) {
-            eventMarkerPending = false
-        }
     }
 
     private fun render(text: String): RenderedLabel {
@@ -174,11 +234,28 @@ public class InputOverlayRenderer(
         }
     }
 
-    private fun Set<String>.toDisplayText(): String {
-        val displayed = take(MAX_DISPLAYED_INPUTS)
-        return buildString {
-            append(displayed.joinToString(" + "))
-            if (size > displayed.size) append(" + …")
+    private fun Set<String>.toDisplayText(
+        presses: Map<String, MousePress>,
+        includeDrag: Boolean,
+    ): String = buildString {
+        append(joinToString(" + ") { input -> displayName(input, presses[input]?.gesture) })
+        if (includeDrag) {
+            append(" + ")
+            append(DRAG_LABEL)
+        }
+    }
+
+    private fun displayName(input: String, gesture: MouseGesture?): String {
+        val name = when (input) {
+            "LMB" -> "ЛКМ"
+            "RMB" -> "ПКМ"
+            "MMB" -> "СКМ"
+            else -> input
+        }
+        return when (gesture) {
+            MouseGesture.Double -> "($DOUBLE_CLICK_LABEL) $name"
+            MouseGesture.Long -> "($LONG_PRESS_LABEL) $name"
+            null -> name
         }
     }
 
@@ -194,17 +271,61 @@ public class InputOverlayRenderer(
         val argb: IntArray,
     )
 
+    private data class PointerPosition(
+        val x: Int,
+        val y: Int,
+    ) {
+        fun isAtLeast(distance: Int, other: PointerPosition): Boolean {
+            val deltaX = x.toLong() - other.x
+            val deltaY = y.toLong() - other.y
+            return deltaX * deltaX + deltaY * deltaY >= distance.toLong() * distance
+        }
+    }
+
+    private data class MousePress(
+        val startedAtNanoseconds: Long,
+        val position: PointerPosition?,
+        val dragged: Boolean = false,
+        val gesture: MouseGesture? = null,
+    ) {
+        fun hasLastedUntil(timestampNanoseconds: Long, durationNanoseconds: Long): Boolean =
+            timestampNanoseconds >= startedAtNanoseconds &&
+                timestampNanoseconds - startedAtNanoseconds >= durationNanoseconds
+    }
+
+    private data class CompletedClick(
+        val releasedAtNanoseconds: Long,
+        val position: PointerPosition?,
+    ) {
+        fun isFollowedBy(timestampNanoseconds: Long, other: PointerPosition?): Boolean =
+            timestampNanoseconds >= releasedAtNanoseconds &&
+                timestampNanoseconds - releasedAtNanoseconds <= DOUBLE_CLICK_INTERVAL_NANOSECONDS &&
+                (position == null || other == null || !position.isAtLeast(DOUBLE_CLICK_DISTANCE_PIXELS, other))
+    }
+
+    private enum class MouseGesture {
+        Double,
+        Long,
+    }
+
     public companion object {
         /** Default time a released input remains visible in the recorded frame. */
         public const val DEFAULT_VISIBLE_DURATION_NANOSECONDS: Long = 900_000_000L
 
         private const val RGBA_CHANNEL_COUNT = 4
-        private const val MAX_DISPLAYED_INPUTS = 4
+        private const val DRAG_START_DISTANCE_PIXELS = 8
+        private const val DOUBLE_CLICK_DISTANCE_PIXELS = DRAG_START_DISTANCE_PIXELS
+        private const val DOUBLE_CLICK_INTERVAL_NANOSECONDS = 500_000_000L
+        private const val LONG_PRESS_DURATION_NANOSECONDS = 500_000_000L
         private const val CURSOR_GAP = 22
         private const val HORIZONTAL_PADDING = 9
         private const val VERTICAL_PADDING = 5
         private const val CORNER_RADIUS = 12
         private val LABEL_FONT = Font("SansSerif", Font.BOLD, 16)
+        private val MOUSE_BUTTON_LABELS = setOf("LMB", "RMB", "MMB", "Mouse 4", "Mouse 5")
+        private const val DOUBLE_CLICK_LABEL = "double"
+        private const val LONG_PRESS_LABEL = "long"
+        private const val DRAG_LABEL = "drag"
     }
 }
 

@@ -8,6 +8,7 @@ import io.aequicor.capture.core.RecordingException
 import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
+import io.aequicor.capture.core.VideoFramePoint
 import io.aequicor.capture.platform.InputOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
@@ -44,16 +45,17 @@ internal class MacVideoCaptureAdapter(
             }
             captured.validate()
             var pixels = captured.rgbaPixels
-            val cursor = if (settings.captureCursor || settings.showInputOverlay) {
-                captured.cursorPixelPosition(windowSystem.cursorPosition())
-            } else {
-                null
-            }
+            val cursor = captured.cursorPixelPosition(windowSystem.cursorPosition())
             if (settings.captureCursor && cursor != null) {
                 MacRgbaCursorPainter.draw(pixels, captured.pixelWidth, captured.pixelHeight, cursor.x, cursor.y)
             }
             if (settings.showInputOverlay) {
-                val label = inputOverlay.update(windowSystem.pressedInputs(), nanoTime())
+                val label = inputOverlay.update(
+                    pressedInputs = windowSystem.pressedInputs(),
+                    timestampNanoseconds = nanoTime(),
+                    hotspotX = cursor?.x,
+                    hotspotY = cursor?.y,
+                )
                 if (label != null) {
                     inputOverlay.drawRgba(
                         pixels = pixels,
@@ -71,9 +73,6 @@ internal class MacVideoCaptureAdapter(
             } else if (captured.pixelWidth != outputWidth || captured.pixelHeight != outputHeight) {
                 pixels = pixels.fitInto(captured.pixelWidth, captured.pixelHeight, outputWidth, outputHeight)
             }
-            if (settings.showInputOverlay) {
-                inputOverlay.drawPendingEventMarkerRgba(pixels, outputWidth, outputHeight)
-            }
             emit(
                 VideoFrame(
                     timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
@@ -84,6 +83,12 @@ internal class MacVideoCaptureAdapter(
                     sourceId = settings.captureSource.id,
                     scaleFactor = captured.pixelWidth.toDouble() / captured.logicalBounds.width,
                     pixelData = pixels,
+                    cursorPosition = cursor?.let { position ->
+                        VideoFramePoint(
+                            x = position.x * outputWidth / captured.pixelWidth,
+                            y = position.y * outputHeight / captured.pixelHeight,
+                        )
+                    },
                 ),
             )
             nextFrameDeadline += intervalNanoseconds

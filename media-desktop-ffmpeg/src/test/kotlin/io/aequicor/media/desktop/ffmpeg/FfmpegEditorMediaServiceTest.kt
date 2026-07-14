@@ -8,9 +8,11 @@ import io.aequicor.editor.EditorProject
 import io.aequicor.editor.EditorTrack
 import io.aequicor.editor.EditorTrackId
 import io.aequicor.editor.EditorTrackKind
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameId
 import io.aequicor.editor.ImportantFrameLayout
 import io.aequicor.editor.ImportantFrameMarker
+import io.aequicor.editor.JpegCompression
 import io.aequicor.editor.MediaAsset
 import io.aequicor.editor.MediaAssetId
 import io.aequicor.editor.MediaAssetKind
@@ -68,6 +70,63 @@ class FfmpegEditorMediaServiceTest {
         )
         assertEquals(2, result.renderedFrames)
         assertEquals(2, Files.list(output).use { it.count() })
+    }
+
+    @Test
+    fun exportsSeparateJpegFramesAtSelectedResolution() = runTest {
+        val directory = Files.createTempDirectory("mission-editor-jpeg-frames")
+        val image = directory.resolve("source.png").also { writeColor(it.toFile(), Color.GREEN) }
+        val project = layeredProject(image.toString(), image.toString())
+        val output = directory.resolve("jpeg-frames")
+        val service = FfmpegEditorMediaService(StandardTestDispatcher(testScheduler))
+
+        val result = service.export(
+            EditorExportRequest.Frames(
+                project = project,
+                outputPath = output.toString(),
+                layout = ImportantFrameLayout.SeparatePngFiles,
+                outputFormat = FrameImageFormat.Jpeg,
+                resolutionPercent = 50,
+                timestampsMicros = listOf(0L),
+            ),
+        )
+
+        val exported = output.resolve("frame-000001.jpg")
+        assertEquals(listOf(exported.toString()), result.outputPaths)
+        assertEquals(
+            listOf(EditorExportedFrame(timelineMicros = 0L, outputPath = exported.toString())),
+            result.exportedFrames,
+        )
+        assertEquals(32, assertNotNull(ImageIO.read(exported.toFile())).width)
+    }
+
+    @Test
+    fun writesDecodableJpegForEveryCompressionLevel() = runTest {
+        val directory = Files.createTempDirectory("mission-editor-jpeg-compression")
+        val image = directory.resolve("source.png").also { writeColor(it.toFile(), Color.GREEN) }
+        val project = layeredProject(image.toString(), image.toString())
+        val service = FfmpegEditorMediaService(StandardTestDispatcher(testScheduler))
+        val outputSizes = mutableMapOf<JpegCompression, Long>()
+
+        JpegCompression.entries.forEach { compression ->
+            val output = directory.resolve(compression.name.lowercase())
+            service.export(
+                EditorExportRequest.Frames(
+                    project = project,
+                    outputPath = output.toString(),
+                    layout = ImportantFrameLayout.SeparatePngFiles,
+                    outputFormat = FrameImageFormat.Jpeg,
+                    jpegCompression = compression,
+                    timestampsMicros = listOf(0L),
+                ),
+            )
+            val exported = output.resolve("frame-000001.jpg")
+            assertNotNull(ImageIO.read(exported.toFile()))
+            outputSizes[compression] = Files.size(exported)
+        }
+        assertTrue(
+            requireNotNull(outputSizes[JpegCompression.High]) < requireNotNull(outputSizes[JpegCompression.None]),
+        )
     }
 
     @Test

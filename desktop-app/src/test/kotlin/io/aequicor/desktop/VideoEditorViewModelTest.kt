@@ -1,11 +1,15 @@
 package io.aequicor.desktop
 
+import io.aequicor.compose.ui.FrameExportCandidate
 import io.aequicor.compose.ui.VideoEditorAction
 import io.aequicor.editor.EditorExportRequest
 import io.aequicor.editor.EditorProject
+import io.aequicor.editor.FrameImageFormat
 import io.aequicor.editor.ImportantFrameLayout
+import io.aequicor.editor.JpegCompression
 import io.aequicor.media.desktop.ffmpeg.EditorExportProgress
 import io.aequicor.media.desktop.ffmpeg.EditorExportResult
+import io.aequicor.media.desktop.ffmpeg.EditorExportedFrame
 import io.aequicor.media.desktop.ffmpeg.EditorMediaProbe
 import io.aequicor.media.desktop.ffmpeg.EditorMediaService
 import io.aequicor.media.desktop.ffmpeg.EditorPreviewAudio
@@ -17,6 +21,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.StandardTestDispatcher
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -42,8 +47,9 @@ class VideoEditorViewModelTest {
             listOf(2_000_000L, 7_000_000L),
             viewModel.state.value.project.importantFrames.map { it.timelineMicros },
         )
-        val excludedMarker = viewModel.state.value.project.importantFrames.first()
-        viewModel.onAction(VideoEditorAction.SetImportantFrameIncluded(excludedMarker.id, included = false))
+        assertEquals(0, viewModel.state.value.includedFrameExportCount)
+        val includedMarker = viewModel.state.value.project.importantFrames.first()
+        viewModel.onAction(VideoEditorAction.SetImportantFrameIncluded(includedMarker.id, included = true))
         advanceTimeBy(500)
         runCurrent()
 
@@ -55,7 +61,8 @@ class VideoEditorViewModelTest {
         runCurrent()
 
         assertEquals(2, reopened.state.value.project.importantFrames.size)
-        assertTrue(!reopened.state.value.project.importantFrames.first().included)
+        assertTrue(reopened.state.value.project.importantFrames.first().included)
+        assertTrue(!reopened.state.value.project.importantFrames.last().included)
     }
 
     @Test
@@ -82,6 +89,27 @@ class VideoEditorViewModelTest {
 
         assertEquals(1, store.saved.size)
         assertEquals(2, store.saved.single().tracks.single().clips.size)
+    }
+
+    @Test
+    fun sortsRecentMediaPathsByVideoCreationTimeInsteadOfLastOpenTime() = runTest {
+        val persistedPaths = mutableListOf<String>()
+        val newer = Path.of("newer.mp4").toAbsolutePath().normalize().toString()
+        val older = Path.of("older.mp4").toAbsolutePath().normalize().toString()
+        val creationTimes = mapOf(newer to 2_000L, older to 1_000L)
+        val viewModel = viewModel(
+            initialRecentMediaPaths = listOf(older, newer),
+            onRecentMediaPath = persistedPaths::add,
+            mediaCreationTimeMillis = creationTimes::get,
+        )
+
+        assertEquals(listOf(newer, older), viewModel.state.value.recentMediaPaths)
+
+        viewModel.onAction(VideoEditorAction.OpenRecentMedia(older))
+        runCurrent()
+
+        assertEquals(listOf(newer, older), viewModel.state.value.recentMediaPaths)
+        assertEquals(listOf(older), persistedPaths)
     }
 
     @Test
@@ -148,21 +176,53 @@ class VideoEditorViewModelTest {
             listOf(0L, 2_000_000L, 4_000_000L),
             viewModel.state.value.frameExportCandidates.map { it.timelineMicros },
         )
-        assertEquals(3, viewModel.state.value.includedFrameExportCount)
+        assertEquals(0, viewModel.state.value.includedFrameExportCount)
         assertTrue(media.exportRequests.isEmpty())
-        val firstDefault = viewModel.state.value.frameExportCandidates.first()
-        viewModel.onAction(
-            VideoEditorAction.SetFrameExportCandidateIncluded(firstDefault.id, included = false),
-        )
+        viewModel.state.value.frameExportCandidates
+            .filter { it.timelineMicros > 0L }
+            .forEach { candidate ->
+                viewModel.onAction(
+                    VideoEditorAction.SetFrameExportCandidateIncluded(candidate.id, included = true),
+                )
+            }
 
+        viewModel.onAction(VideoEditorAction.SetFrameOutputFormat(FrameImageFormat.Jpeg))
+        viewModel.onAction(VideoEditorAction.SetFrameResolutionPercent(50))
+        viewModel.onAction(VideoEditorAction.SetFrameJpegCompression(JpegCompression.High))
         viewModel.onAction(VideoEditorAction.ExportStoryboard(ImportantFrameLayout.ContactSheet))
         runCurrent()
         advanceUntilIdle()
 
         val request = assertIs<EditorExportRequest.Frames>(media.exportRequests.single())
         assertEquals(ImportantFrameLayout.ContactSheet, request.layout)
+        assertEquals(FrameImageFormat.Jpeg, request.outputFormat)
+        assertEquals(50, request.resolutionPercent)
+        assertEquals(JpegCompression.High, request.jpegCompression)
         assertEquals(listOf(2_000_000L, 4_000_000L), request.timestampsMicros)
         assertNotNull(viewModel.state.value.lastExportPath)
+    }
+
+    @Test
+    fun bulkSelectionChangesOnlyFramesVisibleThroughTheImportantFilter() = runTest {
+        val media = FakeEditorMediaService(storyboardFrameTimestamps = listOf(0L, 4_000_000L))
+        val viewModel = viewModel(media = media)
+        viewModel.open("recording.mp4")
+        runCurrent()
+        viewModel.onAction(VideoEditorAction.Seek(2_000_000L))
+        runCurrent()
+        viewModel.onAction(VideoEditorAction.MarkImportantFrame)
+        viewModel.onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(true))
+        viewModel.onAction(VideoEditorAction.SetShowOnlyImportantFrames(true))
+
+        viewModel.onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(false))
+
+        val excludedState = viewModel.state.value
+        assertTrue(excludedState.frameExportCandidates.filter(FrameExportCandidate::important).none { it.included })
+        assertTrue(excludedState.frameExportCandidates.filterNot(FrameExportCandidate::important).all { it.included })
+
+        viewModel.onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(true))
+
+        assertTrue(viewModel.state.value.frameExportCandidates.all { it.included })
     }
 
     @Test
@@ -190,23 +250,98 @@ class VideoEditorViewModelTest {
     }
 
     @Test
-    fun copiesCurrentStoryboardSelectionToClipboardWithoutLeavingTemporaryFile() = runTest {
+    fun removesAnImportantFrameFromTheProjectAndStoryboard() = runTest {
+        val viewModel = viewModel()
+        viewModel.open("recording.mp4")
+        runCurrent()
+        viewModel.onAction(VideoEditorAction.Seek(3_000_000))
+        runCurrent()
+        viewModel.onAction(VideoEditorAction.MarkImportantFrame)
+        val markerId = viewModel.state.value.project.importantFrames.single().id
+
+        viewModel.onAction(VideoEditorAction.RemoveImportantFrame(markerId))
+
+        assertTrue(viewModel.state.value.project.importantFrames.isEmpty())
+        assertTrue(viewModel.state.value.frameExportCandidates.none(FrameExportCandidate::important))
+        assertEquals(null, viewModel.state.value.selectedImportantFrameId)
+    }
+
+    @Test
+    fun copiesCurrentStoryboardSelectionAsSeparateFilesWithoutLeavingTemporaryFile() = runTest {
         val media = FakeEditorMediaService(storyboardFrameTimestamps = listOf(0L, 4_000_000L))
         val clipboard = FakeImageClipboard()
         val viewModel = viewModel(media = media, clipboard = clipboard)
         viewModel.open("recording.mp4")
         runCurrent()
+        viewModel.onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(true))
         val excluded = viewModel.state.value.frameExportCandidates.first()
         viewModel.onAction(VideoEditorAction.SetFrameExportCandidateIncluded(excluded.id, included = false))
+        viewModel.onAction(VideoEditorAction.SetFrameOutputFormat(FrameImageFormat.Jpeg))
+        viewModel.onAction(VideoEditorAction.SetFrameResolutionPercent(50))
 
-        viewModel.onAction(VideoEditorAction.CopyStoryboardToClipboard)
+        viewModel.onAction(
+            VideoEditorAction.CopyStoryboardToClipboard(ImportantFrameLayout.SeparatePngFiles),
+        )
+        runCurrent()
+
+        val request = assertIs<EditorExportRequest.Frames>(media.exportRequests.single())
+        assertEquals(ImportantFrameLayout.SeparatePngFiles, request.layout)
+        assertEquals(FrameImageFormat.Jpeg, request.outputFormat)
+        assertEquals(50, request.resolutionPercent)
+        assertEquals(listOf(4_000_000L), request.timestampsMicros)
+        val copiedPaths = clipboard.copiedPathBatches.single()
+        assertEquals(1, copiedPaths.size)
+        assertTrue(copiedPaths.single().endsWith("frame-000001.jpg"))
+        assertTrue(!Files.exists(Path.of(request.outputPath).parent))
+        assertEquals(null, viewModel.state.value.lastExportPath)
+    }
+
+    @Test
+    fun copiesSeparateFramesToClipboardInTimelineOrder() = runTest {
+        val media = FakeEditorMediaService(
+            storyboardFrameTimestamps = listOf(4_000_000L, 0L, 2_000_000L),
+            reverseFrameOutputPaths = true,
+        )
+        val clipboard = FakeImageClipboard()
+        val viewModel = viewModel(media = media, clipboard = clipboard)
+        viewModel.open("recording.mp4")
+        runCurrent()
+        viewModel.onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(true))
+
+        viewModel.onAction(
+            VideoEditorAction.CopyStoryboardToClipboard(ImportantFrameLayout.SeparatePngFiles),
+        )
+        runCurrent()
+
+        val request = assertIs<EditorExportRequest.Frames>(media.exportRequests.single())
+        assertEquals(listOf(0L, 2_000_000L, 4_000_000L), request.timestampsMicros)
+        assertEquals(
+            listOf("frame-000001.png", "frame-000002.png", "frame-000003.png"),
+            clipboard.copiedPathBatches.single().map { path -> Path.of(path).fileName.toString() },
+        )
+    }
+
+    @Test
+    fun copiesCurrentStoryboardSelectionAsOneContactSheet() = runTest {
+        val media = FakeEditorMediaService(storyboardFrameTimestamps = listOf(0L, 4_000_000L))
+        val clipboard = FakeImageClipboard()
+        val viewModel = viewModel(media = media, clipboard = clipboard)
+        viewModel.open("recording.mp4")
+        runCurrent()
+        viewModel.onAction(VideoEditorAction.SetAllFrameExportCandidatesIncluded(true))
+
+        viewModel.onAction(
+            VideoEditorAction.CopyStoryboardToClipboard(ImportantFrameLayout.ContactSheet),
+        )
         runCurrent()
 
         val request = assertIs<EditorExportRequest.Frames>(media.exportRequests.single())
         assertEquals(ImportantFrameLayout.ContactSheet, request.layout)
-        assertEquals(listOf(4_000_000L), request.timestampsMicros)
-        assertEquals(request.outputPath, clipboard.copiedPaths.single())
-        assertTrue(!Files.exists(Path.of(request.outputPath)))
+        assertEquals(listOf(0L, 4_000_000L), request.timestampsMicros)
+        val copiedPaths = clipboard.copiedPathBatches.single()
+        assertEquals(1, copiedPaths.size)
+        assertTrue(copiedPaths.single().endsWith("contact-sheet.png"))
+        assertTrue(!Files.exists(Path.of(request.outputPath).parent))
         assertEquals(null, viewModel.state.value.lastExportPath)
     }
 
@@ -214,6 +349,9 @@ class VideoEditorViewModelTest {
         media: FakeEditorMediaService = FakeEditorMediaService(),
         store: FakeEditorProjectStore = FakeEditorProjectStore(),
         clipboard: DesktopImageClipboard = FakeImageClipboard(),
+        initialRecentMediaPaths: List<String> = emptyList(),
+        onRecentMediaPath: (String) -> Unit = {},
+        mediaCreationTimeMillis: (String) -> Long? = { null },
     ): VideoEditorViewModel = VideoEditorViewModel(
         scope = backgroundScope,
         mediaService = media,
@@ -221,6 +359,10 @@ class VideoEditorViewModelTest {
         fileSelector = FakeEditorFileSelector(),
         audioPlayer = FakeEditorAudioPlayer(),
         imageClipboard = clipboard,
+        ioDispatcher = StandardTestDispatcher(testScheduler),
+        initialRecentMediaPaths = initialRecentMediaPaths,
+        onRecentMediaPath = onRecentMediaPath,
+        mediaCreationTimeMillis = mediaCreationTimeMillis,
         idFactory = generateSequence(1) { it + 1 }.iterator().let { ids -> { ids.next().toString() } },
         nanoTime = { testScheduler.currentTime * 1_000_000L },
     )
@@ -230,6 +372,7 @@ private class FakeEditorMediaService(
     private val recordedImportantFrameTimestamps: List<Long> = emptyList(),
     private val storyboardFrameTimestamps: List<Long> = listOf(0L, 5_000_000L),
     private val previewRenderDelayMillis: Long = 0L,
+    private val reverseFrameOutputPaths: Boolean = false,
 ) : EditorMediaService {
     val exportRequests = mutableListOf<EditorExportRequest>()
     val previewRequests = mutableListOf<PreviewRequest>()
@@ -297,7 +440,35 @@ private class FakeEditorMediaService(
     ): EditorExportResult {
         exportRequests += request
         onProgress(EditorExportProgress(1, 1))
-        return EditorExportResult(request.outputPath, 1)
+        val exportedFrames = if (
+            request is EditorExportRequest.Frames && request.layout == ImportantFrameLayout.SeparatePngFiles
+        ) {
+            val extension = when (request.outputFormat) {
+                FrameImageFormat.Png -> "png"
+                FrameImageFormat.Jpeg -> "jpg"
+            }
+            request.timestampsMicros.distinct().sorted().mapIndexed { index, timestamp ->
+                EditorExportedFrame(
+                    timelineMicros = timestamp,
+                    outputPath = Path.of(request.outputPath)
+                        .resolve("frame-${(index + 1).toString().padStart(6, '0')}.$extension")
+                        .toString(),
+                )
+            }
+        } else {
+            emptyList()
+        }.let { frames -> if (reverseFrameOutputPaths) frames.reversed() else frames }
+        val outputPaths = if (exportedFrames.isEmpty()) {
+            listOf(request.outputPath)
+        } else {
+            exportedFrames.map(EditorExportedFrame::outputPath)
+        }
+        return EditorExportResult(
+            outputPath = request.outputPath,
+            renderedFrames = if (exportedFrames.isEmpty()) 1 else exportedFrames.size,
+            outputPaths = outputPaths,
+            exportedFrames = exportedFrames,
+        )
     }
 }
 
@@ -324,11 +495,22 @@ private class FakeEditorProjectStore(
 }
 
 private class FakeEditorFileSelector : DesktopEditorFileSelector {
+    override suspend fun chooseVideoFile(initialPath: String?): String? = null
     override suspend fun chooseMediaFiles(): List<String> = emptyList()
     override suspend fun chooseReplacementFile(currentPath: String): String? = null
     override suspend fun chooseVideoOutput(primaryMediaPath: String): String = "edited.mp4"
-    override suspend fun chooseFrameOutput(primaryMediaPath: String, layout: ImportantFrameLayout): String =
-        if (layout == ImportantFrameLayout.ContactSheet) "frames.png" else "frames"
+    override suspend fun chooseFrameOutput(
+        primaryMediaPath: String,
+        layout: ImportantFrameLayout,
+        outputFormat: FrameImageFormat,
+    ): String = if (layout == ImportantFrameLayout.ContactSheet) {
+        when (outputFormat) {
+            FrameImageFormat.Png -> "frames.png"
+            FrameImageFormat.Jpeg -> "frames.jpg"
+        }
+    } else {
+        "frames"
+    }
 }
 
 private class FakeEditorAudioPlayer : DesktopEditorAudioPlayer {
@@ -337,9 +519,9 @@ private class FakeEditorAudioPlayer : DesktopEditorAudioPlayer {
 }
 
 private class FakeImageClipboard : DesktopImageClipboard {
-    val copiedPaths = mutableListOf<String>()
+    val copiedPathBatches = mutableListOf<List<String>>()
 
-    override suspend fun copyPng(path: String) {
-        copiedPaths += path
+    override suspend fun copyImages(paths: List<String>) {
+        copiedPathBatches += paths
     }
 }

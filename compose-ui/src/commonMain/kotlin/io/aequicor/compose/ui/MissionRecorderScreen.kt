@@ -5,6 +5,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.layout.Arrangement
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -58,7 +60,6 @@ import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.Typography
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
@@ -78,9 +79,9 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -103,8 +104,8 @@ import io.aequicor.compose.resources.show_capture_border
 import io.aequicor.compose.resources.show_application_in_recording
 import io.aequicor.compose.resources.show_input_overlay
 import io.aequicor.compose.resources.choose_output_file
+import io.aequicor.compose.resources.choose_video_file
 import io.aequicor.compose.resources.close
-import io.aequicor.compose.resources.content_cut
 import io.aequicor.compose.resources.create_storyboard
 import io.aequicor.compose.resources.creating_storyboard
 import io.aequicor.compose.resources.dismiss
@@ -119,7 +120,6 @@ import io.aequicor.compose.resources.file_name_pattern
 import io.aequicor.compose.resources.file_name_pattern_hint
 import io.aequicor.compose.resources.configure_hotkeys
 import io.aequicor.compose.resources.keyboard
-import io.aequicor.compose.resources.material_symbols_rounded
 import io.aequicor.compose.resources.mark_important_frame
 import io.aequicor.compose.resources.mission_recorder
 import io.aequicor.compose.resources.megabits_per_second
@@ -133,7 +133,6 @@ import io.aequicor.compose.resources.output
 import io.aequicor.compose.resources.output_directory
 import io.aequicor.compose.resources.output_naming
 import io.aequicor.compose.resources.open_recordings_folder
-import io.aequicor.compose.resources.open_in_full
 import io.aequicor.compose.resources.open_editor
 import io.aequicor.compose.resources.output_path
 import io.aequicor.compose.resources.output_device
@@ -141,6 +140,7 @@ import io.aequicor.compose.resources.overwrite_output
 import io.aequicor.compose.resources.pause
 import io.aequicor.compose.resources.cancel
 import io.aequicor.compose.resources.record
+import io.aequicor.compose.resources.record_mouse_trail
 import io.aequicor.compose.resources.recording_workspace
 import io.aequicor.compose.resources.refresh_sources
 import io.aequicor.compose.resources.replay_buffer
@@ -161,6 +161,7 @@ import io.aequicor.compose.resources.preview_preparing
 import io.aequicor.compose.resources.preview_image_description
 import io.aequicor.compose.resources.screenshot_saved_to
 import io.aequicor.compose.resources.select_area
+import io.aequicor.compose.resources.select_region_screenshot
 import io.aequicor.compose.resources.selecting_area
 import io.aequicor.compose.resources.solo_microphone
 import io.aequicor.compose.resources.solo_system_audio
@@ -185,6 +186,7 @@ import io.aequicor.compose.resources.storyboard_separate_png
 import io.aequicor.compose.resources.system_audio
 import io.aequicor.compose.resources.system_audio_gain
 import io.aequicor.compose.resources.take_screenshot
+import io.aequicor.compose.resources.take_screen_screenshot
 import io.aequicor.compose.resources.tray_open
 import io.aequicor.compose.resources.unavailable
 import io.aequicor.compose.resources.unmute_microphone
@@ -194,7 +196,7 @@ import io.aequicor.compose.resources.unsolo_system_audio
 import io.aequicor.compose.resources.video
 import io.aequicor.compose.resources.video_bitrate
 import io.aequicor.compose.resources.video_frames
-import org.jetbrains.compose.resources.Font
+import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
@@ -207,13 +209,15 @@ private val PreviewBackground = Color(0xFF171A1D)
 private val Graphite = Color(0xFF20272D)
 private val MutedGraphite = Color(0xFF59646D)
 private val Hairline = Color(0xFFD8DDE2)
-private val PipBackground = Color(0xFF0E1419)
-private val PipSurface = Color(0xFF171F26)
-private val PipSurfaceVariant = Color(0xFF222D35)
-private val PipOutline = Color(0xFF3A4853)
-private val PipPrimary = Color(0xFF78B5E8)
-private val PipOnSurface = Color(0xFFF2F6F8)
-private val PipOnSurfaceVariant = Color(0xFFB8C4CC)
+private val PipBackground = Color(0xFFE7F1F8)
+private val PipSurface = Color.White
+private val PipSurfaceVariant = Color(0xFFF2F6F9)
+private val PipWindowActions = Color(0xFFEDF9E4)
+private val PipOutline = Color(0xFFD5E0E8)
+private val PipPrimary = LapisLazuli
+private val PipOnSurface = Graphite
+private val PipOnSurfaceVariant = MutedGraphite
+private val PipCaution = Color(0xFFB26A00)
 
 /** Shortcut labels displayed by recording controls without coupling the UI to a platform hotkey API. */
 data class RecorderShortcutLabels(
@@ -321,9 +325,9 @@ fun MissionRecorderTheme(content: @Composable () -> Unit) {
 @Composable
 private fun MissionRecorderPipTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = darkColorScheme(
+        colorScheme = lightColorScheme(
             primary = PipPrimary,
-            onPrimary = PipBackground,
+            onPrimary = PipSurface,
             background = PipBackground,
             onBackground = PipOnSurface,
             surface = PipSurface,
@@ -433,7 +437,6 @@ fun MiniRecorderController(
 ) = MiniRecorderController(
     state = state,
     onAction = onAction,
-    previewImage = { previewImage },
     shortcutLabels = shortcutLabels,
     modifier = modifier,
     onExpand = onExpand,
@@ -442,7 +445,7 @@ fun MiniRecorderController(
 )
 
 /**
- * Renders the compact recorder controller while isolating live preview invalidations from its controls.
+ * Renders the compact recorder controller.
  *
  * [onOpenEditor] requests editing the active recording after it is finalized, or the latest completed recording.
  */
@@ -459,7 +462,6 @@ fun MiniRecorderController(
 ) = MiniRecorderController(
     state = state,
     onAction = onAction,
-    previewImage = { previewImage.value },
     shortcutLabels = shortcutLabels,
     modifier = modifier,
     onExpand = onExpand,
@@ -471,7 +473,6 @@ fun MiniRecorderController(
 private fun MiniRecorderController(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
-    previewImage: () -> ImageBitmap?,
     shortcutLabels: RecorderShortcutLabels,
     modifier: Modifier,
     onExpand: () -> Unit,
@@ -479,92 +480,35 @@ private fun MiniRecorderController(
     onOpenEditor: () -> Unit,
 ) {
     MissionRecorderPipTheme {
-        Surface(
+        Box(
             modifier = modifier.fillMaxSize(),
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.background,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
         ) {
-            Column(Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background),
-                ) {
-                    MiniPreview(state = state, previewImage = previewImage)
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(
+                    topStart = 0.dp,
+                    topEnd = 0.dp,
+                    bottomEnd = 25.dp,
+                    bottomStart = 25.dp,
+                ),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            ) {
+                Column(Modifier.fillMaxSize()) {
                     MiniHeader(
                         state = state,
                         onExpand = onExpand,
                         onHide = onHide,
-                        modifier = Modifier.align(Alignment.TopCenter),
                     )
-                    MiniElapsedTime(
-                        elapsedMilliseconds = if (state.isReplayActive) {
-                            state.replayRetainedMilliseconds
-                        } else {
-                            state.elapsedMilliseconds
-                        },
-                        modifier = Modifier.align(Alignment.BottomStart),
-                    )
-                    ImportantFrameCaptureEffect(
-                        trigger = state.importantFrameCaptureSequence,
-                        compact = true,
-                        modifier = Modifier.testTag("mini-important-frame-capture-effect"),
+                    MiniTransportControls(
+                        state = state,
+                        onAction = onAction,
+                        shortcutLabels = shortcutLabels,
+                        modifier = Modifier.weight(1f),
+                        onOpenEditor = onOpenEditor,
                     )
                 }
-                MiniTransportControls(
-                    state = state,
-                    onAction = onAction,
-                    shortcutLabels = shortcutLabels,
-                    onOpenEditor = onOpenEditor,
-                )
             }
-        }
-    }
-}
-
-@Composable
-private fun MiniPreview(
-    state: RecorderUiState,
-    previewImage: () -> ImageBitmap?,
-) {
-    val selected = state.sources.firstOrNull { source -> source.id == state.selectedSourceId }
-    val imageDescription = stringResource(Res.string.preview_image_description)
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val currentPreviewImage = previewImage()
-        if (currentPreviewImage != null) {
-            Image(
-                bitmap = currentPreviewImage,
-                contentDescription = imageDescription,
-                modifier = Modifier.fillMaxSize().testTag("mini-preview-image"),
-                contentScale = ContentScale.Crop,
-                filterQuality = FilterQuality.Medium,
-            )
-        } else {
-            Column(
-                modifier = Modifier.padding(horizontal = 56.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                MaterialSymbol(
-                    symbol = selected?.kind?.symbol ?: Symbols.Capture,
-                    description = null,
-                    color = MaterialTheme.colorScheme.primary,
-                    size = 36.sp,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = selected?.displayName ?: stringResource(Res.string.no_capture_sources),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (state.previewStatus == PreviewUiStatus.Preparing) {
-            LinearProgressIndicator(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            )
         }
     }
 }
@@ -574,78 +518,116 @@ private fun MiniHeader(
     state: RecorderUiState,
     onExpand: () -> Unit,
     onHide: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface.copy(alpha = 0.94f))
-            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Column(
+        modifier = Modifier.fillMaxWidth().height(57.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val statusColor = miniStatusColor(state)
-        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(statusColor))
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = miniStatusLabel(state),
-            modifier = Modifier.testTag("mini-status"),
-            color = statusColor,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
-        Spacer(Modifier.weight(1f))
-        MiniWindowButton(
-            label = stringResource(Res.string.tray_open),
-            icon = painterResource(Res.drawable.open_in_full),
-            testTag = "mini-expand",
-            onClick = onExpand,
-        )
-        MiniWindowButton(
-            label = stringResource(Res.string.hide_mini_controller),
-            icon = painterResource(Res.drawable.close),
-            testTag = "mini-hide",
-            onClick = onHide,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth().height(24.dp).background(PipWindowActions),
+            horizontalArrangement = Arrangement.spacedBy(space = 4.dp, alignment = Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MiniWindowButton(
+                label = stringResource(Res.string.hide_mini_controller),
+                testTag = "mini-hide",
+                onClick = onHide,
+            ) {
+                MaterialIcon(
+                    icon = MaterialIcons.Remove,
+                    description = null,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    size = 18.dp,
+                )
+            }
+            MiniWindowButton(
+                label = stringResource(Res.string.tray_open),
+                testTag = "mini-expand",
+                onClick = onExpand,
+            ) {
+                MaterialIcon(
+                    icon = MaterialIcons.FilterNone,
+                    description = null,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    size = 18.dp,
+                )
+            }
+        }
+        Box(
+            modifier = Modifier.fillMaxWidth().height(33.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            MiniStatus(state)
+        }
+    }
+}
+
+@Composable
+private fun MiniStatus(state: RecorderUiState) {
+    val label = if (state.isReplayActive) replayStatusLabel(state.replayStatus) else statusLabel(state.status)
+    val color = if (state.isReplayActive) {
+        when (state.replayStatus) {
+            ReplayUiStatus.Buffering -> MaterialTheme.colorScheme.primary
+            ReplayUiStatus.Failed -> MaterialTheme.colorScheme.error
+            ReplayUiStatus.Preparing,
+            ReplayUiStatus.Saving,
+            ReplayUiStatus.Stopping,
+                -> PipCaution
+
+            ReplayUiStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    } else {
+        when (state.status) {
+            RecorderStatus.Recording -> RecordingRed
+            RecorderStatus.Paused,
+            RecorderStatus.Preparing,
+            RecorderStatus.Stopping,
+                -> PipCaution
+
+            RecorderStatus.Completed -> SuccessGreen
+            RecorderStatus.Failed -> MaterialTheme.colorScheme.error
+            RecorderStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    }
+    Surface(
+        modifier = Modifier.width(68.dp).height(26.dp)
+            .semantics { contentDescription = label }
+            .testTag("mini-status-container"),
+        shape = RoundedCornerShape(13.dp),
+        color = color.copy(alpha = 0.12f),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(6.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(5.dp))
+            Text(
+                text = label,
+                modifier = Modifier.testTag("mini-status"),
+                color = color,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, lineHeight = 11.sp),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
 @Composable
 private fun MiniWindowButton(
     label: String,
-    icon: Painter,
     testTag: String,
     onClick: () -> Unit,
+    content: @Composable () -> Unit,
 ) {
-    RecorderTooltipIconButton(
+    MiniIconButton(
         label = label,
         enabled = true,
         onClick = onClick,
-        modifier = Modifier.size(44.dp).testTag(testTag),
+        modifier = Modifier.size(24.dp).testTag(testTag),
     ) {
-        Icon(
-            painter = icon,
-            contentDescription = label,
-            modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun MiniElapsedTime(elapsedMilliseconds: Long, modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.padding(10.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-    ) {
-        Text(
-            text = formatElapsed(elapsedMilliseconds),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp).testTag("mini-elapsed"),
-            style = MaterialTheme.typography.titleMedium,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-        )
+        content()
     }
 }
 
@@ -654,34 +636,27 @@ private fun MiniTransportControls(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
     shortcutLabels: RecorderShortcutLabels,
+    modifier: Modifier,
     onOpenEditor: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier.fillMaxWidth().height(68.dp).background(MaterialTheme.colorScheme.surface)
-            .testTag("mini-transport-controls")
-            .padding(horizontal = 12.dp),
+    Surface(
+        modifier = modifier.fillMaxWidth()
+            .testTag("mini-transport-controls"),
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
         if (state.isReplayActive) {
-            Row(
-                modifier = Modifier.align(Alignment.Center),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                MiniReplayControls(state = state, onAction = onAction)
-            }
+            MiniReplayControls(state = state, onAction = onAction)
         } else {
-            Row(
-                modifier = Modifier.align(Alignment.Center),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.fillMaxSize().padding(top = 4.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                MiniPauseButton(state = state, onAction = onAction, shortcut = shortcutLabels.pause)
-                Spacer(Modifier.width(80.dp))
                 MiniOpenEditorButton(state = state, onClick = onOpenEditor)
-            }
-            Box(modifier = Modifier.align(Alignment.Center)) {
                 MiniRecordButton(state = state, onAction = onAction, shortcut = shortcutLabels.recording)
-            }
-            Box(modifier = Modifier.align(Alignment.CenterEnd)) {
-                MiniImportantFrameButton(state = state, onAction = onAction)
+                MiniScreenshotButtons(state = state, onAction = onAction)
             }
         }
     }
@@ -689,58 +664,50 @@ private fun MiniTransportControls(
 
 @Composable
 private fun MiniReplayControls(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
-    val saveLabel = stringResource(Res.string.save_replay)
-    val canSave = state.canSaveReplay
-    RecorderTooltipIconButton(
-        label = saveLabel,
-        enabled = canSave,
-        onClick = { onAction(RecorderUiAction.SaveReplayBuffer) },
-        modifier = Modifier.size(48.dp).testTag("mini-save-replay"),
+    Column(
+        modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceEvenly,
     ) {
-        MaterialSymbol(
-            symbol = Symbols.Capture,
-            description = saveLabel,
-            color = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 24.sp,
-        )
-    }
-    Spacer(Modifier.width(14.dp))
-    val stopLabel = stringResource(Res.string.stop_replay_buffer)
-    val canStop = state.canStopReplay
-    RecorderTooltipIconButton(
-        label = stopLabel,
-        enabled = canStop,
-        onClick = { onAction(RecorderUiAction.StopReplayBuffer) },
-        modifier = Modifier.size(48.dp).clip(CircleShape)
-            .background(if (canStop) RecordingRed else MaterialTheme.colorScheme.surfaceVariant)
-            .testTag("mini-stop-replay"),
-    ) {
-        MaterialSymbol(
-            symbol = Symbols.Stop,
-            description = stopLabel,
-            color = if (canStop) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 24.sp,
-        )
+        val saveLabel = stringResource(Res.string.save_replay)
+        val canSave = state.canSaveReplay
+        MiniIconButton(
+            label = saveLabel,
+            enabled = canSave,
+            onClick = { onAction(RecorderUiAction.SaveReplayBuffer) },
+            modifier = Modifier.size(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
+                .testTag("mini-save-replay"),
+        ) {
+            MaterialIcon(
+                icon = MaterialIcons.Capture,
+                description = null,
+                color = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 24.dp,
+            )
+        }
+        val stopLabel = stringResource(Res.string.stop_replay_buffer)
+        val canStop = state.canStopReplay
+        MiniIconButton(
+            label = stopLabel,
+            enabled = canStop,
+            onClick = { onAction(RecorderUiAction.StopReplayBuffer) },
+            modifier = Modifier.size(24.dp)
+                .clip(CircleShape)
+                .background(if (canStop) RecordingRed else MaterialTheme.colorScheme.surface)
+                .testTag("mini-stop-replay"),
+        ) {
+            MaterialIcon(
+                icon = MaterialIcons.Stop,
+                description = null,
+                color = if (canStop) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 24.dp,
+            )
+        }
     }
 }
-
-@Composable
-private fun miniStatusColor(state: RecorderUiState): Color = when {
-    state.replayStatus == ReplayUiStatus.Failed || state.status == RecorderStatus.Failed ->
-        MaterialTheme.colorScheme.error
-    state.isReplayActive -> MaterialTheme.colorScheme.primary
-    state.status == RecorderStatus.Recording -> MaterialTheme.colorScheme.error
-    state.status == RecorderStatus.Paused -> ImportantFrameGold
-    else -> MaterialTheme.colorScheme.onSurfaceVariant
-}
-
-@Composable
-private fun miniStatusLabel(state: RecorderUiState): String =
-    if (state.isReplayActive || state.replayStatus == ReplayUiStatus.Failed) {
-        replayStatusLabel(state.replayStatus)
-    } else {
-        statusLabel(state.status)
-    }
 
 @Composable
 private fun AppHeader(
@@ -804,9 +771,9 @@ private fun OutputNamingDialog(state: RecorderUiState, onAction: (RecorderUiActi
         mutableStateOf(state.outputFileNamePattern)
     }
     val validPattern = fileNamePattern.isNotBlank() &&
-        '/' !in fileNamePattern &&
-        '\\' !in fileNamePattern &&
-        fileNamePattern.endsWith(".mp4", ignoreCase = true)
+            '/' !in fileNamePattern &&
+            '\\' !in fileNamePattern &&
+            fileNamePattern.endsWith(".mp4", ignoreCase = true)
     AlertDialog(
         onDismissRequest = { onAction(RecorderUiAction.DismissOutputNamingDialog) },
         title = { Text(stringResource(Res.string.output_naming)) },
@@ -935,7 +902,7 @@ private fun SourcePane(
                 onClick = { onAction(RecorderUiAction.RefreshSources) },
                 modifier = Modifier.testTag("refresh-sources"),
             ) {
-                MaterialSymbol(Symbols.Refresh, refreshDescription)
+                MaterialIcon(MaterialIcons.Refresh, refreshDescription)
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -949,7 +916,7 @@ private fun SourcePane(
             modifier = Modifier.fillMaxWidth().height(40.dp).testTag("select-region"),
             contentPadding = PaddingValues(horizontal = 12.dp),
         ) {
-            MaterialSymbol(symbol = Symbols.Crop, description = null, size = 20.sp)
+            MaterialIcon(icon = MaterialIcons.Crop, description = null, size = 20.dp)
             Spacer(Modifier.width(8.dp))
             Text(
                 text = if (state.isSelectingRegion) {
@@ -1008,8 +975,8 @@ private fun SourceRow(
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MaterialSymbol(
-            symbol = source.kind.symbol,
+        MaterialIcon(
+            icon = source.kind.icon,
             description = null,
             color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -1059,11 +1026,11 @@ private fun PreviewPane(
                     )
                 } else {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        MaterialSymbol(
-                            symbol = selected?.kind?.symbol ?: Symbols.Capture,
+                        MaterialIcon(
+                            icon = selected?.kind?.icon ?: MaterialIcons.Capture,
                             description = null,
                             color = Color(0xFF90BCE5),
-                            size = 54.sp,
+                            size = 54.dp,
                         )
                         Spacer(Modifier.height(12.dp))
                         Text(
@@ -1242,8 +1209,8 @@ private fun SettingsPane(
                 enabled = state.canToggleSystemAudioMute,
                 muteLabel = stringResource(Res.string.mute_system_audio),
                 unmuteLabel = stringResource(Res.string.unmute_system_audio),
-                mutedSymbol = Symbols.VolumeOff,
-                unmutedSymbol = Symbols.VolumeUp,
+                mutedSymbol = MaterialIcons.VolumeOff,
+                unmutedSymbol = MaterialIcons.VolumeUp,
                 testTag = "system-audio-mute",
                 onMutedChange = { muted -> onAction(RecorderUiAction.SetSystemAudioMuted(muted)) },
             )
@@ -1364,6 +1331,23 @@ private fun SettingsPane(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
+                text = stringResource(Res.string.record_mouse_trail),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(
+                checked = state.recordMouseTrail,
+                onCheckedChange = { enabled -> onAction(RecorderUiAction.SetRecordMouseTrail(enabled)) },
+                modifier = Modifier.testTag("record-mouse-trail"),
+                enabled = !state.isBusy,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
                 text = stringResource(Res.string.show_application_in_recording),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1396,7 +1380,7 @@ private fun SettingsPane(
                     enabled = !state.isBusy && !state.isRefreshingSources,
                     modifier = Modifier.testTag("choose-output-file"),
                 ) {
-                    MaterialSymbol(Symbols.Folder, description)
+                    MaterialIcon(MaterialIcons.Folder, description)
                 }
             },
         )
@@ -1406,7 +1390,7 @@ private fun SettingsPane(
             modifier = Modifier.fillMaxWidth().testTag("output-naming"),
             enabled = !state.isBusy && !state.isRefreshingSources,
         ) {
-            MaterialSymbol(Symbols.Edit, null)
+            MaterialIcon(MaterialIcons.Edit, null)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(Res.string.output_naming))
         }
@@ -1416,7 +1400,7 @@ private fun SettingsPane(
             modifier = Modifier.fillMaxWidth().testTag("open-recordings-folder"),
             enabled = state.outputPath.isNotBlank(),
         ) {
-            MaterialSymbol(Symbols.FolderOpen, null)
+            MaterialIcon(MaterialIcons.FolderOpen, null)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(Res.string.open_recordings_folder))
         }
@@ -1476,11 +1460,11 @@ private fun SavedPathNotice(
             onClick = onOpenFolder,
             modifier = Modifier.size(34.dp).testTag(testTag),
         ) {
-            MaterialSymbol(
-                symbol = Symbols.FolderOpen,
+            MaterialIcon(
+                icon = MaterialIcons.FolderOpen,
                 description = openFolderLabel,
                 color = SuccessGreen,
-                size = 20.sp,
+                size = 20.dp,
             )
         }
     }
@@ -1574,7 +1558,7 @@ private fun ReplayControls(state: RecorderUiState, onAction: (RecorderUiAction) 
                 modifier = Modifier.size(46.dp).testTag("stop-replay"),
                 enabled = state.canStopReplay,
             ) {
-                MaterialSymbol(Symbols.Stop, stopDescription)
+                MaterialIcon(MaterialIcons.Stop, stopDescription)
             }
             Button(
                 onClick = { onAction(RecorderUiAction.SaveReplayBuffer) },
@@ -1582,7 +1566,7 @@ private fun ReplayControls(state: RecorderUiState, onAction: (RecorderUiAction) 
                 enabled = state.canSaveReplay,
                 shape = RoundedCornerShape(6.dp),
             ) {
-                MaterialSymbol(Symbols.Capture, null, color = Color.White)
+                MaterialIcon(MaterialIcons.Capture, null, color = Color.White)
                 Spacer(Modifier.width(6.dp))
                 Text(stringResource(Res.string.save_replay), maxLines = 1)
             }
@@ -1594,7 +1578,7 @@ private fun ReplayControls(state: RecorderUiState, onAction: (RecorderUiAction) 
             enabled = state.canStartReplay,
             shape = RoundedCornerShape(6.dp),
         ) {
-            MaterialSymbol(Symbols.Record, null, color = Color.White)
+            MaterialIcon(MaterialIcons.Record, null, color = Color.White)
             Spacer(Modifier.width(8.dp))
             Text(stringResource(Res.string.start_replay_buffer))
         }
@@ -1632,8 +1616,8 @@ private fun AudioMuteButton(
     enabled: Boolean,
     muteLabel: String,
     unmuteLabel: String,
-    mutedSymbol: String,
-    unmutedSymbol: String,
+    mutedSymbol: DrawableResource,
+    unmutedSymbol: DrawableResource,
     testTag: String,
     onMutedChange: (Boolean) -> Unit,
 ) {
@@ -1652,11 +1636,11 @@ private fun AudioMuteButton(
             .testTag(testTag)
             .semantics { selected = muted },
     ) {
-        MaterialSymbol(
-            symbol = if (muted) mutedSymbol else unmutedSymbol,
+        MaterialIcon(
+            icon = if (muted) mutedSymbol else unmutedSymbol,
             description = actionLabel,
             color = iconColor,
-            size = 20.sp,
+            size = 20.dp,
         )
     }
 }
@@ -1695,6 +1679,86 @@ private fun AudioSoloButton(
 }
 
 @Composable
+private fun MiniScreenshotButtons(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().wrapContentHeight().testTag("mini-screenshot-group"),
+        shape = RoundedCornerShape(19.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            MiniScreenScreenshotButton(
+                state = state,
+                onAction = onAction,
+                modifier = Modifier.weight(1f),
+            )
+            VerticalDivider(
+                modifier = Modifier.height(24.dp),
+                color = MaterialTheme.colorScheme.outlineVariant,
+            )
+            MiniRegionScreenshotButton(
+                state = state,
+                onAction = onAction,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiniScreenScreenshotButton(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    modifier: Modifier,
+) {
+    val label = stringResource(
+        if (state.isSavingScreenshot) Res.string.saving_screenshot else Res.string.take_screen_screenshot,
+    )
+    val enabled = state.canTakeScreenScreenshot
+    MiniIconButton(
+        label = label,
+        enabled = enabled,
+        onClick = { onAction(RecorderUiAction.TakeScreenScreenshot) },
+        modifier = modifier.testTag("mini-screen-screenshot"),
+    ) {
+        MaterialIcon(
+            icon = MaterialIcons.Monitor,
+            description = null,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            size = 24.dp,
+        )
+    }
+}
+
+@Composable
+private fun MiniRegionScreenshotButton(
+    state: RecorderUiState,
+    onAction: (RecorderUiAction) -> Unit,
+    modifier: Modifier,
+) {
+    val label = stringResource(
+        if (state.isSelectingRegion) Res.string.selecting_area else Res.string.select_region_screenshot,
+    )
+    val enabled = !state.isBusy && !state.isRefreshingSources && !state.isSavingScreenshot
+    MiniIconButton(
+        label = label,
+        enabled = enabled,
+        onClick = { onAction(RecorderUiAction.SelectRegionAndTakeScreenshot) },
+        modifier = modifier.testTag("mini-region-screenshot"),
+    ) {
+        MaterialIcon(
+            icon = MaterialIcons.Crop,
+            description = null,
+            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            size = 24.dp,
+        )
+    }
+}
+
+@Composable
 private fun MiniRecordButton(
     state: RecorderUiState,
     onAction: (RecorderUiAction) -> Unit,
@@ -1705,87 +1769,41 @@ private fun MiniRecordButton(
         RecorderStatus.Stopping -> stringResource(Res.string.stopping)
         RecorderStatus.Recording,
         RecorderStatus.Paused,
-        -> stringResource(Res.string.stop)
+            -> stringResource(Res.string.stop)
+
         else -> stringResource(Res.string.record)
     }
     val enabled = state.hasActiveRecording || state.canStart
     val containerColor = when {
-        !enabled -> MaterialTheme.colorScheme.surfaceVariant
+        !enabled -> MaterialTheme.colorScheme.surface
         state.hasActiveRecording -> RecordingRed
         else -> MaterialTheme.colorScheme.primary
     }
-    RecorderTooltipIconButton(
-        label = label,
-        shortcut = shortcut,
-        enabled = enabled,
-        onClick = {
-            onAction(
-                if (state.hasActiveRecording) RecorderUiAction.StopRecording else RecorderUiAction.StartRecording,
-            )
-        },
-        modifier = Modifier
-            .size(52.dp)
-            .clip(CircleShape)
-            .background(containerColor)
-            .testTag("mini-record-toggle"),
+    Box(
+        modifier = Modifier.size(48.dp).testTag("mini-record-layout"),
+        contentAlignment = Alignment.Center,
     ) {
-        MaterialSymbol(
-            symbol = if (state.hasActiveRecording) Symbols.Stop else Symbols.Record,
-            description = label,
-            color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 22.sp,
-        )
-    }
-}
-
-@Composable
-private fun MiniPauseButton(
-    state: RecorderUiState,
-    onAction: (RecorderUiAction) -> Unit,
-    shortcut: String,
-) {
-    val label = if (state.isPaused) stringResource(Res.string.resume) else stringResource(Res.string.pause)
-    val enabled = state.canPauseRecording || state.canResumeRecording
-    RecorderTooltipIconButton(
-        label = label,
-        shortcut = shortcut,
-        enabled = enabled,
-        onClick = {
-            onAction(if (state.isPaused) RecorderUiAction.ResumeRecording else RecorderUiAction.PauseRecording)
-        },
-        modifier = Modifier.size(44.dp).testTag("mini-pause-toggle"),
-    ) {
-        MaterialSymbol(
-            symbol = if (state.isPaused) Symbols.Resume else Symbols.Pause,
-            description = label,
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            size = 20.sp,
-        )
-    }
-}
-
-@Composable
-private fun MiniImportantFrameButton(
-    state: RecorderUiState,
-    onAction: (RecorderUiAction) -> Unit,
-) {
-    val label = stringResource(Res.string.mark_important_frame)
-    RecorderTooltipIconButton(
-        label = label,
-        enabled = state.canMarkImportantFrame,
-        onClick = { onAction(RecorderUiAction.MarkImportantFrame) },
-        modifier = Modifier.size(44.dp).testTag("mini-mark-important-frame"),
-    ) {
-        Icon(
-            painter = painterResource(Res.drawable.star),
-            contentDescription = label,
-            modifier = Modifier.size(22.dp),
-            tint = if (state.canMarkImportantFrame) {
-                ImportantFrameGold
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
+        MiniIconButton(
+            label = label,
+            shortcut = shortcut,
+            enabled = enabled,
+            onClick = {
+                onAction(
+                    if (state.hasActiveRecording) RecorderUiAction.StopRecording else RecorderUiAction.StartRecording,
+                )
             },
-        )
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(containerColor)
+                .testTag("mini-record-toggle"),
+        ) {
+            Icon(
+                painter = painterResource(if (state.hasActiveRecording) MaterialIcons.Stop else MaterialIcons.Play),
+                contentDescription = "Pay/Pause",
+                tint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -1798,18 +1816,52 @@ private fun MiniOpenEditorButton(
         if (state.hasActiveRecording) Res.string.finish_and_open_editor else Res.string.open_editor,
     )
     val enabled = state.hasActiveRecording || state.canOpenEditor
-    RecorderTooltipIconButton(
-        label = label,
-        enabled = enabled,
+    Surface(
         onClick = onClick,
-        modifier = Modifier.size(44.dp).testTag("mini-open-editor"),
+        enabled = enabled,
+        modifier = Modifier.size(48.dp)
+            .semantics { contentDescription = label }
+            .testTag("mini-open-editor"),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
     ) {
-        Icon(
-            painter = painterResource(Res.drawable.content_cut),
-            contentDescription = label,
-            modifier = Modifier.size(22.dp).testTag("mini-open-editor-icon"),
-            tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        Box(
+            modifier = Modifier.fillMaxSize().testTag("mini-open-editor-icon"),
+            contentAlignment = Alignment.Center,
+        ) {
+            MaterialIcon(
+                icon = MaterialIcons.ContentCut,
+                description = null,
+                color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                size = 24.dp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiniIconButton(
+    label: String,
+    shortcut: String? = null,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    val buttonContent: @Composable () -> Unit = {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier.semantics { contentDescription = label },
+            content = content,
         )
+    }
+    val shortcutLabel = shortcut?.takeIf(String::isNotBlank)
+    if (shortcutLabel == null) {
+        buttonContent()
+    } else {
+        RecorderTooltipBox(label = shortcutLabel, content = buttonContent)
     }
 }
 
@@ -1893,7 +1945,7 @@ private fun StoryboardControls(state: RecorderUiState, onAction: (RecorderUiActi
         enabled = state.canExportStoryboard,
         shape = RoundedCornerShape(6.dp),
     ) {
-        MaterialSymbol(Symbols.Capture, null, color = Color.White)
+        MaterialIcon(MaterialIcons.Capture, null, color = Color.White)
         Spacer(Modifier.width(8.dp))
         Text(
             if (state.isExportingStoryboard) {
@@ -1908,6 +1960,26 @@ private fun StoryboardControls(state: RecorderUiState, onAction: (RecorderUiActi
 @Composable
 private fun EditorControls(state: RecorderUiState, onAction: (RecorderUiAction) -> Unit) {
     SectionTitle(stringResource(Res.string.open_editor))
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = state.storyboardInputPath,
+        onValueChange = { onAction(RecorderUiAction.SetStoryboardInputPath(it)) },
+        modifier = Modifier.fillMaxWidth().testTag("storyboard-input-video"),
+        enabled = !state.isBusy,
+        singleLine = true,
+        label = { Text(stringResource(Res.string.storyboard_input_video)) },
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = { onAction(RecorderUiAction.ChooseStoryboardInputFile) },
+        enabled = !state.isBusy,
+        modifier = Modifier.fillMaxWidth().height(56.dp).testTag("choose-storyboard-input-video"),
+    ) {
+        MaterialIcon(MaterialIcons.FolderOpen, null, color = MaterialTheme.colorScheme.primary, size = 18.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(Res.string.choose_video_file), maxLines = 1)
+    }
+    Spacer(Modifier.height(12.dp))
     Button(
         onClick = { onAction(RecorderUiAction.OpenEditor) },
         modifier = Modifier.fillMaxWidth().height(46.dp).testTag("open-video-editor"),
@@ -1935,8 +2007,8 @@ private fun MicrophoneSelector(state: RecorderUiState, onAction: (RecorderUiActi
                 enabled = !state.isBusy,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
             ) {
-                MaterialSymbol(
-                    if (selected == null || state.microphoneMuted) Symbols.MicOff else Symbols.Mic,
+                MaterialIcon(
+                    if (selected == null || state.microphoneMuted) MaterialIcons.MicOff else MaterialIcons.Mic,
                     null,
                 )
                 Spacer(Modifier.width(8.dp))
@@ -1946,7 +2018,7 @@ private fun MicrophoneSelector(state: RecorderUiState, onAction: (RecorderUiActi
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                MaterialSymbol(Symbols.ExpandMore, null)
+                MaterialIcon(MaterialIcons.ExpandMore, null)
             }
             DropdownMenu(
                 expanded = expanded,
@@ -1955,7 +2027,7 @@ private fun MicrophoneSelector(state: RecorderUiState, onAction: (RecorderUiActi
             ) {
                 DropdownMenuItem(
                     text = { Text(stringResource(Res.string.microphone_off)) },
-                    leadingIcon = { MaterialSymbol(Symbols.MicOff, null) },
+                    leadingIcon = { MaterialIcon(MaterialIcons.MicOff, null) },
                     onClick = {
                         expanded = false
                         onAction(RecorderUiAction.SelectMicrophone(null))
@@ -1970,7 +2042,7 @@ private fun MicrophoneSelector(state: RecorderUiState, onAction: (RecorderUiActi
                                 overflow = TextOverflow.Ellipsis,
                             )
                         },
-                        leadingIcon = { MaterialSymbol(Symbols.Mic, null) },
+                        leadingIcon = { MaterialIcon(MaterialIcons.Mic, null) },
                         onClick = {
                             expanded = false
                             onAction(RecorderUiAction.SelectMicrophone(microphone.id))
@@ -1985,8 +2057,8 @@ private fun MicrophoneSelector(state: RecorderUiState, onAction: (RecorderUiActi
             enabled = state.canToggleMicrophoneMute,
             muteLabel = stringResource(Res.string.mute_microphone),
             unmuteLabel = stringResource(Res.string.unmute_microphone),
-            mutedSymbol = Symbols.MicOff,
-            unmutedSymbol = Symbols.Mic,
+            mutedSymbol = MaterialIcons.MicOff,
+            unmutedSymbol = MaterialIcons.Mic,
             testTag = "microphone-mute",
             onMutedChange = { muted -> onAction(RecorderUiAction.SetMicrophoneMuted(muted)) },
         )
@@ -2024,7 +2096,7 @@ private fun SystemAudioSelector(state: RecorderUiState, onAction: (RecorderUiAct
             modifier = Modifier.fillMaxWidth().testTag("system-audio-selector"),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            MaterialSymbol(Symbols.VolumeUp, null)
+            MaterialIcon(MaterialIcons.VolumeUp, null)
             Spacer(Modifier.width(8.dp))
             Text(
                 text = selected?.displayName ?: stringResource(Res.string.unavailable),
@@ -2032,7 +2104,7 @@ private fun SystemAudioSelector(state: RecorderUiState, onAction: (RecorderUiAct
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            MaterialSymbol(Symbols.ExpandMore, null)
+            MaterialIcon(MaterialIcons.ExpandMore, null)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             state.systemAudioSources.forEach { source ->
@@ -2042,7 +2114,7 @@ private fun SystemAudioSelector(state: RecorderUiState, onAction: (RecorderUiAct
                         expanded = false
                         onAction(RecorderUiAction.SelectSystemAudio(source.id))
                     },
-                    leadingIcon = { MaterialSymbol(Symbols.VolumeUp, null) },
+                    leadingIcon = { MaterialIcon(MaterialIcons.VolumeUp, null) },
                 )
             }
         }
@@ -2138,7 +2210,7 @@ private fun TransportBar(
             enabled = state.canTakeScreenshot,
             shape = RoundedCornerShape(6.dp),
         ) {
-            MaterialSymbol(Symbols.Capture, null)
+            MaterialIcon(MaterialIcons.Capture, null)
             Spacer(Modifier.width(8.dp))
             Text(screenshotLabel)
         }
@@ -2148,7 +2220,8 @@ private fun TransportBar(
             RecorderStatus.Stopping -> stringResource(Res.string.stopping)
             RecorderStatus.Recording,
             RecorderStatus.Paused,
-            -> stringResource(Res.string.stop)
+                -> stringResource(Res.string.stop)
+
             else -> stringResource(Res.string.record)
         }
         val pauseLabel = if (state.isPaused) stringResource(Res.string.resume) else stringResource(Res.string.pause)
@@ -2161,8 +2234,8 @@ private fun TransportBar(
             },
             modifier = Modifier.size(46.dp).testTag("pause-toggle"),
         ) {
-            MaterialSymbol(
-                symbol = if (state.isPaused) Symbols.Resume else Symbols.Pause,
+            MaterialIcon(
+                icon = if (state.isPaused) MaterialIcons.Play else MaterialIcons.Pause,
                 description = pauseLabel,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2189,7 +2262,11 @@ private fun TransportBar(
                 ),
                 shape = RoundedCornerShape(6.dp),
             ) {
-                MaterialSymbol(if (state.hasActiveRecording) Symbols.Stop else Symbols.Record, null, color = Color.White)
+                MaterialIcon(
+                    if (state.hasActiveRecording) MaterialIcons.Stop else MaterialIcons.Record,
+                    null,
+                    color = Color.White
+                )
                 Spacer(Modifier.width(8.dp))
                 Text(buttonLabel)
             }
@@ -2215,7 +2292,7 @@ private fun ErrorBanner(message: String, onDismiss: () -> Unit) {
             )
             val description = stringResource(Res.string.dismiss)
             IconButton(onClick = onDismiss) {
-                MaterialSymbol(Symbols.Close, description)
+                MaterialIcon(MaterialIcons.Close, description)
             }
         }
     }
@@ -2231,7 +2308,8 @@ private fun StatusIndicator(status: RecorderStatus) {
         RecorderStatus.Failed -> MaterialTheme.colorScheme.error
         RecorderStatus.Preparing,
         RecorderStatus.Stopping,
-        -> Color(0xFFB26A00)
+            -> Color(0xFFB26A00)
+
         RecorderStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Row(
@@ -2257,7 +2335,8 @@ private fun ReplayStatusIndicator(status: ReplayUiStatus) {
         ReplayUiStatus.Preparing,
         ReplayUiStatus.Saving,
         ReplayUiStatus.Stopping,
-        -> Color(0xFFB26A00)
+            -> Color(0xFFB26A00)
+
         ReplayUiStatus.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     Row(
@@ -2302,35 +2381,13 @@ private fun SectionTitle(text: String) {
     )
 }
 
-@Composable
-private fun MaterialSymbol(
-    symbol: String,
-    description: String?,
-    color: Color = MaterialTheme.colorScheme.onSurface,
-    size: androidx.compose.ui.unit.TextUnit = 22.sp,
-) {
-    val symbolsFont = FontFamily(Font(Res.font.material_symbols_rounded))
-    Text(
-        text = symbol,
-        color = color,
-        fontFamily = symbolsFont,
-        fontSize = size,
-        lineHeight = size,
-        modifier = if (description == null) {
-            Modifier.clearAndSetSemantics { }
-        } else {
-            Modifier.clearAndSetSemantics { contentDescription = description }
-        },
-    )
-}
-
-private val RecorderSourceKind.symbol: String
+private val RecorderSourceKind.icon: DrawableResource
     get() = when (this) {
-        RecorderSourceKind.Screen -> Symbols.Capture
-        RecorderSourceKind.Monitor -> Symbols.Monitor
-        RecorderSourceKind.Region -> Symbols.Crop
-        RecorderSourceKind.Window -> Symbols.Window
-        RecorderSourceKind.Application -> Symbols.Application
+        RecorderSourceKind.Screen -> MaterialIcons.Capture
+        RecorderSourceKind.Monitor -> MaterialIcons.Monitor
+        RecorderSourceKind.Region -> MaterialIcons.Crop
+        RecorderSourceKind.Window -> MaterialIcons.Window
+        RecorderSourceKind.Application -> MaterialIcons.Apps
     }
 
 private fun formatElapsed(milliseconds: Long): String {
@@ -2347,31 +2404,6 @@ private fun framesPerSecond(frameCount: Long, durationMilliseconds: Long): Doubl
 private fun formatFramesPerSecond(value: Double): String {
     val tenths = (value.coerceAtLeast(0.0) * 10).roundToInt()
     return "${tenths / 10}.${tenths % 10}"
-}
-
-private object Symbols {
-    const val Add = "\uE145"
-    const val Application = "\uE5C3"
-    const val Capture = "\uEC08"
-    const val Close = "\uE5CD"
-    const val Crop = "\uE3C2"
-    const val Delete = "\uE92E"
-    const val Edit = "\uF097"
-    const val ExpandMore = "\uE5CF"
-    const val Folder = "\uE2C7"
-    const val FolderOpen = "\uE2C8"
-    const val Mic = "\uE31D"
-    const val MicOff = "\uE02B"
-    const val Monitor = "\uEF5B"
-    const val Pause = "\uE034"
-    const val Play = "\uE037"
-    const val Record = "\uE061"
-    const val Refresh = "\uE5D5"
-    const val Resume = "\uE037"
-    const val Stop = "\uE047"
-    const val VolumeOff = "\uE04F"
-    const val VolumeUp = "\uE050"
-    const val Window = "\uF088"
 }
 
 private val ImportantFrameGold = Color(0xFFF3C64D)

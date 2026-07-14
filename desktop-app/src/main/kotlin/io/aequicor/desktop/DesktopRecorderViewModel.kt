@@ -64,6 +64,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -172,6 +173,7 @@ internal class DesktopRecorderViewModel(
     private val audioMuteController: AudioMuteController = NoopAudioMuteController,
     private val permissionGateway: PermissionGateway = GrantedPermissionGateway,
     initialPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
+    initialStoryboardInputPath: String = "",
     initialShowApplicationInRecording: Boolean = false,
     initialShowCaptureBorder: Boolean = true,
     private val preferencesWriter: DesktopRecorderPreferencesWriter = NoopDesktopRecorderPreferencesWriter,
@@ -203,10 +205,12 @@ internal class DesktopRecorderViewModel(
             frameRate = startupPreferences.frameRate,
             captureCursor = startupPreferences.captureCursor,
             showInputOverlay = startupPreferences.showInputOverlay,
+            recordMouseTrail = startupPreferences.recordMouseTrail,
             showApplicationInRecording = initialShowApplicationInRecording,
             showCaptureBorder = initialShowCaptureBorder,
             replayDurationMinutes = startupPreferences.replayDurationMinutes,
             storyboardMode = startupPreferences.storyboardMode,
+            storyboardInputPath = initialStoryboardInputPath,
             videoBitrateMbps = startupPreferences.videoBitrateMbps,
             microphoneGainPercent = startupMicrophoneGainPercent,
             systemAudioGainPercent = startupSystemAudioGainPercent,
@@ -326,6 +330,7 @@ internal class DesktopRecorderViewModel(
             is RecorderUiAction.SetFrameRate -> setFrameRate(action.frameRate)
             is RecorderUiAction.SetCaptureCursor -> setCaptureCursor(action.enabled)
             is RecorderUiAction.SetShowInputOverlay -> setShowInputOverlay(action.enabled)
+            is RecorderUiAction.SetRecordMouseTrail -> setRecordMouseTrail(action.enabled)
             is RecorderUiAction.SetShowApplicationInRecording -> mutableState.update {
                 it.copy(showApplicationInRecording = action.enabled)
             }
@@ -334,10 +339,12 @@ internal class DesktopRecorderViewModel(
             }
             is RecorderUiAction.SetVideoBitrateMbps -> setVideoBitrateMbps(action.megabitsPerSecond)
             is RecorderUiAction.SetStoryboardInputPath -> setStoryboardInputPath(action.path)
+            RecorderUiAction.ChooseStoryboardInputFile -> Unit
             is RecorderUiAction.SetStoryboardMode -> setStoryboardMode(action.mode)
             is RecorderUiAction.SetReplayDurationMinutes -> setReplayDurationMinutes(action.minutes)
-            RecorderUiAction.SelectRegion -> selectRegion(startRecordingAfterSelection = false)
-            RecorderUiAction.SelectRegionAndStartRecording -> selectRegion(startRecordingAfterSelection = true)
+            RecorderUiAction.SelectRegion -> selectRegion(RegionSelectionFollowUp.None)
+            RecorderUiAction.SelectRegionAndStartRecording -> selectRegion(RegionSelectionFollowUp.StartRecording)
+            RecorderUiAction.SelectRegionAndTakeScreenshot -> selectRegion(RegionSelectionFollowUp.TakeScreenshot)
             RecorderUiAction.ChooseOutputFile -> chooseOutputFile()
             RecorderUiAction.OpenRecordingsFolder -> openRecordingsFolder()
             RecorderUiAction.RefreshSources -> refreshSources()
@@ -349,6 +356,7 @@ internal class DesktopRecorderViewModel(
             RecorderUiAction.StopRecording -> stopRecording()
             RecorderUiAction.MarkImportantFrame -> markImportantFrame()
             RecorderUiAction.TakeScreenshot -> takeScreenshot()
+            RecorderUiAction.TakeScreenScreenshot -> takeScreenScreenshot()
             RecorderUiAction.OpenEditor -> Unit
             RecorderUiAction.ExportStoryboard -> exportStoryboard()
             RecorderUiAction.StartReplayBuffer -> startReplayBuffer()
@@ -582,7 +590,9 @@ internal class DesktopRecorderViewModel(
 
     private fun setCaptureCursor(enabled: Boolean) {
         if (!mutableState.value.isBusy) {
-            mutableState.update { it.copy(captureCursor = enabled) }
+            mutableState.update { state ->
+                state.copy(captureCursor = enabled)
+            }
             queueRecorderPreferences()
         }
     }
@@ -590,6 +600,13 @@ internal class DesktopRecorderViewModel(
     private fun setShowInputOverlay(enabled: Boolean) {
         if (!mutableState.value.isBusy) {
             mutableState.update { it.copy(showInputOverlay = enabled) }
+            queueRecorderPreferences()
+        }
+    }
+
+    private fun setRecordMouseTrail(enabled: Boolean) {
+        if (!mutableState.value.isBusy) {
+            mutableState.update { it.copy(recordMouseTrail = enabled) }
             queueRecorderPreferences()
         }
     }
@@ -818,6 +835,7 @@ internal class DesktopRecorderViewModel(
                 frameRate = configuration.preferences.frameRate,
                 captureCursor = configuration.preferences.captureCursor,
                 showInputOverlay = configuration.preferences.showInputOverlay,
+                recordMouseTrail = configuration.preferences.recordMouseTrail,
                 videoBitrateMbps = configuration.preferences.videoBitrateMbps,
                 replayDurationMinutes = configuration.preferences.replayDurationMinutes,
                 storyboardMode = configuration.preferences.storyboardMode,
@@ -847,8 +865,12 @@ internal class DesktopRecorderViewModel(
         )
     }
 
-    private fun selectRegion(startRecordingAfterSelection: Boolean) {
-        if (mutableState.value.isBusy || mutableState.value.isRefreshingSources) {
+    private fun selectRegion(followUp: RegionSelectionFollowUp) {
+        if (
+            mutableState.value.isBusy ||
+            mutableState.value.isRefreshingSources ||
+            mutableState.value.isSavingScreenshot
+        ) {
             return
         }
         mutableState.update { it.copy(isSelectingRegion = true, errorMessage = null) }
@@ -856,7 +878,7 @@ internal class DesktopRecorderViewModel(
             try {
                 applyRegionSelection(
                     result = captureRegionSelector.selectRegion(),
-                    startRecordingAfterSelection = startRecordingAfterSelection,
+                    followUp = followUp,
                 )
             } catch (cancelled: CancellationException) {
                 mutableState.update { it.copy(isSelectingRegion = false) }
@@ -874,7 +896,7 @@ internal class DesktopRecorderViewModel(
 
     private fun applyRegionSelection(
         result: CaptureRegionSelection,
-        startRecordingAfterSelection: Boolean,
+        followUp: RegionSelectionFollowUp,
     ) {
         when (result) {
             CaptureRegionSelection.Cancelled -> mutableState.update { it.copy(isSelectingRegion = false) }
@@ -903,8 +925,10 @@ internal class DesktopRecorderViewModel(
                     )
                 }
                 queueRecorderPreferences()
-                if (startRecordingAfterSelection) {
-                    startRecording()
+                when (followUp) {
+                    RegionSelectionFollowUp.None -> Unit
+                    RegionSelectionFollowUp.StartRecording -> startRecording()
+                    RegionSelectionFollowUp.TakeScreenshot -> takeScreenshot(source)
                 }
             }
         }
@@ -1036,6 +1060,7 @@ internal class DesktopRecorderViewModel(
             frameRate = snapshot.frameRate,
             captureCursor = snapshot.captureCursor,
             showInputOverlay = snapshot.showInputOverlay,
+            recordMouseTrail = snapshot.recordMouseTrail,
             encoder = encoderSettings,
         )
 
@@ -1147,11 +1172,28 @@ internal class DesktopRecorderViewModel(
         }
     }
 
-    private fun takeScreenshot() {
+    private fun takeScreenScreenshot() {
         val snapshot = mutableState.value
-        val frame = mutablePreviewFrame.value
-        if (!snapshot.canTakeScreenshot || frame == null) {
+        if (!snapshot.canTakeScreenScreenshot) {
             return
+        }
+        val selectedSource = snapshot.selectedSourceId?.let(captureSourcesById::get)
+        val screenSource = selectedSource
+            ?.takeIf { source -> source is CaptureSource.Screen || source is CaptureSource.Monitor }
+            ?: captureSourcesById.values.firstOrNull { source -> source is CaptureSource.Screen }
+            ?: captureSourcesById.values.firstOrNull { source -> source is CaptureSource.Monitor }
+            ?: return
+        takeScreenshot(screenSource)
+    }
+
+    private fun takeScreenshot(captureSource: CaptureSource? = null) {
+        val snapshot = mutableState.value
+        val source = captureSource ?: snapshot.selectedSourceId?.let(captureSourcesById::get)
+        if (!snapshot.canTakeScreenshot || source == null) {
+            return
+        }
+        val previewFrame = mutablePreviewFrame.value.takeIf {
+            snapshot.previewStatus == PreviewUiStatus.Active && snapshot.selectedSourceId == source.id.value
         }
         val outputPath = try {
             nextScreenshotOutputPath(snapshot.outputPath)
@@ -1166,6 +1208,20 @@ internal class DesktopRecorderViewModel(
             it.copy(isSavingScreenshot = true, lastScreenshotPath = null, errorMessage = null)
         }
         scope.launch {
+            val frame = try {
+                previewFrame ?: captureScreenshotFrame(source = source, snapshot = snapshot)
+            } catch (cancelled: CancellationException) {
+                mutableState.update { it.copy(isSavingScreenshot = false) }
+                throw cancelled
+            } catch (failure: Throwable) {
+                mutableState.update {
+                    it.copy(
+                        isSavingScreenshot = false,
+                        errorMessage = failure.message ?: "Could not capture screenshot.",
+                    )
+                }
+                return@launch
+            } ?: return@launch
             when (val result = screenshotSaver.save(frame, outputPath)) {
                 is DesktopScreenshotSaveResult.Saved -> mutableState.update {
                     it.copy(
@@ -1178,6 +1234,41 @@ internal class DesktopRecorderViewModel(
                     it.copy(isSavingScreenshot = false, errorMessage = result.message)
                 }
             }
+        }
+    }
+
+    private suspend fun captureScreenshotFrame(
+        source: CaptureSource,
+        snapshot: RecorderUiState,
+    ): DesktopPreviewFrame? {
+        val settings = RecordingSettings(
+            captureSource = source,
+            audioSources = emptyList(),
+            outputPath = PREVIEW_OUTPUT_PLACEHOLDER,
+            frameRate = minOf(snapshot.frameRate, MAX_PREVIEW_FRAME_RATE),
+            captureCursor = false,
+            encoder = encoderSettings,
+        )
+        permissionError(settings)?.let { message ->
+            mutableState.update { it.copy(isSavingScreenshot = false, errorMessage = message) }
+            return null
+        }
+        val frame = withTimeoutOrNull(SCREENSHOT_CAPTURE_TIMEOUT_MILLIS) {
+            previewEngine.frames(settings).firstOrNull()
+        }
+        if (frame == null) {
+            mutableState.update {
+                it.copy(
+                    isSavingScreenshot = false,
+                    errorMessage = "Screenshot source did not produce a frame.",
+                )
+            }
+            return null
+        }
+        return try {
+            frame.toDesktopPreviewFrame()
+        } finally {
+            frame.release()
         }
     }
 
@@ -1225,6 +1316,7 @@ internal class DesktopRecorderViewModel(
             frameRate = snapshot.frameRate,
             captureCursor = snapshot.captureCursor,
             showInputOverlay = snapshot.showInputOverlay,
+            recordMouseTrail = snapshot.recordMouseTrail,
             replayDuration = snapshot.replayDurationMinutes.minutes,
             encoder = encoderSettings,
         )
@@ -1634,6 +1726,7 @@ private fun RecorderUiState.toRecorderPreferences(encoderSettings: EncoderSettin
         frameRate = frameRate,
         captureCursor = captureCursor,
         showInputOverlay = showInputOverlay,
+        recordMouseTrail = recordMouseTrail,
         replayDurationMinutes = replayDurationMinutes,
         storyboardMode = storyboardMode,
         encoderSettings = encoderSettings,
@@ -1676,6 +1769,12 @@ private fun Double?.toGainPercent(): Int = ((this ?: 1.0) * 100.0)
 
 private fun Int.toAudioGain(): Double = toDouble() / 100.0
 
+private enum class RegionSelectionFollowUp {
+    None,
+    StartRecording,
+    TakeScreenshot,
+}
+
 private fun VideoFrame.toDesktopPreviewFrame(): DesktopPreviewFrame {
     require(pixelFormat == PixelFormat.Rgba8888 || pixelFormat == PixelFormat.Bgra8888) {
         "Preview requires RGBA8888 or BGRA8888 video frames."
@@ -1697,6 +1796,7 @@ private fun VideoFrame.toDesktopPreviewFrame(): DesktopPreviewFrame {
 }
 
 private const val PREVIEW_OUTPUT_PLACEHOLDER = "preview-does-not-create-output.mp4"
+private const val SCREENSHOT_CAPTURE_TIMEOUT_MILLIS = 3_000L
 private const val SHUTDOWN_TIMEOUT_MILLIS = 3_000L
 private const val MAX_PREVIEW_FRAME_RATE = 5
 private const val PREVIEW_BYTES_PER_PIXEL = 4
