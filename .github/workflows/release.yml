@@ -57,6 +57,7 @@ jobs:
           - id: windows-x64
             os: windows-latest
             wrapper: ./gradlew.bat
+            javacpp_platform: windows-x86_64
             tasks: ":desktop-app:packageReleaseMsi :desktop-app:packageReleaseExe"
             paths: |
               desktop-app/build/compose/binaries/main-release/msi/*.msi
@@ -64,18 +65,21 @@ jobs:
           - id: macos-x64
             os: macos-15-intel
             wrapper: ./gradlew
+            javacpp_platform: macosx-x86_64
             tasks: ":desktop-app:packageReleaseDmg"
             dmg_suffix: macos-x64
             paths: desktop-app/build/compose/binaries/main-release/dmg/*.dmg
           - id: macos-arm64
             os: macos-latest
             wrapper: ./gradlew
+            javacpp_platform: macosx-arm64
             tasks: ":desktop-app:packageReleaseDmg"
             dmg_suffix: macos-arm64
             paths: desktop-app/build/compose/binaries/main-release/dmg/*.dmg
           - id: linux-x64
             os: ubuntu-latest
             wrapper: ./gradlew
+            javacpp_platform: linux-x86_64
             tasks: ":desktop-app:packageReleaseDeb :app:distZip"
             paths: |
               desktop-app/build/compose/binaries/main-release/deb/*.deb
@@ -96,7 +100,10 @@ jobs:
           cache-provider: basic
 
       - name: Build release artifacts
-        run: ${{ matrix.wrapper }} ${{ matrix.tasks }} --stacktrace
+        run: >-
+          ${{ matrix.wrapper }} ${{ matrix.tasks }}
+          -Djavacpp.platform=${{ matrix.javacpp_platform }}
+          --stacktrace
 
       - name: Print native packaging diagnostics
         if: failure() && runner.os == 'macOS'
@@ -112,7 +119,8 @@ jobs:
         run: |
           dmg="$(find desktop-app/build/compose/binaries/main-release/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$dmg"
-          mv "$dmg" "${dmg%.dmg}-${{ matrix.dmg_suffix }}.dmg"
+          version="$(sed -n 's/^missionRecorderVersion=//p' gradle.properties)"
+          mv "$dmg" "$(dirname "$dmg")/Mission Recorder-$version-${{ matrix.dmg_suffix }}.dmg"
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7

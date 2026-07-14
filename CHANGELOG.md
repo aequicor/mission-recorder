@@ -6,8 +6,8 @@
 
 ### Исправлено
 
-- macOS Apple Silicon packaging выбирает нативные JavaCV/FFmpeg-библиотеки для Darwin, а не несуществующий Windows ARM classifier.
-- macOS application bundle получает стабильный идентификатор `io.aequicor.missionrecorder`.
+- Release workflow явно выбирает нативные JavaCV/FFmpeg-библиотеки целевой платформы, исключая несуществующий Windows ARM classifier на macOS Apple Silicon.
+- macOS application bundle получает стабильный идентификатор `io.aequicor.missionrecorder` и допустимую для jpackage внутреннюю версию с ненулевым major.
 - Release workflow можно запустить вручную как dry run без публикации; при сбое macOS packaging он выводит диагностические логи jpackage.
 
 ## [0.1.0] - 2026-07-14

@@ -10,6 +10,14 @@ plugins {
     alias(libs.plugins.kotlinPluginSerialization)
 }
 
+val releaseVersion = project.version.toString()
+val macOsPackageVersion = releaseVersion
+    .split(".")
+    .let { components ->
+        if (components.first() == "0") listOf("1") + components.drop(1) else components
+    }
+    .joinToString(".")
+
 dependencies {
     implementation(project(":audio-core"))
     implementation(project(":audio-desktop-javasound"))
@@ -56,7 +64,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Exe, TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "Mission Recorder"
-            packageVersion = project.version.toString()
+            packageVersion = releaseVersion
             description = "Local open-source screen recorder"
             vendor = "Mission Recorder"
             windows {
@@ -64,6 +72,7 @@ compose.desktop {
             }
             macOS {
                 bundleID = "io.aequicor.missionrecorder"
+                packageVersion = macOsPackageVersion
                 iconFile.set(project.file("src/main/resources/icons/mission-recorder.icns"))
                 infoPlist {
                     extraKeysRawXml = """
