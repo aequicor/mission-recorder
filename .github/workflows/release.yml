@@ -56,7 +56,6 @@ jobs:
         include:
           - id: windows-x64
             os: windows-latest
-            wrapper: ./gradlew.bat
             javacpp_platform: windows-x86_64
             tasks: ":desktop-app:packageReleaseMsi :desktop-app:packageReleaseExe"
             paths: |
@@ -64,21 +63,18 @@ jobs:
               desktop-app/build/compose/binaries/main-release/exe/*.exe
           - id: macos-x64
             os: macos-15-intel
-            wrapper: ./gradlew
             javacpp_platform: macosx-x86_64
             tasks: ":desktop-app:packageReleaseDmg"
             dmg_suffix: macos-x64
             paths: desktop-app/build/compose/binaries/main-release/dmg/*.dmg
           - id: macos-arm64
             os: macos-latest
-            wrapper: ./gradlew
             javacpp_platform: macosx-arm64
             tasks: ":desktop-app:packageReleaseDmg"
             dmg_suffix: macos-arm64
             paths: desktop-app/build/compose/binaries/main-release/dmg/*.dmg
           - id: linux-x64
             os: ubuntu-latest
-            wrapper: ./gradlew
             javacpp_platform: linux-x86_64
             tasks: ":desktop-app:packageReleaseDeb :app:distZip"
             paths: |
@@ -100,9 +96,8 @@ jobs:
           cache-provider: basic
 
       - name: Build release artifacts
-        env:
-          JAVACPP_PLATFORM: ${{ matrix.javacpp_platform }}
-        run: ${{ matrix.wrapper }} ${{ matrix.tasks }} --stacktrace
+        shell: bash
+        run: ./gradlew ${{ matrix.tasks }} -Djavacpp.platform=${{ matrix.javacpp_platform }} --stacktrace
 
       - name: Print native packaging diagnostics
         if: failure() && runner.os == 'macOS'

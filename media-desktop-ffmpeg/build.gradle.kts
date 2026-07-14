@@ -3,8 +3,7 @@ plugins {
     alias(libs.plugins.kotlinPluginSerialization)
 }
 
-val javaCppPlatform = providers.environmentVariable("JAVACPP_PLATFORM").orNull
-    ?: providers.systemProperty("javacpp.platform").orNull
+val javaCppPlatform = providers.systemProperty("javacpp.platform").orNull
     ?: currentJavaCppPlatform()
 
 dependencies {
