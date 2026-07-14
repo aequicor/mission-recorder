@@ -1,5 +1,6 @@
 package io.aequicor.capture.windows.jna
 
+import io.aequicor.capture.core.CaptureRegion
 import io.aequicor.capture.core.CaptureSource
 import io.aequicor.capture.core.CaptureSourceId
 import io.aequicor.capture.core.PixelFormat
@@ -164,7 +165,7 @@ class WindowsVideoCaptureAdapterTest {
                     WindowsVideoCaptureAdapter(system, dispatcher, incrementingNanoTime())
                         .frames(
                             settings(
-                                CaptureSource.Screen(CaptureSourceId("screen:all"), "All screens"),
+                                testDesktopSource(),
                                 captureCursor = false,
                             ),
                         )
@@ -183,7 +184,7 @@ class WindowsVideoCaptureAdapterTest {
         val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
             .nativeFrames(
                 settings(
-                    CaptureSource.Screen(CaptureSourceId("screen:all"), "All screens"),
+                    testDesktopSource(),
                     captureCursor = true,
                 ),
             )
@@ -202,7 +203,7 @@ class WindowsVideoCaptureAdapterTest {
         val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
             .nativeFrames(
                 settings(
-                    CaptureSource.Screen(CaptureSourceId("screen:all"), "All screens"),
+                    testDesktopSource(),
                     captureCursor = false,
                     showInputOverlay = true,
                 ),
@@ -308,6 +309,12 @@ private fun settings(
     outputPath = "unused.mp4",
     captureCursor = captureCursor,
     showInputOverlay = showInputOverlay,
+)
+
+private fun testDesktopSource(): CaptureSource.Region = CaptureSource.Region(
+    id = CaptureSourceId("region:test"),
+    displayName = "Test desktop region",
+    region = CaptureRegion(x = 0, y = 0, width = 32, height = 32),
 )
 
 private fun ByteArray.containsNonWhiteColor(): Boolean = asList()
