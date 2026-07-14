@@ -129,6 +129,7 @@ class DesktopRecorderViewModelTest {
         )
         runCurrent()
 
+        viewModel.onAction(RecorderUiAction.SetShowMouseTrail(true))
         viewModel.onAction(RecorderUiAction.StartPreview)
         runCurrent()
 
@@ -136,6 +137,7 @@ class DesktopRecorderViewModelTest {
         assertEquals(5, assertNotNull(preview.settings).frameRate)
         assertTrue(assertNotNull(preview.settings).audioSources.isEmpty())
         assertFalse(assertNotNull(preview.settings).captureCursor)
+        assertTrue(assertNotNull(preview.settings).showMouseTrail)
         assertEquals(PixelFormat.Rgba8888, assertNotNull(viewModel.previewFrame.value).pixelFormat)
         assertEquals(
             listOf(255.toByte(), 0.toByte(), 0.toByte(), 255.toByte()),
@@ -538,6 +540,7 @@ class DesktopRecorderViewModelTest {
             frameRate = 15,
             captureCursor = false,
             showInputOverlay = true,
+            showMouseTrail = true,
             replayDurationMinutes = 8,
             storyboardMode = StoryboardMode.ContactSheet,
             encoderSettings = EncoderSettings(
@@ -563,6 +566,7 @@ class DesktopRecorderViewModelTest {
         assertEquals(15, viewModel.state.value.frameRate)
         assertFalse(viewModel.state.value.captureCursor)
         assertTrue(viewModel.state.value.showInputOverlay)
+        assertTrue(viewModel.state.value.showMouseTrail)
         assertEquals(8, viewModel.state.value.replayDurationMinutes)
         assertEquals(StoryboardMode.ContactSheet, viewModel.state.value.storyboardMode)
         assertEquals(12, viewModel.state.value.videoBitrateMbps)
@@ -570,6 +574,7 @@ class DesktopRecorderViewModelTest {
         viewModel.onAction(RecorderUiAction.SetFrameRate(60))
         viewModel.onAction(RecorderUiAction.SetCaptureCursor(true))
         viewModel.onAction(RecorderUiAction.SetShowInputOverlay(false))
+        viewModel.onAction(RecorderUiAction.SetShowMouseTrail(false))
         viewModel.onAction(RecorderUiAction.SetReplayDurationMinutes(11))
         viewModel.onAction(RecorderUiAction.SetStoryboardMode(StoryboardMode.SeparatePngFiles))
         viewModel.onAction(RecorderUiAction.SetVideoBitrateMbps(18))
@@ -580,6 +585,7 @@ class DesktopRecorderViewModelTest {
                 frameRate = 60,
                 captureCursor = true,
                 showInputOverlay = false,
+                showMouseTrail = false,
                 replayDurationMinutes = 11,
                 storyboardMode = StoryboardMode.SeparatePngFiles,
                 encoderSettings = initial.encoderSettings.copy(videoBitrateBitsPerSecond = 18_000_000),
@@ -612,12 +618,14 @@ class DesktopRecorderViewModelTest {
 
         viewModel.onAction(RecorderUiAction.SetCaptureCursor(false))
         viewModel.onAction(RecorderUiAction.SetShowInputOverlay(true))
+        viewModel.onAction(RecorderUiAction.SetShowMouseTrail(true))
         viewModel.onAction(RecorderUiAction.StartRecording)
         runCurrent()
         assertEquals(RecorderStatus.Recording, viewModel.state.value.status)
         val startedSettings = assertNotNull(engine.startedSettings)
         assertFalse(startedSettings.captureCursor)
         assertTrue(startedSettings.showInputOverlay)
+        assertTrue(startedSettings.showMouseTrail)
         assertEquals(14_000_000, startedSettings.encoder.videoBitrateBitsPerSecond)
         assertEquals(144_000, startedSettings.encoder.audioBitrateBitsPerSecond)
 
@@ -1116,6 +1124,7 @@ class DesktopRecorderViewModelTest {
 
         viewModel.onAction(RecorderUiAction.SetReplayDurationMinutes(7))
         viewModel.onAction(RecorderUiAction.SetCaptureCursor(false))
+        viewModel.onAction(RecorderUiAction.SetShowMouseTrail(true))
         viewModel.onAction(RecorderUiAction.SetVideoBitrateMbps(20))
         viewModel.onAction(RecorderUiAction.StartReplayBuffer)
         runCurrent()
@@ -1123,6 +1132,7 @@ class DesktopRecorderViewModelTest {
         val settings = assertNotNull(replayEngine.startedSettings)
         assertEquals(7.minutes, settings.replayDuration)
         assertFalse(settings.captureCursor)
+        assertTrue(settings.showMouseTrail)
         assertEquals(20_000_000, settings.encoder.videoBitrateBitsPerSecond)
         assertEquals(ReplayUiStatus.Buffering, viewModel.state.value.replayStatus)
         assertEquals(null, recordingEngine.startedSettings)

@@ -27,6 +27,13 @@ enum class EditorAutosaveStatus {
     Failed,
 }
 
+enum class EditorPlaybackSpeed(val factor: Double) {
+    HALF(0.5),
+    NORMAL(1.0),
+    ONE_AND_HALF(1.5),
+    DOUBLE(2.0),
+}
+
 data class FrameExportCandidate(
     val id: ImportantFrameId,
     val timelineMicros: Long,
@@ -43,6 +50,7 @@ data class VideoEditorUiState(
     val previewStatus: EditorPreviewStatus = EditorPreviewStatus.Empty,
     val autosaveStatus: EditorAutosaveStatus = EditorAutosaveStatus.Saved,
     val isPlaying: Boolean = false,
+    val playbackSpeed: EditorPlaybackSpeed = EditorPlaybackSpeed.NORMAL,
     val isImportingMedia: Boolean = false,
     val isExporting: Boolean = false,
     val showVideoExportDialog: Boolean = false,
@@ -97,6 +105,7 @@ sealed interface VideoEditorAction {
     data class SelectFrameExportCandidate(val candidateId: ImportantFrameId) : VideoEditorAction
     data class Seek(val timelineMicros: Long) : VideoEditorAction
     data object TogglePlayback : VideoEditorAction
+    data class SetPlaybackSpeed(val speed: EditorPlaybackSpeed) : VideoEditorAction
     data class StepFrames(val frames: Int) : VideoEditorAction
     data object SplitSelectedClip : VideoEditorAction
     data object DeleteSelectedClip : VideoEditorAction

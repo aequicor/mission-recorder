@@ -35,6 +35,7 @@ class DesktopUiSettingsRepositoryTest {
                 frameRate = 60,
                 captureCursor = false,
                 showInputOverlay = true,
+                showMouseTrail = true,
                 recordMouseTrail = true,
                 replayDurationMinutes = 9,
                 encoderSettings = EncoderSettings(videoBitrateBitsPerSecond = 16_000_000),
@@ -132,6 +133,7 @@ class DesktopUiSettingsRepositoryTest {
             frameRate = 60,
             captureCursor = false,
             showInputOverlay = true,
+            showMouseTrail = true,
             recordMouseTrail = true,
             replayDurationMinutes = 12,
             storyboardMode = StoryboardMode.ContactSheet,
@@ -162,6 +164,7 @@ class DesktopUiSettingsRepositoryTest {
         assertEquals(60, persistedProfile.video.frameRate)
         assertEquals(false, persistedProfile.video.captureCursor)
         assertTrue(persistedProfile.video.showInputOverlay)
+        assertTrue(persistedProfile.video.showMouseTrail)
         assertTrue(persistedProfile.video.recordMouseTrail)
         assertEquals(12 * 60L, persistedProfile.replay.durationSeconds)
         assertEquals(18_000_000, persistedProfile.encoder.videoBitrateBitsPerSecond)

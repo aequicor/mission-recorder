@@ -11,6 +11,7 @@ import io.aequicor.capture.core.VideoFrame
 import io.aequicor.capture.core.VideoFrameLease
 import io.aequicor.capture.core.VideoFramePoint
 import io.aequicor.capture.platform.InputOverlayRenderer
+import io.aequicor.capture.platform.MouseTrailOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -39,9 +40,12 @@ class WindowsVideoCaptureAdapter internal constructor(
         var outputWidth = 0
         var outputHeight = 0
         val inputOverlay = InputOverlayRenderer()
+        val mouseTrail = MouseTrailOverlayRenderer()
         val useNativeFrames = nativeFrames &&
             settings.encoder.hardwareAcceleration != io.aequicor.capture.core.HardwareAccelerationMode.Disabled &&
-            !settings.showInputOverlay
+            !settings.showInputOverlay &&
+            !settings.showMouseTrail &&
+            !settings.recordMouseTrail
         val screenCapture = (selection as? WindowsSelection.Desktop)
             ?.let { desktop ->
                 windowSystem.openScreenCapture(
@@ -65,13 +69,14 @@ class WindowsVideoCaptureAdapter internal constructor(
                 val lease = VideoFrameLease(captured::release)
                 try {
                     captured.validate()
+                    val frameTimestampNanoseconds = (nanoTime() - startedAt).coerceAtLeast(0)
                     val cursor = windowSystem.cursorPosition()?.takeIf(captured.bounds::contains)
                     val hotspotX = cursor?.x?.minus(captured.bounds.x)
                     val hotspotY = cursor?.y?.minus(captured.bounds.y)
                     if (captured.nativeFrame != null) {
                         emit(
                             VideoFrame(
-                                timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                                timestamp = MediaTimestamp(frameTimestampNanoseconds),
                                 width = captured.bounds.width,
                                 height = captured.bounds.height,
                                 pixelFormat = PixelFormat.Nv12,
@@ -88,6 +93,16 @@ class WindowsVideoCaptureAdapter internal constructor(
                         continue
                     }
                     var bgraPixels = requireNotNull(captured.bgraPixels)
+                    if (settings.showMouseTrail) {
+                        mouseTrail.update(
+                            timestampMicros = frameTimestampNanoseconds / NANOS_PER_MICROSECOND,
+                            hotspotX = hotspotX,
+                            hotspotY = hotspotY,
+                            frameWidth = captured.bounds.width,
+                            frameHeight = captured.bounds.height,
+                        )
+                        mouseTrail.drawBgra(bgraPixels, captured.bounds.width, captured.bounds.height)
+                    }
                     if (settings.captureCursor && hotspotX != null && hotspotY != null) {
                         RgbaCursorPainter.drawBgra(
                             bgraPixels = bgraPixels,
@@ -128,7 +143,7 @@ class WindowsVideoCaptureAdapter internal constructor(
                     }
                     emit(
                         VideoFrame(
-                            timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                            timestamp = MediaTimestamp(frameTimestampNanoseconds),
                             width = outputWidth,
                             height = outputHeight,
                             pixelFormat = PixelFormat.Bgra8888,
@@ -269,3 +284,4 @@ private fun sourceUnavailable(message: String): RecordingException =
 
 private const val RGBA_CHANNEL_COUNT = 4
 private const val NANOS_PER_SECOND = 1_000_000_000L
+private const val NANOS_PER_MICROSECOND = 1_000L

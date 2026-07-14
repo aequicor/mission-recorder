@@ -49,6 +49,7 @@ internal class DesktopUiSettingsRepository(
                     ?: DEFAULT_DESKTOP_FRAME_RATE,
                 captureCursor = profile.video.captureCursor,
                 showInputOverlay = profile.video.showInputOverlay,
+                showMouseTrail = profile.video.showMouseTrail,
                 recordMouseTrail = profile.video.recordMouseTrail,
                 replayDurationMinutes = (profile.replay.durationSeconds / SECONDS_PER_MINUTE)
                     .coerceIn(MIN_REPLAY_MINUTES.toLong(), MAX_REPLAY_MINUTES.toLong())
@@ -175,6 +176,7 @@ internal class DesktopUiSettingsRepository(
                         frameRate = preferences.frameRate,
                         captureCursor = preferences.captureCursor,
                         showInputOverlay = preferences.showInputOverlay,
+                        showMouseTrail = preferences.showMouseTrail,
                         recordMouseTrail = preferences.recordMouseTrail,
                     ),
                     replay = profile.replay.copy(
@@ -255,6 +257,7 @@ internal class DesktopUiSettingsRepository(
                     ?: DEFAULT_DESKTOP_FRAME_RATE,
                 captureCursor = video.captureCursor,
                 showInputOverlay = video.showInputOverlay,
+                showMouseTrail = video.showMouseTrail,
                 recordMouseTrail = video.recordMouseTrail,
                 replayDurationMinutes = (replay.durationSeconds / SECONDS_PER_MINUTE)
                     .coerceIn(MIN_REPLAY_MINUTES.toLong(), MAX_REPLAY_MINUTES.toLong())
@@ -281,6 +284,7 @@ internal class DesktopUiSettingsRepository(
             frameRate = snapshot.preferences.frameRate,
             captureCursor = snapshot.preferences.captureCursor,
             showInputOverlay = snapshot.preferences.showInputOverlay,
+            showMouseTrail = snapshot.preferences.showMouseTrail,
             recordMouseTrail = snapshot.preferences.recordMouseTrail,
         ),
         audio = AudioSettings(snapshot.audioSources.map { source -> source.toAudioSourceSettings() }),

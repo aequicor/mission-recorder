@@ -116,7 +116,7 @@ class FfmpegMediaEncoder : MediaEncoder, NativeVideoFrameMediaEncoder {
             )
             current.lastVideoTimestampMicros = timestampMicros
             current.mouseTrailRecorder?.record(
-                timestampMicros = frame.timestamp.nanoseconds / NANOS_PER_MICROSECOND,
+                timestampMicros = timestampMicros,
                 position = frame.cursorPosition,
             )
         } catch (recording: RecordingException) {

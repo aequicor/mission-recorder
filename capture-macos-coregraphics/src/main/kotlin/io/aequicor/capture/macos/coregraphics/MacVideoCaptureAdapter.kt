@@ -10,6 +10,7 @@ import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
 import io.aequicor.capture.core.VideoFramePoint
 import io.aequicor.capture.platform.InputOverlayRenderer
+import io.aequicor.capture.platform.MouseTrailOverlayRenderer
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -36,6 +37,7 @@ internal class MacVideoCaptureAdapter(
         var outputWidth = 0
         var outputHeight = 0
         val inputOverlay = InputOverlayRenderer()
+        val mouseTrail = MouseTrailOverlayRenderer()
         while (currentCoroutineContext().isActive) {
             selected = resolveWindow(selection, selected)
             val captured = try {
@@ -44,8 +46,19 @@ internal class MacVideoCaptureAdapter(
                 throw sourceUnavailable("Unable to capture ${settings.captureSource.displayName}: ${failure.message}")
             }
             captured.validate()
+            val frameTimestampNanoseconds = (nanoTime() - startedAt).coerceAtLeast(0)
             var pixels = captured.rgbaPixels
             val cursor = captured.cursorPixelPosition(windowSystem.cursorPosition())
+            if (settings.showMouseTrail) {
+                mouseTrail.update(
+                    timestampMicros = frameTimestampNanoseconds / NANOS_PER_MICROSECOND,
+                    hotspotX = cursor?.x,
+                    hotspotY = cursor?.y,
+                    frameWidth = captured.pixelWidth,
+                    frameHeight = captured.pixelHeight,
+                )
+                mouseTrail.drawRgba(pixels, captured.pixelWidth, captured.pixelHeight)
+            }
             if (settings.captureCursor && cursor != null) {
                 MacRgbaCursorPainter.draw(pixels, captured.pixelWidth, captured.pixelHeight, cursor.x, cursor.y)
             }
@@ -75,7 +88,7 @@ internal class MacVideoCaptureAdapter(
             }
             emit(
                 VideoFrame(
-                    timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                    timestamp = MediaTimestamp(frameTimestampNanoseconds),
                     width = outputWidth,
                     height = outputHeight,
                     pixelFormat = PixelFormat.Rgba8888,
@@ -160,3 +173,4 @@ private fun ByteArray.fitInto(sourceWidth: Int, sourceHeight: Int, targetWidth: 
 private fun sourceUnavailable(message: String) = RecordingException(RecordingError.SourceUnavailable(message))
 
 private const val NANOS_PER_SECOND = 1_000_000_000L
+private const val NANOS_PER_MICROSECOND = 1_000L

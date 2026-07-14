@@ -103,6 +103,7 @@ import io.aequicor.compose.resources.capture_cursor
 import io.aequicor.compose.resources.show_capture_border
 import io.aequicor.compose.resources.show_application_in_recording
 import io.aequicor.compose.resources.show_input_overlay
+import io.aequicor.compose.resources.show_mouse_trail
 import io.aequicor.compose.resources.choose_output_file
 import io.aequicor.compose.resources.choose_video_file
 import io.aequicor.compose.resources.close
@@ -1322,6 +1323,23 @@ private fun SettingsPane(
                 checked = state.captureCursor,
                 onCheckedChange = { enabled -> onAction(RecorderUiAction.SetCaptureCursor(enabled)) },
                 modifier = Modifier.testTag("capture-cursor"),
+                enabled = !state.isBusy,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(Res.string.show_mouse_trail),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Switch(
+                checked = state.showMouseTrail,
+                onCheckedChange = { enabled -> onAction(RecorderUiAction.SetShowMouseTrail(enabled)) },
+                modifier = Modifier.testTag("show-mouse-trail"),
                 enabled = !state.isBusy,
             )
         }

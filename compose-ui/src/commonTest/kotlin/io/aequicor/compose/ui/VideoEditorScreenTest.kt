@@ -132,6 +132,8 @@ class VideoEditorScreenTest {
         onNodeWithTag("editor-rewind-10").performClick()
         onNodeWithTag("editor-forward-10").performClick()
         onNodeWithTag("editor-next-frame").performClick()
+        onNodeWithTag("editor-playback-speed").performClick()
+        onNodeWithTag("editor-playback-speed-double").performClick()
         onNodeWithTag("editor-mark-frame").performClick()
 
         assertEquals(
@@ -141,6 +143,7 @@ class VideoEditorScreenTest {
                 VideoEditorAction.Seek(-9_000_000),
                 VideoEditorAction.Seek(11_000_000),
                 VideoEditorAction.StepFrames(1),
+                VideoEditorAction.SetPlaybackSpeed(EditorPlaybackSpeed.DOUBLE),
                 VideoEditorAction.MarkImportantFrame,
             ),
             actions,

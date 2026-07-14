@@ -2,6 +2,7 @@ package io.aequicor.desktop
 
 import io.aequicor.compose.ui.EditorAutosaveStatus
 import io.aequicor.compose.ui.EditorPreviewStatus
+import io.aequicor.compose.ui.EditorPlaybackSpeed
 import io.aequicor.compose.ui.FrameExportCandidate
 import io.aequicor.compose.ui.VideoEditorAction
 import io.aequicor.compose.ui.VideoEditorUiState
@@ -32,10 +33,12 @@ import io.aequicor.media.desktop.ffmpeg.EditorPreviewSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -146,6 +149,7 @@ internal class VideoEditorViewModel(
             is VideoEditorAction.SelectFrameExportCandidate -> selectFrameExportCandidate(action.candidateId)
             is VideoEditorAction.Seek -> seek(action.timelineMicros)
             VideoEditorAction.TogglePlayback -> if (mutableState.value.isPlaying) stopPlayback() else startPlayback()
+            is VideoEditorAction.SetPlaybackSpeed -> setPlaybackSpeed(action.speed)
             is VideoEditorAction.StepFrames -> stepFrames(action.frames)
             VideoEditorAction.SplitSelectedClip -> splitSelectedClip()
             VideoEditorAction.DeleteSelectedClip -> mutableState.value.selectedClipId?.let {
@@ -707,12 +711,23 @@ internal class VideoEditorViewModel(
         seek(mutablePlayheadMicros.value + frames * frameDuration)
     }
 
+    private fun setPlaybackSpeed(speed: EditorPlaybackSpeed) {
+        if (mutableState.value.playbackSpeed == speed) return
+        val resumePlayback = mutableState.value.isPlaying
+        if (resumePlayback) stopPlayback()
+        mutableState.update { it.copy(playbackSpeed = speed) }
+        if (resumePlayback) startPlayback()
+    }
+
     private fun startPlayback() {
         if (history.project.durationMicros <= 0L || playbackJob != null) return
-        stopPreviewRendering()
         if (mutablePlayheadMicros.value >= history.project.durationMicros) mutablePlayheadMicros.value = 0L
         val project = history.project
-        playbackJob = scope.launch {
+        if (previewProject != project || previewJob?.isActive != true) {
+            startPreviewRendering(project)
+        }
+        var playbackAudioJob: Job? = null
+        val job = scope.launch(start = CoroutineStart.LAZY) {
             mutableState.update {
                 it.copy(
                     isPlaying = true,
@@ -721,37 +736,22 @@ internal class VideoEditorViewModel(
                 )
             }
             try {
-                val audio = audioFor(project)
-                audioJob = if (audio.samples.isNotEmpty()) {
-                    scope.launch { audioPlayer.play(audio, mutablePlayheadMicros.value) }
-                } else null
                 val initialPlayhead = mutablePlayheadMicros.value
+                val playbackSpeed = mutableState.value.playbackSpeed
+                val audio = audioFor(project)
+                playbackAudioJob = if (audio.samples.isNotEmpty()) {
+                    scope.launch { audioPlayer.play(audio, initialPlayhead, playbackSpeed.factor) }
+                } else null
+                audioJob = playbackAudioJob
                 val startedAt = nanoTime()
                 val frameIntervalNanos = NANOS_PER_SECOND / project.frameRate
-                val previewSession = mediaService.createPreviewSession(
-                    project = project,
-                    maxWidth = EDITOR_PREVIEW_WIDTH,
-                    maxHeight = EDITOR_PREVIEW_HEIGHT,
-                )
-                try {
-                    while (isActive) {
-                        val frameStartedAt = nanoTime()
-                        val elapsed = (frameStartedAt - startedAt).coerceAtLeast(0L) / NANOS_PER_MICROSECOND
-                        val timestamp = initialPlayhead + elapsed
-                        if (timestamp >= project.durationMicros) break
-                        mutablePlayheadMicros.value = timestamp
-                        mutablePreviewFrame.value = previewSession.render(timestamp)
-                        if (mutableState.value.previewStatus != EditorPreviewStatus.Ready) {
-                            mutableState.update { it.copy(previewStatus = EditorPreviewStatus.Ready) }
-                        }
-                        val renderNanos = (nanoTime() - frameStartedAt).coerceAtLeast(0L)
-                        val remainingNanos = frameIntervalNanos - renderNanos
-                        if (remainingNanos > 0L) {
-                            delay((remainingNanos / NANOS_PER_MILLISECOND).coerceAtLeast(1L))
-                        }
-                    }
-                } finally {
-                    previewSession.close()
+                while (isActive) {
+                    val elapsed = (nanoTime() - startedAt).coerceAtLeast(0L) / NANOS_PER_MICROSECOND
+                    val timestamp = initialPlayhead + (elapsed * playbackSpeed.factor).toLong()
+                    if (timestamp >= project.durationMicros) break
+                    mutablePlayheadMicros.value = timestamp
+                    previewRequests?.trySend(timestamp)
+                    delay((frameIntervalNanos / NANOS_PER_MILLISECOND).coerceAtLeast(1L))
                 }
                 mutablePlayheadMicros.value = project.durationMicros
             } catch (cancelled: CancellationException) {
@@ -759,26 +759,30 @@ internal class VideoEditorViewModel(
             } catch (failure: Exception) {
                 reportFailure(failure)
             } finally {
-                audioPlayer.stop()
-                audioJob?.cancel()
-                audioJob = null
-                playbackJob = null
-                mutableState.update {
-                    it.copy(
-                        isPlaying = false,
-                        previewStatus = if (it.previewStatus == EditorPreviewStatus.Rendering) {
-                            if (mutablePreviewFrame.value == null) {
-                                EditorPreviewStatus.Empty
+                playbackAudioJob?.cancel()
+                if (playbackJob === currentCoroutineContext()[Job]) {
+                    audioPlayer.stop()
+                    if (audioJob === playbackAudioJob) audioJob = null
+                    playbackJob = null
+                    mutableState.update {
+                        it.copy(
+                            isPlaying = false,
+                            previewStatus = if (it.previewStatus == EditorPreviewStatus.Rendering) {
+                                if (mutablePreviewFrame.value == null) {
+                                    EditorPreviewStatus.Empty
+                                } else {
+                                    EditorPreviewStatus.Ready
+                                }
                             } else {
-                                EditorPreviewStatus.Ready
-                            }
-                        } else {
-                            it.previewStatus
-                        },
-                    )
+                                it.previewStatus
+                            },
+                        )
+                    }
                 }
             }
         }
+        playbackJob = job
+        job.start()
     }
 
     private suspend fun audioFor(project: EditorProject): EditorPreviewAudio {

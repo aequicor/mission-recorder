@@ -90,6 +90,7 @@ data class RecorderUiState(
     val frameRate: Int = 30,
     val captureCursor: Boolean = true,
     val showInputOverlay: Boolean = false,
+    val showMouseTrail: Boolean = false,
     val recordMouseTrail: Boolean = false,
     val showApplicationInRecording: Boolean = false,
     val showCaptureBorder: Boolean = true,
@@ -248,6 +249,7 @@ sealed interface RecorderUiAction {
     data class SetFrameRate(val frameRate: Int) : RecorderUiAction
     data class SetCaptureCursor(val enabled: Boolean) : RecorderUiAction
     data class SetShowInputOverlay(val enabled: Boolean) : RecorderUiAction
+    data class SetShowMouseTrail(val enabled: Boolean) : RecorderUiAction
     data class SetRecordMouseTrail(val enabled: Boolean) : RecorderUiAction
     data class SetShowApplicationInRecording(val enabled: Boolean) : RecorderUiAction
     data class SetShowCaptureBorder(val enabled: Boolean) : RecorderUiAction

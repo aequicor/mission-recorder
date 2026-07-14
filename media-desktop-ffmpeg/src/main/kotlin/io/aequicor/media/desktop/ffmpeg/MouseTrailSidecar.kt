@@ -1,18 +1,17 @@
 package io.aequicor.media.desktop.ffmpeg
 
 import io.aequicor.capture.core.VideoFramePoint
+import io.aequicor.capture.platform.MouseTrailPainter
+import io.aequicor.capture.platform.MouseTrailPoint
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.awt.Color
 import java.awt.Graphics2D
-import java.awt.RenderingHints
-import java.awt.geom.Path2D
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
-import kotlin.math.sqrt
+import kotlin.math.roundToInt
 
 /** Cursor position captured alongside one encoded video frame. */
 @Serializable
@@ -28,10 +27,10 @@ internal class MouseTrailRecorder {
     private var firstTimestampMicros: Long? = null
 
     fun record(timestampMicros: Long, position: VideoFramePoint?) {
-        if (position == null) return
         val first = firstTimestampMicros ?: timestampMicros.coerceAtLeast(0L).also {
             firstTimestampMicros = it
         }
+        if (position == null) return
         val point = RecordedMousePoint(
             timestampMicros = (timestampMicros - first).coerceAtLeast(0L),
             x = position.x,
@@ -84,6 +83,27 @@ internal class MouseTrail private constructor(
         return samples.subList(startIndex, endIndex + 1)
     }
 
+    fun pointsWithin(startMicros: Long, endMicros: Long): List<RecordedMousePoint> {
+        if (endMicros < startMicros || samples.isEmpty()) return emptyList()
+        val firstInsideIndex = samples.indexOfFirst { sample -> sample.timestampMicros >= startMicros }
+        val endIndex = samples.indexOfLast { sample -> sample.timestampMicros <= endMicros }
+        if (firstInsideIndex < 0 || endIndex < firstInsideIndex) return emptyList()
+        val inside = samples.subList(firstInsideIndex, endIndex + 1)
+        val previous = samples.getOrNull(firstInsideIndex - 1) ?: return inside
+        val firstInside = inside.first()
+        if (firstInside.timestampMicros == startMicros || firstInside.timestampMicros == previous.timestampMicros) {
+            return inside
+        }
+        val progress = (startMicros - previous.timestampMicros).toDouble() /
+            (firstInside.timestampMicros - previous.timestampMicros)
+        val boundary = RecordedMousePoint(
+            timestampMicros = startMicros,
+            x = interpolateCoordinate(previous.x, firstInside.x, progress),
+            y = interpolateCoordinate(previous.y, firstInside.y, progress),
+        )
+        return listOf(boundary) + inside
+    }
+
     companion object {
         fun load(recordingPath: String): MouseTrail? {
             val sidecar = runCatching { mouseTrailSidecarPath(Path.of(recordingPath)) }.getOrNull() ?: return null
@@ -102,54 +122,28 @@ internal class MouseTrail private constructor(
     }
 }
 
-/** Renders one semi-transparent ribbon that tapers from the cursor to the trail's older end. */
-internal fun Graphics2D.drawMouseTrail(points: List<RecordedMousePoint>) {
-    if (points.size < 2) return
-    val previousAntialiasing = getRenderingHint(RenderingHints.KEY_ANTIALIASING)
-    val previousStrokeControl = getRenderingHint(RenderingHints.KEY_STROKE_CONTROL)
-    setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-    setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
-    try {
-        color = Color(TRAIL_RED, TRAIL_GREEN, TRAIL_BLUE, TRAIL_ALPHA)
-        fill(points.toTaperedRibbon())
-    } finally {
-        setRenderingHint(RenderingHints.KEY_ANTIALIASING, previousAntialiasing)
-        setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, previousStrokeControl)
-    }
-}
+private fun interpolateCoordinate(start: Int, end: Int, progress: Double): Int =
+    (start.toDouble() + (end.toDouble() - start) * progress).roundToInt()
 
-private fun List<RecordedMousePoint>.toTaperedRibbon(): Path2D {
-    val left = indices.map { index -> offsetPoint(index, side = 1) }
-    val right = indices.map { index -> offsetPoint(index, side = -1) }
-    return Path2D.Double().apply {
-        moveTo(left.first().x, left.first().y)
-        left.drop(1).forEach { point -> lineTo(point.x, point.y) }
-        right.asReversed().forEach { point -> lineTo(point.x, point.y) }
-        closePath()
-    }
-}
-
-private fun List<RecordedMousePoint>.offsetPoint(index: Int, side: Int): TrailPoint {
-    val point = this[index]
-    val previous = getOrNull(index - 1) ?: point
-    val next = getOrNull(index + 1) ?: point
-    val deltaX = (next.x - previous.x).toDouble()
-    val deltaY = (next.y - previous.y).toDouble()
-    val length = sqrt(deltaX * deltaX + deltaY * deltaY)
-    val normalX = if (length == 0.0) 0.0 else -deltaY / length
-    val normalY = if (length == 0.0) 1.0 else deltaX / length
-    val progress = index.toDouble() / lastIndex.coerceAtLeast(1)
-    val radius = TRAIL_TAIL_RADIUS + (TRAIL_HEAD_RADIUS - TRAIL_TAIL_RADIUS) * progress
-    return TrailPoint(
-        x = point.x + normalX * radius * side,
-        y = point.y + normalY * radius * side,
+/** Renders a time-faded cursor trail whose newest end is the most prominent. */
+internal fun Graphics2D.drawMouseTrail(
+    points: List<RecordedMousePoint>,
+    referenceTimestampMicros: Long = points.lastOrNull()?.timestampMicros ?: 0L,
+    maximumLengthPixels: Double = Double.POSITIVE_INFINITY,
+) {
+    MouseTrailPainter.draw(
+        graphics = this,
+        points = points.map { point ->
+            MouseTrailPoint(
+                timestampMicros = point.timestampMicros,
+                x = point.x,
+                y = point.y,
+            )
+        },
+        referenceTimestampMicros = referenceTimestampMicros,
+        maximumLengthPixels = maximumLengthPixels,
     )
 }
-
-private data class TrailPoint(
-    val x: Double,
-    val y: Double,
-)
 
 internal fun mouseTrailSidecarPath(recordingPath: Path): Path =
     recordingPath.resolveSibling("${recordingPath.fileName}$MOUSE_TRAIL_SIDECAR_SUFFIX")
@@ -169,9 +163,3 @@ private val mouseTrailJson = Json {
 private const val MOUSE_TRAIL_FORMAT = "mission-recorder-mouse-trail"
 private const val MOUSE_TRAIL_VERSION = 1
 private const val MOUSE_TRAIL_SIDECAR_SUFFIX = ".mission-recorder-mouse-trail.json"
-private const val TRAIL_TAIL_RADIUS = 3.0
-private const val TRAIL_HEAD_RADIUS = 16.0
-private const val TRAIL_RED = 38
-private const val TRAIL_GREEN = 150
-private const val TRAIL_BLUE = 218
-private const val TRAIL_ALPHA = 118

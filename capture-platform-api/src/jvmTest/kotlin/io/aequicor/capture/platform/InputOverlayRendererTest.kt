@@ -12,17 +12,40 @@ class InputOverlayRendererTest {
 
         assertEquals("Ctrl", renderer.update(listOf("Ctrl"), timestampNanoseconds = 0))
         assertEquals("Ctrl + C", renderer.update(listOf("Ctrl", "C"), timestampNanoseconds = 10))
-        assertEquals("Ctrl + C", renderer.update(emptyList(), timestampNanoseconds = 109))
-        assertNull(renderer.update(emptyList(), timestampNanoseconds = 111))
+        assertEquals("Ctrl", renderer.update(listOf("Ctrl"), timestampNanoseconds = 11))
+        assertEquals("Ctrl", renderer.update(emptyList(), timestampNanoseconds = 12))
+        assertEquals("Ctrl", renderer.update(emptyList(), timestampNanoseconds = 112))
+        assertNull(renderer.update(emptyList(), timestampNanoseconds = 113))
     }
 
     @Test
-    fun doesNotRestartTimeoutWhileInputRemainsHeld() {
+    fun keepsInputVisibleWhileItRemainsHeld() {
         val renderer = InputOverlayRenderer(visibleDurationNanoseconds = 100)
 
         renderer.update(listOf("LMB"), timestampNanoseconds = 0)
 
-        assertNull(renderer.update(listOf("LMB"), timestampNanoseconds = 101))
+        assertEquals("ЛКМ", renderer.update(listOf("LMB"), timestampNanoseconds = 101))
+    }
+
+    @Test
+    fun keepsMouseButtonVisibleBrieflyAfterRelease() {
+        val renderer = InputOverlayRenderer(visibleDurationNanoseconds = 100)
+
+        assertEquals("ЛКМ", renderer.update(listOf("LMB"), timestampNanoseconds = 0))
+        assertEquals("ЛКМ", renderer.update(emptyList(), timestampNanoseconds = 1))
+        assertEquals("ЛКМ", renderer.update(emptyList(), timestampNanoseconds = 101))
+        assertNull(renderer.update(emptyList(), timestampNanoseconds = 102))
+    }
+
+    @Test
+    fun keepsReleasedInputVisibleForOneTenthOfASecondByDefault() {
+        val renderer = InputOverlayRenderer()
+
+        renderer.update(listOf("LMB"), timestampNanoseconds = 0)
+
+        assertEquals("ЛКМ", renderer.update(emptyList(), timestampNanoseconds = 1))
+        assertEquals("ЛКМ", renderer.update(emptyList(), timestampNanoseconds = 100_000_001))
+        assertNull(renderer.update(emptyList(), timestampNanoseconds = 100_000_002))
     }
 
     @Test

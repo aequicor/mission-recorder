@@ -5,6 +5,8 @@ import io.aequicor.capture.core.CaptureSource
 import io.aequicor.capture.core.CaptureSourceId
 import io.aequicor.capture.core.RecordingSettings
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import java.awt.Color
 import java.awt.Point
@@ -62,6 +64,30 @@ class AwtVideoCaptureAdapterTest {
         assertEquals(0, requireNotNull(frame.pixelData).countPixelsOtherThanWhite())
     }
 
+    @Test
+    fun paintsMouseTrailIntoSubsequentVideoFrames() = runBlocking {
+        val pointers = listOf(Point(105, 206), Point(120, 206))
+        var pointerIndex = 0
+        var currentTime = 0L
+        val adapter = AwtVideoCaptureAdapter(
+            screenGrabberFactory = {
+                ScreenGrabber { rectangle -> solidImage(rectangle.width, rectangle.height, Color.WHITE) }
+            },
+            pointerLocationProvider = PointerLocationProvider {
+                pointers.getOrElse(pointerIndex++) { pointers.last() }
+            },
+            isHeadless = { false },
+            nanoTime = {
+                currentTime += 100_000_000L
+                currentTime
+            },
+        )
+
+        val frames = adapter.frames(settings(captureCursor = false, showMouseTrail = true)).take(2).toList()
+
+        assertFalse(requireNotNull(frames.last().pixelData).isWhitePixel(x = 12, y = 6, width = 32))
+    }
+
     private fun adapter(pointer: Point, color: Color = Color.WHITE) = AwtVideoCaptureAdapter(
         screenGrabberFactory = {
             ScreenGrabber { rectangle -> solidImage(rectangle.width, rectangle.height, color) }
@@ -71,7 +97,7 @@ class AwtVideoCaptureAdapterTest {
         nanoTime = { 1L },
     )
 
-    private fun settings(captureCursor: Boolean) = RecordingSettings(
+    private fun settings(captureCursor: Boolean, showMouseTrail: Boolean = false) = RecordingSettings(
         captureSource = CaptureSource.Region(
             id = CaptureSourceId("region:test"),
             displayName = "Test region",
@@ -80,6 +106,7 @@ class AwtVideoCaptureAdapterTest {
         outputPath = "unused.mp4",
         frameRate = 30,
         captureCursor = captureCursor,
+        showMouseTrail = showMouseTrail,
     )
 }
 

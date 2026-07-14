@@ -165,6 +165,8 @@ data class VideoSettings(
     val captureCursor: Boolean = true,
     /** Opt-in profile setting for recording keyboard and mouse press labels in the video. */
     val showInputOverlay: Boolean = false,
+    /** Opt-in profile setting for rendering a short-lived mouse trail in video and preview frames. */
+    val showMouseTrail: Boolean = false,
     /** Opt-in profile setting for saving cursor movement for storyboard-only trails. */
     val recordMouseTrail: Boolean = false,
 )
@@ -283,6 +285,7 @@ fun RecordingProfileSettings.toRecordingSettings(outputPath: String): RecordingS
         frameRate = video.frameRate,
         captureCursor = video.captureCursor,
         showInputOverlay = video.showInputOverlay,
+        showMouseTrail = video.showMouseTrail,
         recordMouseTrail = video.recordMouseTrail,
         replayDuration = replay.takeIf { it.enabled }?.durationSeconds?.seconds,
         encoder = encoder.toEncoderSettings(),

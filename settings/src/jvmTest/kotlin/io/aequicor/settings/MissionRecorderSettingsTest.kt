@@ -24,6 +24,7 @@ class MissionRecorderSettingsTest {
         val defaultProfile = settings.profiles.single()
         assertTrue(defaultProfile.video.captureCursor)
         assertEquals(false, defaultProfile.video.showInputOverlay)
+        assertEquals(false, defaultProfile.video.showMouseTrail)
         assertEquals(false, defaultProfile.video.recordMouseTrail)
         assertTrue(defaultProfile.output.fileNamePattern.endsWith(".mp4"))
 
@@ -88,7 +89,7 @@ class MissionRecorderSettingsTest {
                 ),
             ),
             encoder = EncoderProfileSettings(container = ContainerFormatSetting.Matroska),
-            video = VideoSettings(showInputOverlay = true, recordMouseTrail = true),
+            video = VideoSettings(showInputOverlay = true, showMouseTrail = true, recordMouseTrail = true),
             output = OutputSettings(overwrite = true),
         )
 
@@ -99,6 +100,7 @@ class MissionRecorderSettingsTest {
         assertEquals(1, recordingSettings.audioSources.size)
         assertEquals(ContainerFormat.Matroska, recordingSettings.encoder.container)
         assertTrue(recordingSettings.showInputOverlay)
+        assertTrue(recordingSettings.showMouseTrail)
         assertTrue(recordingSettings.recordMouseTrail)
         assertTrue(recordingSettings.overwriteOutput)
     }

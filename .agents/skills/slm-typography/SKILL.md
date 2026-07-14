@@ -100,6 +100,31 @@ width/height intent and line policy.
 Choose one, not both. `autosize height` grows vertically; `autosize both` grows in both
 axes. Validate with the longest target-locale strings, not only the source language.
 
+### Alignment needs a real text box
+
+`text-align` and `text-valign` align glyphs only inside the text node's own box. They do
+not position that box inside its parent `Frame`. Centering a `width (hug)` label is normally
+invisible because the box is already the glyph width; centering a `height (hug)` label has
+the same problem vertically.
+
+Use these Frame-safe patterns:
+
+| Intent | Required geometry and typography |
+| --- | --- |
+| centered title across a region | fixed/fill region width + `text-align center`; use hug height unless vertical centering is also needed |
+| vertically centered row label | explicit row-height text box + `text-valign center` |
+| centered button label | text box exactly matches the button frame + both center phrases |
+| center the text node in its parent | calculate the node's `position`; `text-align` cannot do this |
+
+```md
+Text id section_title «Active missions» key missions.title 640 by 40 position 32 24 font «Inter» size 24 bold line-height 32 text-align center text-valign center maxLines 1
+```
+
+The free-layout shorthand `align center` is not typography and is not initial placement.
+It is a resize constraint that preserves a previously calculated position when the parent
+is resized. Never substitute it for `text-align center`, `text-valign center`, or explicit
+Frame coordinates.
+
 ```md
 Text id card_title «Orbital insertion burn» key mission.card.title font «Inter» size 18 semibold line-height 24 width (fill) height (hug) maxLines 2
 Text id card_summary «Review telemetry before authorizing the next burn.» key mission.card.summary font «Inter» size 14 line-height 20 width (fill) height 40 truncate 2
@@ -238,6 +263,9 @@ Inspect the source and build a text-node inventory yourself:
   policy and never both `truncate` and `maxLines`.
 - Check font size/weight/line-height/tracking values are unitless numbers or documented
   percentages, and every enum word appears in the typography table.
+- For every centered/right/justified text, prove that the text box has intentional spare
+  width; for every vertically centered/bottom text, prove it has intentional spare height.
+  Reject alignment on a hug axis unless the no-op is deliberate.
 - Check `features` and `axes` as separate `(tag value)` pairs with no extra outer group.
 - Locate every `text-style` and rich-text `style` id in the document's H1 `# Styles`
   dictionary or in the explicitly known design system.

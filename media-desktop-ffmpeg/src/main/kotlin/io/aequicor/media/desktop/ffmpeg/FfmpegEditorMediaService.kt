@@ -1,5 +1,7 @@
 package io.aequicor.media.desktop.ffmpeg
 
+import io.aequicor.capture.platform.DEFAULT_MOUSE_TRAIL_DURATION_MICROS
+import io.aequicor.capture.platform.MouseTrailPainter
 import io.aequicor.editor.ClipEffects
 import io.aequicor.editor.EditorClip
 import io.aequicor.editor.EditorClipId
@@ -149,7 +151,7 @@ interface EditorMediaService {
         maxHeight: Int = 1080,
     ): EditorPreviewFrame
 
-    /** Opens an ordered preview session. Call [EditorPreviewSession.close] after playback stops. */
+    /** Opens an ordered preview session. Call [EditorPreviewSession.close] when the preview no longer needs it. */
     suspend fun createPreviewSession(
         project: EditorProject,
         maxWidth: Int = 1920,
@@ -572,6 +574,7 @@ private class ProjectFrameRenderer(private val project: EditorProject) : AutoClo
             val source = sourceImage(media.id, asset, sourceMicros) ?: return@forEach
             val sourceWithMouseTrail = source.withMouseTrail(
                 points = mouseTrailPointsFor(media, asset, timelineMicros, sourceMicros),
+                referenceTimestampMicros = sourceMicros,
             )
             val transformed = sourceWithMouseTrail.applyEffects(media.effects).crop(media.transform.crop)
             val targetWidth = max(1, (transformed.width * media.transform.scale).roundToInt())
@@ -593,14 +596,12 @@ private class ProjectFrameRenderer(private val project: EditorProject) : AutoClo
         sourceMicros: Long,
     ): List<RecordedMousePoint> {
         if (project.importantFrames.none { marker -> marker.timelineMicros == timelineMicros }) return emptyList()
-        val previousMarkerMicros = project.importantFrames
-            .lastOrNull { marker -> marker.timelineMicros < timelineMicros }
-            ?.timelineMicros
-            ?: clip.timelineStartMicros
-        val segmentStartMicros = max(previousMarkerMicros, clip.timelineStartMicros)
-        val segmentStartSourceMicros = clip.sourceStartMicros +
-            ((segmentStartMicros - clip.timelineStartMicros) * clip.speed).toLong()
-        return mouseTrailFor(asset)?.pointsBetween(segmentStartSourceMicros, sourceMicros).orEmpty()
+        val timeWindowStartMicros = max(
+            clip.sourceStartMicros,
+            sourceMicros - DEFAULT_MOUSE_TRAIL_DURATION_MICROS,
+        )
+        val trail = mouseTrailFor(asset) ?: return emptyList()
+        return trail.pointsWithin(timeWindowStartMicros, sourceMicros)
     }
 
     private fun mouseTrailFor(asset: MediaAsset): MouseTrail? {
@@ -899,12 +900,19 @@ private fun BufferedImage.deepCopy(type: Int = BufferedImage.TYPE_INT_ARGB): Buf
     return output
 }
 
-private fun BufferedImage.withMouseTrail(points: List<RecordedMousePoint>): BufferedImage {
+private fun BufferedImage.withMouseTrail(
+    points: List<RecordedMousePoint>,
+    referenceTimestampMicros: Long,
+): BufferedImage {
     if (points.size < 2) return this
     return deepCopy().also { image ->
         val graphics = image.createGraphics()
         try {
-            graphics.drawMouseTrail(points)
+            graphics.drawMouseTrail(
+                points = points,
+                referenceTimestampMicros = referenceTimestampMicros,
+                maximumLengthPixels = MouseTrailPainter.maximumLength(width, height),
+            )
         } finally {
             graphics.dispose()
         }

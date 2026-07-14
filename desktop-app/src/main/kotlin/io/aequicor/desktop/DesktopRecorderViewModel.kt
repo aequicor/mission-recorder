@@ -205,6 +205,7 @@ internal class DesktopRecorderViewModel(
             frameRate = startupPreferences.frameRate,
             captureCursor = startupPreferences.captureCursor,
             showInputOverlay = startupPreferences.showInputOverlay,
+            showMouseTrail = startupPreferences.showMouseTrail,
             recordMouseTrail = startupPreferences.recordMouseTrail,
             showApplicationInRecording = initialShowApplicationInRecording,
             showCaptureBorder = initialShowCaptureBorder,
@@ -330,6 +331,7 @@ internal class DesktopRecorderViewModel(
             is RecorderUiAction.SetFrameRate -> setFrameRate(action.frameRate)
             is RecorderUiAction.SetCaptureCursor -> setCaptureCursor(action.enabled)
             is RecorderUiAction.SetShowInputOverlay -> setShowInputOverlay(action.enabled)
+            is RecorderUiAction.SetShowMouseTrail -> setShowMouseTrail(action.enabled)
             is RecorderUiAction.SetRecordMouseTrail -> setRecordMouseTrail(action.enabled)
             is RecorderUiAction.SetShowApplicationInRecording -> mutableState.update {
                 it.copy(showApplicationInRecording = action.enabled)
@@ -604,6 +606,13 @@ internal class DesktopRecorderViewModel(
         }
     }
 
+    private fun setShowMouseTrail(enabled: Boolean) {
+        if (!mutableState.value.isBusy) {
+            mutableState.update { it.copy(showMouseTrail = enabled) }
+            queueRecorderPreferences()
+        }
+    }
+
     private fun setRecordMouseTrail(enabled: Boolean) {
         if (!mutableState.value.isBusy) {
             mutableState.update { it.copy(recordMouseTrail = enabled) }
@@ -835,6 +844,7 @@ internal class DesktopRecorderViewModel(
                 frameRate = configuration.preferences.frameRate,
                 captureCursor = configuration.preferences.captureCursor,
                 showInputOverlay = configuration.preferences.showInputOverlay,
+                showMouseTrail = configuration.preferences.showMouseTrail,
                 recordMouseTrail = configuration.preferences.recordMouseTrail,
                 videoBitrateMbps = configuration.preferences.videoBitrateMbps,
                 replayDurationMinutes = configuration.preferences.replayDurationMinutes,
@@ -1060,6 +1070,7 @@ internal class DesktopRecorderViewModel(
             frameRate = snapshot.frameRate,
             captureCursor = snapshot.captureCursor,
             showInputOverlay = snapshot.showInputOverlay,
+            showMouseTrail = snapshot.showMouseTrail,
             recordMouseTrail = snapshot.recordMouseTrail,
             encoder = encoderSettings,
         )
@@ -1247,6 +1258,7 @@ internal class DesktopRecorderViewModel(
             outputPath = PREVIEW_OUTPUT_PLACEHOLDER,
             frameRate = minOf(snapshot.frameRate, MAX_PREVIEW_FRAME_RATE),
             captureCursor = false,
+            showMouseTrail = snapshot.showMouseTrail,
             encoder = encoderSettings,
         )
         permissionError(settings)?.let { message ->
@@ -1316,6 +1328,7 @@ internal class DesktopRecorderViewModel(
             frameRate = snapshot.frameRate,
             captureCursor = snapshot.captureCursor,
             showInputOverlay = snapshot.showInputOverlay,
+            showMouseTrail = snapshot.showMouseTrail,
             recordMouseTrail = snapshot.recordMouseTrail,
             replayDuration = snapshot.replayDurationMinutes.minutes,
             encoder = encoderSettings,
@@ -1381,6 +1394,7 @@ internal class DesktopRecorderViewModel(
             outputPath = PREVIEW_OUTPUT_PLACEHOLDER,
             frameRate = minOf(snapshot.frameRate, MAX_PREVIEW_FRAME_RATE),
             captureCursor = false,
+            showMouseTrail = snapshot.showMouseTrail,
             encoder = encoderSettings,
         )
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -1726,6 +1740,7 @@ private fun RecorderUiState.toRecorderPreferences(encoderSettings: EncoderSettin
         frameRate = frameRate,
         captureCursor = captureCursor,
         showInputOverlay = showInputOverlay,
+        showMouseTrail = showMouseTrail,
         recordMouseTrail = recordMouseTrail,
         replayDurationMinutes = replayDurationMinutes,
         storyboardMode = storyboardMode,

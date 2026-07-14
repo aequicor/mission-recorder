@@ -38,15 +38,18 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -116,6 +119,7 @@ import io.aequicor.compose.resources.recording_history
 import io.aequicor.compose.resources.remove_important_frame
 import io.aequicor.compose.resources.rewind_ten_seconds
 import io.aequicor.compose.resources.selected_frames_count
+import io.aequicor.compose.resources.speed
 import io.aequicor.compose.resources.storyboard
 import io.aequicor.compose.resources.storyboard_selection_count
 import io.aequicor.compose.resources.undo
@@ -474,7 +478,7 @@ private fun VideoReviewPanel(
         )
         Spacer(Modifier.height(16.dp))
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val compactTransport = maxWidth < 520.dp
+            val compactTransport = maxWidth < 600.dp
             PlaybackTransport(
                 state = state,
                 playheadMicros = playheadMicros,
@@ -608,6 +612,12 @@ private fun FullPlaybackTransport(
             enabled = state.project.durationMicros > 0L && !state.isExporting,
             onClick = { onAction(VideoEditorAction.StepFrames(1)) },
         )
+        Spacer(Modifier.width(8.dp))
+        PlaybackSpeedMenu(
+            speed = state.playbackSpeed,
+            enabled = state.project.durationMicros > 0L && !state.isExporting,
+            onSpeedSelected = { onAction(VideoEditorAction.SetPlaybackSpeed(it)) },
+        )
         Spacer(Modifier.weight(1f))
         TextButton(
             onClick = { onAction(VideoEditorAction.MarkImportantFrame) },
@@ -673,16 +683,84 @@ private fun CompactPlaybackTransport(
                 onClick = { onAction(VideoEditorAction.StepFrames(1)) },
             )
         }
-        TextButton(
-            onClick = { onAction(VideoEditorAction.MarkImportantFrame) },
-            enabled = state.project.durationMicros > 0L && !state.isExporting,
-            modifier = Modifier.align(Alignment.End).height(36.dp).testTag("editor-mark-frame"),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            MaterialIcon(MaterialIcons.Star, null, color = EditorColors.Important, size = 18.dp)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(Res.string.mark_important_frame), color = EditorColors.Important, maxLines = 1)
+            PlaybackSpeedMenu(
+                speed = state.playbackSpeed,
+                enabled = state.project.durationMicros > 0L && !state.isExporting,
+                onSpeedSelected = { onAction(VideoEditorAction.SetPlaybackSpeed(it)) },
+            )
+            Spacer(Modifier.weight(1f))
+            TextButton(
+                onClick = { onAction(VideoEditorAction.MarkImportantFrame) },
+                enabled = state.project.durationMicros > 0L && !state.isExporting,
+                modifier = Modifier.height(44.dp).testTag("editor-mark-frame"),
+            ) {
+                MaterialIcon(MaterialIcons.Star, null, color = EditorColors.Important, size = 18.dp)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(Res.string.mark_important_frame), color = EditorColors.Important, maxLines = 1)
+            }
         }
     }
+}
+
+@Composable
+private fun PlaybackSpeedMenu(
+    speed: EditorPlaybackSpeed,
+    enabled: Boolean,
+    onSpeedSelected: (EditorPlaybackSpeed) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val value = formatPlaybackSpeed(speed)
+    val description = "${stringResource(Res.string.speed)}: $value"
+    Box {
+        TextButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            modifier = Modifier
+                .height(44.dp)
+                .widthIn(min = 64.dp)
+                .testTag("editor-playback-speed")
+                .semantics { contentDescription = description },
+            contentPadding = PaddingValues(horizontal = 10.dp),
+        ) {
+            Text(
+                text = value,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            EditorPlaybackSpeed.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(formatPlaybackSpeed(option)) },
+                    onClick = {
+                        expanded = false
+                        onSpeedSelected(option)
+                    },
+                    trailingIcon = {
+                        RadioButton(
+                            selected = option == speed,
+                            onClick = null,
+                        )
+                    },
+                    modifier = Modifier.testTag("editor-playback-speed-${option.name.lowercase()}"),
+                )
+            }
+        }
+    }
+}
+
+private fun formatPlaybackSpeed(speed: EditorPlaybackSpeed): String = when (speed) {
+    EditorPlaybackSpeed.HALF -> "0.5\u00d7"
+    EditorPlaybackSpeed.NORMAL -> "1\u00d7"
+    EditorPlaybackSpeed.ONE_AND_HALF -> "1.5\u00d7"
+    EditorPlaybackSpeed.DOUBLE -> "2\u00d7"
 }
 
 @Composable

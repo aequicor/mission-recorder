@@ -41,6 +41,7 @@ public class InputOverlayRenderer(
         val currentMouseButtons = currentInputs.filterTo(linkedSetOf(), MOUSE_BUTTON_LABELS::contains)
         val previousMouseButtons = previousInputs.filterTo(linkedSetOf(), MOUSE_BUTTON_LABELS::contains)
         val newlyPressedInputs = currentInputs - previousInputs
+        val releasedInputs = previousInputs - currentInputs
         val newlyPressedMouseButtons = currentMouseButtons - previousMouseButtons
         val releasedMouseButtons = previousMouseButtons - currentMouseButtons
 
@@ -110,11 +111,26 @@ public class InputOverlayRenderer(
             }
             recentClicks = recentClicks - newLongPresses.toSet()
         }
-        if (newlyPressedInputs.isNotEmpty() || dragStarted || newLongPresses.isNotEmpty()) {
+        if (currentInputs.isEmpty()) {
+            if (releasedInputs.isNotEmpty() && visibleText != null) {
+                visibleUntilNanoseconds = timestampNanoseconds + visibleDurationNanoseconds
+            } else if (timestampNanoseconds > visibleUntilNanoseconds) {
+                clearLabel()
+            }
+        } else if (
+            newlyPressedInputs.isNotEmpty() || releasedInputs.isNotEmpty() || dragStarted || newLongPresses.isNotEmpty()
+        ) {
             showLabel(currentInputs, mousePresses, includeDrag = dragging, timestampNanoseconds)
         }
         previousInputs = currentInputs
-        return visibleText?.takeIf { timestampNanoseconds <= visibleUntilNanoseconds }
+        return visibleText?.takeIf {
+            currentInputs.isNotEmpty() || timestampNanoseconds <= visibleUntilNanoseconds
+        }
+    }
+
+    private fun clearLabel() {
+        visibleText = null
+        visibleUntilNanoseconds = Long.MIN_VALUE
     }
 
     private fun showLabel(
@@ -310,7 +326,7 @@ public class InputOverlayRenderer(
 
     public companion object {
         /** Default time a released input remains visible in the recorded frame. */
-        public const val DEFAULT_VISIBLE_DURATION_NANOSECONDS: Long = 900_000_000L
+        public const val DEFAULT_VISIBLE_DURATION_NANOSECONDS: Long = 100_000_000L
 
         private const val RGBA_CHANNEL_COUNT = 4
         private const val DRAG_START_DISTANCE_PIXELS = 8

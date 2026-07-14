@@ -620,6 +620,21 @@ class MissionRecorderScreenTest {
     }
 
     @Test
+    fun hoistsMouseTrailVisibilityToggle() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(showMouseTrail = false),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("show-mouse-trail").performScrollTo().assertIsEnabled().performClick()
+
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.SetShowMouseTrail(true)), actions)
+    }
+
+    @Test
     fun hoistsApplicationVisibilityToggle() = runComposeUiTest {
         val actions = mutableListOf<RecorderUiAction>()
         setContent {

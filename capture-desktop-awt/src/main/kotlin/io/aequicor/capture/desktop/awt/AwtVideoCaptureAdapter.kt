@@ -10,6 +10,7 @@ import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.core.VideoCaptureAdapter
 import io.aequicor.capture.core.VideoFrame
 import io.aequicor.capture.core.VideoFramePoint
+import io.aequicor.capture.platform.MouseTrailOverlayRenderer
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -55,24 +56,38 @@ class AwtVideoCaptureAdapter internal constructor(
         val intervalNanoseconds = NANOS_PER_SECOND / max(settings.frameRate, 1)
         val startedAt = nanoTime()
         var nextFrameDeadline = startedAt
+        val mouseTrail = MouseTrailOverlayRenderer()
 
         while (currentCoroutineContext().isActive) {
             val image = screenGrabber.capture(rectangle)
             val pointer = pointerLocationProvider.location()?.takeIf(rectangle::contains)
+            val frameTimestampNanoseconds = (nanoTime() - startedAt).coerceAtLeast(0)
+            val hotspotX = pointer?.x?.minus(rectangle.x)
+            val hotspotY = pointer?.y?.minus(rectangle.y)
+            if (settings.showMouseTrail) {
+                mouseTrail.update(
+                    timestampMicros = frameTimestampNanoseconds / NANOS_PER_MICROSECOND,
+                    hotspotX = hotspotX,
+                    hotspotY = hotspotY,
+                    frameWidth = image.width,
+                    frameHeight = image.height,
+                )
+                image.createGraphics().use(mouseTrail::draw)
+            }
             if (settings.captureCursor) {
                 pointer?.let { location -> image.drawCursor(location, rectangle) }
             }
             emit(
                 VideoFrame(
-                    timestamp = MediaTimestamp((nanoTime() - startedAt).coerceAtLeast(0)),
+                    timestamp = MediaTimestamp(frameTimestampNanoseconds),
                     width = image.width,
                     height = image.height,
                     pixelFormat = PixelFormat.Rgba8888,
                     strideBytes = image.width * 4,
                     sourceId = settings.captureSource.id,
                     pixelData = image.toRgbaBytes(),
-                    cursorPosition = pointer?.let { location ->
-                        VideoFramePoint(location.x - rectangle.x, location.y - rectangle.y)
+                    cursorPosition = hotspotX?.let { x ->
+                        hotspotY?.let { y -> VideoFramePoint(x, y) }
                     },
                 ),
             )
@@ -217,3 +232,4 @@ private fun copyArgbToRgba(argbPixels: IntArray, bytes: ByteArray, forceOpaque: 
 }
 
 private const val NANOS_PER_SECOND = 1_000_000_000L
+private const val NANOS_PER_MICROSECOND = 1_000L

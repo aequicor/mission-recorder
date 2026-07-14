@@ -1,5 +1,6 @@
 package io.aequicor.media.desktop.ffmpeg
 
+import io.aequicor.capture.core.VideoFramePoint
 import io.aequicor.editor.ClipTransform
 import io.aequicor.editor.EditorClip
 import io.aequicor.editor.EditorClipId
@@ -31,6 +32,51 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class FfmpegEditorMediaServiceTest {
+    @Test
+    fun keepsRecentMouseTrailAcrossConsecutiveImportantFrames() = runTest {
+        val directory = Files.createTempDirectory("mission-editor-mouse-trail")
+        val image = directory.resolve("source.png").also { writeColor(it.toFile(), Color.WHITE) }
+        val recorder = MouseTrailRecorder()
+        recorder.record(timestampMicros = 0L, position = VideoFramePoint(8, 32))
+        recorder.record(timestampMicros = 1_000_000L, position = VideoFramePoint(52, 32))
+        assertTrue(recorder.write(image))
+        val assetId = MediaAssetId("asset:trail")
+        val project = EditorProject(
+            name = "Mouse trail",
+            primaryAssetId = assetId,
+            canvasWidth = 64,
+            canvasHeight = 64,
+            frameRate = 24,
+            assets = listOf(imageAsset(assetId, image.toString())),
+            tracks = listOf(
+                EditorTrack(
+                    id = EditorTrackId("track:trail"),
+                    name = "Video",
+                    kind = EditorTrackKind.Video,
+                    clips = listOf(
+                        EditorClip.Media(
+                            id = EditorClipId("clip:trail"),
+                            assetId = assetId,
+                            timelineStartMicros = 0L,
+                            durationMicros = 2_000_000L,
+                        ),
+                    ),
+                ),
+            ),
+            importantFrames = listOf(
+                ImportantFrameMarker(ImportantFrameId("frame:first"), 1_000_000L),
+                ImportantFrameMarker(ImportantFrameId("frame:second"), 1_400_000L),
+            ),
+        )
+        val service = FfmpegEditorMediaService(StandardTestDispatcher(testScheduler))
+
+        val first = service.renderPreview(project, 1_000_000L, maxWidth = 64, maxHeight = 64)
+        val second = service.renderPreview(project, 1_400_000L, maxWidth = 64, maxHeight = 64)
+
+        assertTrue(first.blueAt(45, 32) > first.redAt(45, 32))
+        assertTrue(second.blueAt(45, 32) > second.redAt(45, 32))
+    }
+
     @Test
     fun createsDefaultStoryboardAndRemovesVisuallyIdenticalFrames() = runTest {
         val directory = Files.createTempDirectory("mission-editor-storyboard")
@@ -250,4 +296,10 @@ class FfmpegEditorMediaServiceTest {
         }
         assertTrue(ImageIO.write(image, "png", file))
     }
+
+    private fun EditorPreviewFrame.blueAt(x: Int, y: Int): Int =
+        bgraPixels[(y * width + x) * 4].toInt() and 0xff
+
+    private fun EditorPreviewFrame.redAt(x: Int, y: Int): Int =
+        bgraPixels[(y * width + x) * 4 + 2].toInt() and 0xff
 }

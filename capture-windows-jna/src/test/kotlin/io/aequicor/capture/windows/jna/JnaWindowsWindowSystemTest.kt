@@ -16,7 +16,7 @@ class JnaWindowsWindowSystemTest {
     }
 
     @Test
-    fun ignoresInputWithoutCurrentOrRecentPress() {
+    fun ignoresInputWithoutCurrentPress() {
         assertFalse(isWindowsInputActive(0x0000))
     }
 }

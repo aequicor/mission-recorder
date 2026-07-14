@@ -36,6 +36,7 @@
     <string name="megabits_per_second">%1$d Мбит/с</string>
     <string name="capture_cursor">Показывать курсор в видео</string>
     <string name="show_input_overlay">Показывать нажатия клавиатуры и мыши</string>
+    <string name="show_mouse_trail">Показывать эффект хвоста мыши в видео</string>
     <string name="record_mouse_trail">Записывать путь мыши для раскадровки</string>
     <string name="show_capture_border">Показывать рамку области записи</string>
     <string name="show_application_in_recording">Показывать Mission Recorder в видео</string>

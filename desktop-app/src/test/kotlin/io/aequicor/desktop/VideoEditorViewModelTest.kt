@@ -1,6 +1,7 @@
 package io.aequicor.desktop
 
 import io.aequicor.compose.ui.FrameExportCandidate
+import io.aequicor.compose.ui.EditorPlaybackSpeed
 import io.aequicor.compose.ui.VideoEditorAction
 import io.aequicor.editor.EditorExportRequest
 import io.aequicor.editor.EditorProject
@@ -131,7 +132,7 @@ class VideoEditorViewModelTest {
     }
 
     @Test
-    fun playbackReusesOneDecoderSessionAndAdvancesAsVideo() = runTest {
+    fun playbackReusesPreviewDecoderAcrossPauseAndResume() = runTest {
         val media = FakeEditorMediaService(previewRenderDelayMillis = 20L)
         val viewModel = viewModel(media = media)
         viewModel.open("recording.mp4")
@@ -145,7 +146,6 @@ class VideoEditorViewModelTest {
         assertEquals(
             listOf(
                 PreviewSessionRequest(maxWidth = 1920, maxHeight = 1080),
-                PreviewSessionRequest(maxWidth = 1920, maxHeight = 1080),
             ),
             media.previewSessionRequests,
         )
@@ -153,10 +153,65 @@ class VideoEditorViewModelTest {
         assertTrue(viewModel.state.value.isPlaying)
 
         viewModel.onAction(VideoEditorAction.TogglePlayback)
+        val pausedAt = viewModel.playheadMicros.value
+        assertEquals(0, media.closedPreviewSessions)
+        assertTrue(!viewModel.state.value.isPlaying)
+
+        viewModel.onAction(VideoEditorAction.TogglePlayback)
+        runCurrent()
+        advanceTimeBy(100)
         runCurrent()
 
-        assertEquals(2, media.closedPreviewSessions)
-        assertTrue(!viewModel.state.value.isPlaying)
+        assertEquals(
+            listOf(PreviewSessionRequest(maxWidth = 1920, maxHeight = 1080)),
+            media.previewSessionRequests,
+        )
+        assertTrue(viewModel.playheadMicros.value > pausedAt)
+        assertTrue(viewModel.state.value.isPlaying)
+
+        viewModel.onAction(VideoEditorAction.TogglePlayback)
+        val stoppedAt = viewModel.playheadMicros.value
+        advanceTimeBy(100)
+        runCurrent()
+
+        assertEquals(stoppedAt, viewModel.playheadMicros.value)
+
+        viewModel.shutdown()
+        runCurrent()
+
+        assertEquals(1, media.closedPreviewSessions)
+    }
+
+    @Test
+    fun playbackSpeedAdvancesTimelineAndRestartsAudioFromCurrentPosition() = runTest {
+        val audioPlayer = FakeEditorAudioPlayer()
+        val media = FakeEditorMediaService(
+            previewAudio = EditorPreviewAudio(48_000, 2, FloatArray(2)),
+        )
+        val viewModel = viewModel(media = media, audioPlayer = audioPlayer)
+        viewModel.open("recording.mp4")
+        runCurrent()
+
+        viewModel.onAction(VideoEditorAction.SetPlaybackSpeed(EditorPlaybackSpeed.DOUBLE))
+        viewModel.onAction(VideoEditorAction.TogglePlayback)
+        runCurrent()
+        advanceTimeBy(100)
+        runCurrent()
+
+        assertEquals(EditorPlaybackSpeed.DOUBLE, viewModel.state.value.playbackSpeed)
+        assertTrue(viewModel.playheadMicros.value >= 150_000L)
+        assertEquals(listOf(2.0), audioPlayer.playbackRates)
+
+        viewModel.onAction(VideoEditorAction.SetPlaybackSpeed(EditorPlaybackSpeed.HALF))
+        runCurrent()
+        val resumedAt = viewModel.playheadMicros.value
+        advanceTimeBy(100)
+        runCurrent()
+
+        assertEquals(EditorPlaybackSpeed.HALF, viewModel.state.value.playbackSpeed)
+        assertTrue(viewModel.playheadMicros.value - resumedAt in 30_000L..80_000L)
+        assertEquals(listOf(2.0, 0.5), audioPlayer.playbackRates)
+        assertTrue(viewModel.state.value.isPlaying)
     }
 
     @Test
@@ -349,6 +404,7 @@ class VideoEditorViewModelTest {
         media: FakeEditorMediaService = FakeEditorMediaService(),
         store: FakeEditorProjectStore = FakeEditorProjectStore(),
         clipboard: DesktopImageClipboard = FakeImageClipboard(),
+        audioPlayer: DesktopEditorAudioPlayer = FakeEditorAudioPlayer(),
         initialRecentMediaPaths: List<String> = emptyList(),
         onRecentMediaPath: (String) -> Unit = {},
         mediaCreationTimeMillis: (String) -> Long? = { null },
@@ -357,7 +413,7 @@ class VideoEditorViewModelTest {
         mediaService = media,
         projectStore = store,
         fileSelector = FakeEditorFileSelector(),
-        audioPlayer = FakeEditorAudioPlayer(),
+        audioPlayer = audioPlayer,
         imageClipboard = clipboard,
         ioDispatcher = StandardTestDispatcher(testScheduler),
         initialRecentMediaPaths = initialRecentMediaPaths,
@@ -373,6 +429,7 @@ private class FakeEditorMediaService(
     private val storyboardFrameTimestamps: List<Long> = listOf(0L, 5_000_000L),
     private val previewRenderDelayMillis: Long = 0L,
     private val reverseFrameOutputPaths: Boolean = false,
+    private val previewAudio: EditorPreviewAudio = EditorPreviewAudio(48_000, 2, FloatArray(0)),
 ) : EditorMediaService {
     val exportRequests = mutableListOf<EditorExportRequest>()
     val previewRequests = mutableListOf<PreviewRequest>()
@@ -431,8 +488,7 @@ private class FakeEditorMediaService(
         }
     }
 
-    override suspend fun renderPreviewAudio(project: EditorProject): EditorPreviewAudio =
-        EditorPreviewAudio(48_000, 2, FloatArray(0))
+    override suspend fun renderPreviewAudio(project: EditorProject): EditorPreviewAudio = previewAudio
 
     override suspend fun export(
         request: EditorExportRequest,
@@ -514,7 +570,12 @@ private class FakeEditorFileSelector : DesktopEditorFileSelector {
 }
 
 private class FakeEditorAudioPlayer : DesktopEditorAudioPlayer {
-    override suspend fun play(audio: EditorPreviewAudio, startMicros: Long) = Unit
+    val playbackRates = mutableListOf<Double>()
+
+    override suspend fun play(audio: EditorPreviewAudio, startMicros: Long, playbackRate: Double) {
+        playbackRates += playbackRate
+    }
+
     override fun stop() = Unit
 }
 

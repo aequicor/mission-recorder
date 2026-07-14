@@ -43,9 +43,9 @@ JDK jpackage не принимает macOS app version с нулевым major. 
 Release commit сначала попадает в `master`. Затем создаётся annotated tag на этом commit и отправляется отдельно:
 
 ```powershell
-git tag -a v0.1.1 -m "Mission Recorder 0.1.1"
+git tag -a v0.1.2 -m "Mission Recorder 0.1.2"
 git push origin master
-git push origin v0.1.1
+git push origin v0.1.2
 ```
 
 Tag нельзя перемещать или переиспользовать. Если workflow упал, исправление выпускается новым patch-релизом. Публикацию нельзя считать завершённой, пока GitHub Release не содержит все пять desktop assets и checksum-файл.

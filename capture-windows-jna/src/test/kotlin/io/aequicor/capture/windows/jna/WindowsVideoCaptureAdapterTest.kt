@@ -213,6 +213,42 @@ class WindowsVideoCaptureAdapterTest {
         assertEquals(PixelFormat.Bgra8888, frame.pixelFormat)
         assertEquals(false, system.lastNativeFramesRequested)
     }
+
+    @Test
+    fun mouseTrailKeepsDesktopFramesCpuAccessible() = runBlocking {
+        val system = FakeWindowsWindowSystem(windows = emptyList())
+
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
+            .nativeFrames(
+                settings(
+                    testDesktopSource(),
+                    captureCursor = false,
+                    showMouseTrail = true,
+                ),
+            )
+            .first()
+
+        assertEquals(PixelFormat.Bgra8888, frame.pixelFormat)
+        assertEquals(false, system.lastNativeFramesRequested)
+    }
+
+    @Test
+    fun mouseTrailRecordingKeepsCursorAndSidecarOnTheSameCpuFrame() = runBlocking {
+        val system = FakeWindowsWindowSystem(windows = emptyList())
+
+        val frame = WindowsVideoCaptureAdapter(system, Dispatchers.Unconfined, incrementingNanoTime())
+            .nativeFrames(
+                settings(
+                    testDesktopSource(),
+                    captureCursor = true,
+                    recordMouseTrail = true,
+                ),
+            )
+            .first()
+
+        assertEquals(PixelFormat.Bgra8888, frame.pixelFormat)
+        assertEquals(false, system.lastNativeFramesRequested)
+    }
 }
 
 internal class FakeWindowsWindowSystem(
@@ -304,11 +340,15 @@ private fun settings(
     source: CaptureSource,
     captureCursor: Boolean,
     showInputOverlay: Boolean = false,
+    showMouseTrail: Boolean = false,
+    recordMouseTrail: Boolean = false,
 ): RecordingSettings = RecordingSettings(
     captureSource = source,
     outputPath = "unused.mp4",
     captureCursor = captureCursor,
     showInputOverlay = showInputOverlay,
+    showMouseTrail = showMouseTrail,
+    recordMouseTrail = recordMouseTrail,
 )
 
 private fun testDesktopSource(): CaptureSource.Region = CaptureSource.Region(

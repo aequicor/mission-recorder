@@ -13,6 +13,7 @@ internal data class DesktopRecorderPreferences(
     val frameRate: Int = DEFAULT_DESKTOP_FRAME_RATE,
     val captureCursor: Boolean = true,
     val showInputOverlay: Boolean = false,
+    val showMouseTrail: Boolean = false,
     val recordMouseTrail: Boolean = false,
     val replayDurationMinutes: Int = DEFAULT_REPLAY_MINUTES,
     val storyboardMode: StoryboardMode = StoryboardMode.SeparatePngFiles,
