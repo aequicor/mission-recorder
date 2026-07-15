@@ -57,10 +57,8 @@ jobs:
           - id: windows-x64
             os: windows-latest
             javacpp_platform: windows-x86_64
-            tasks: ":desktop-app:packageReleaseMsi :desktop-app:packageReleaseExe"
-            paths: |
-              desktop-app/build/compose/binaries/main-release/msi/*.msi
-              desktop-app/build/compose/binaries/main-release/exe/*.exe
+            tasks: ":desktop-app:packageReleaseWindowsInstaller"
+            paths: desktop-app/build/compose/binaries/main-release/inno/*.exe
           - id: macos-x64
             os: macos-15-intel
             javacpp_platform: macosx-x86_64
@@ -92,6 +90,17 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-provider: basic
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          choco install innosetup --version=6.7.1 --yes --no-progress
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) {
+            throw "Inno Setup compiler not found at $compiler"
+          }
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "INNO_SETUP_COMPILER=$compiler" -Encoding utf8
 
       - name: Build release artifacts
         shell: bash
@@ -143,17 +152,15 @@ jobs:
       - name: Validate assets and prepare release notes
         shell: bash
         run: |
-          test "$(find release-assets -type f -name '*.msi' | wc -l)" -eq 1
           test "$(find release-assets -type f -name '*.exe' | wc -l)" -eq 1
           test "$(find release-assets -type f -name '*.dmg' | wc -l)" -eq 2
           test "$(find release-assets -type f -name '*.deb' | wc -l)" -eq 1
 
           mkdir release-files
           find release-assets -type f \( \
-            -name '*.msi' -o -name '*.exe' -o -name '*.dmg' -o \
-            -name '*.deb' \
+            -name '*.exe' -o -name '*.dmg' -o -name '*.deb' \
           \) -exec cp --target-directory=release-files {} +
-          test "$(find release-files -maxdepth 1 -type f | wc -l)" -eq 5
+          test "$(find release-files -maxdepth 1 -type f | wc -l)" -eq 4
           while IFS= read -r -d '' file; do
             normalized="${file// /.}"
             test ! -e "$normalized"

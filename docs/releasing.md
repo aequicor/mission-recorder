@@ -6,7 +6,7 @@
 
 Tag `vMAJOR.MINOR.PATCH` запускает `.github/workflows/release.yml`. Тот же workflow можно запустить вручную с ветки как dry run: он проверит сборку всех пакетов, но не создаст GitHub Release. Workflow сначала выполняет чистые `check` и `build`, затем собирает:
 
-- Windows x64: MSI и EXE;
+- Windows x64: пользовательский Inno Setup EXE;
 - macOS Intel: DMG с суффиксом `macos-x64`;
 - macOS Apple Silicon: DMG с суффиксом `macos-arm64`;
 - Ubuntu/Debian x64: DEB.
@@ -28,12 +28,12 @@ JDK jpackage не принимает macOS app version с нулевым major. 
 4. Собрать пакет текущей платформы и установить его:
 
    ```powershell
-   .\gradlew.bat :desktop-app:packageReleaseMsi :desktop-app:packageReleaseExe
+   .\gradlew.bat :desktop-app:packageReleaseWindowsInstaller
    ```
 
-   На macOS используются `packageReleaseDmg`, на Linux — `packageReleaseDeb`.
+   Для локальной Windows-сборки нужен Inno Setup 6.7.1; путь к `ISCC.exe` можно передать через `-PinnoSetupCompiler=C:\path\to\ISCC.exe` или переменную `INNO_SETUP_COMPILER`. На macOS используются `packageReleaseDmg`, на Linux — `packageReleaseDeb`.
 
-5. На Windows проверить, что MSI и EXE устанавливаются без UAC в профиль текущего пользователя. В установленном приложении вручную проверить запуск, preview, короткую запись с остановкой, открытие MP4 и выход через tray. Проверки устройств и разрешений выполняются на реальном целевом хосте.
+5. На Windows проверить, что EXE устанавливается без UAC в `%LOCALAPPDATA%\Programs\Mission Recorder` и не удаляет старые MSI-установки. В установленном приложении вручную проверить запуск, preview, короткую запись с остановкой, открытие MP4 и выход через tray. Проверки устройств и разрешений выполняются на реальном целевом хосте.
 6. Просмотреть staged diff и убедиться, что в нём нет секретов, локальных recordings, settings и временных design-файлов.
 7. Запустить `Release` вручную на release commit и дождаться успешной сборки пакетов всех платформ.
 8. После публикации проверить все assets и `SHA256SUMS.txt`, установить хотя бы пакет основной платформы и убедиться, что release workflow завершился успешно.
@@ -43,13 +43,13 @@ JDK jpackage не принимает macOS app version с нулевым major. 
 Release commit сначала попадает в `master`. Затем создаётся annotated tag на этом commit и отправляется отдельно:
 
 ```powershell
-git tag -a v0.1.3 -m "Mission Recorder 0.1.3"
+git tag -a v0.1.4 -m "Mission Recorder 0.1.4"
 git push origin master
-git push origin v0.1.3
+git push origin v0.1.4
 ```
 
-Tag нельзя перемещать или переиспользовать. Если workflow упал, исправление выпускается новым patch-релизом. Публикацию нельзя считать завершённой, пока GitHub Release не содержит все пять desktop assets и checksum-файл.
+Tag нельзя перемещать или переиспользовать. Если workflow упал, исправление выпускается новым patch-релизом. Публикацию нельзя считать завершённой, пока GitHub Release не содержит четыре desktop assets и checksum-файл.
 
 ## Подпись пакетов
 
-Пока signing credentials не настроены, workflow выпускает unsigned Windows packages и unsigned/unnotarized macOS DMG. Сертификаты и пароли должны передаваться только через GitHub Actions secrets; добавлять их в Gradle, repository files или logs запрещено.
+Пока signing credentials не настроены, workflow выпускает unsigned Windows installer и unsigned/unnotarized macOS DMG. Сертификаты и пароли должны передаваться только через GitHub Actions secrets; добавлять их в Gradle, repository files или logs запрещено.

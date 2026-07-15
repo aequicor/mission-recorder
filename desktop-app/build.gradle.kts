@@ -1,4 +1,5 @@
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.Sync
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
@@ -62,15 +63,13 @@ compose.desktop {
             "-Dstderr.encoding=UTF-8",
         )
         nativeDistributions {
-            targetFormats(TargetFormat.Exe, TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "Mission Recorder"
             packageVersion = releaseVersion
             description = "Local open-source screen recorder"
             vendor = "Mission Recorder"
             windows {
                 iconFile.set(project.file("src/main/resources/icons/mission-recorder.ico"))
-                perUserInstall = true
-                dirChooser = false
             }
             macOS {
                 bundleID = "io.aequicor.missionrecorder"
@@ -90,6 +89,34 @@ compose.desktop {
             }
         }
     }
+}
+
+val innoSetupCompiler = providers.gradleProperty("innoSetupCompiler")
+    .orElse(providers.environmentVariable("INNO_SETUP_COMPILER"))
+    .orElse("ISCC.exe")
+val windowsInstallerScript = layout.projectDirectory.file("src/main/installer/windows/MissionRecorder.iss")
+val windowsAppImageDirectory = layout.buildDirectory.dir("compose/binaries/main-release/app/Mission Recorder")
+val windowsInstallerOutputDirectory = layout.buildDirectory.dir("compose/binaries/main-release/inno")
+val windowsInstallerFile = windowsInstallerOutputDirectory.map { directory ->
+    directory.file("Mission Recorder-$releaseVersion-setup.exe")
+}
+
+tasks.register<Exec>("packageReleaseWindowsInstaller") {
+    group = "compose desktop"
+    description = "Builds the current-user Windows installer with Inno Setup."
+    dependsOn("createReleaseDistributable")
+    inputs.file(windowsInstallerScript)
+    inputs.dir(windowsAppImageDirectory)
+    inputs.property("appVersion", releaseVersion)
+    inputs.property("innoSetupCompiler", innoSetupCompiler)
+    outputs.file(windowsInstallerFile)
+    commandLine(
+        innoSetupCompiler.get(),
+        "/DAppVersion=$releaseVersion",
+        "/DSourceDir=${windowsAppImageDirectory.get().asFile.absolutePath}",
+        "/DOutputDir=${windowsInstallerOutputDirectory.get().asFile.absolutePath}",
+        windowsInstallerScript.asFile.absolutePath,
+    )
 }
 
 val guiRunRequested = gradle.startParameter.taskNames.any { requested ->

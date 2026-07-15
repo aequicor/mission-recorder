@@ -4,11 +4,21 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-15
+
+### Изменено
+
+- Windows MSI/EXE заменены одним пользовательским Inno Setup EXE, который устанавливает приложение в `%LOCALAPPDATA%\Programs\Mission Recorder`.
+
+### Исправлено
+
+- Новый Windows-установщик больше не пытается обновить или удалить старую системную MSI-установку и поэтому не вызывает UAC.
+
 ## [0.1.3] - 2026-07-15
 
 ### Изменено
 
-- Windows MSI/EXE устанавливают Mission Recorder только для текущего пользователя и больше не запрашивают права администратора.
+- Windows MSI/EXE перенастроены на установку для текущего пользователя; при обновлении системной v0.1.2 удаление прежней установки всё ещё могло вызвать UAC.
 
 ### Исправлено
 
@@ -58,6 +68,7 @@
 - Android application packaging ещё не реализован.
 - Desktop-пакеты пока не подписаны и не notarized.
 
+[0.1.4]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.4
 [0.1.3]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.3
 [0.1.2]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.2
 [0.1.1]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.1
