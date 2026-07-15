@@ -6,20 +6,22 @@
 
 Главный фокус: простота, удобство, функциональность, безопасность, открытость и полностью бесплатное использование.
 
-> Текущий релиз: [v0.1.2](https://github.com/aequicor/mission-recorder/releases/tag/v0.1.2) — desktop-релиз с хвостом мыши в видео и управлением скоростью предпросмотра. Проект остаётся pre-1.0 и активно развивается.
+> Текущий релиз: [v0.1.3](https://github.com/aequicor/mission-recorder/releases/tag/v0.1.3) — исправление запуска Windows-пакетов и установка без прав администратора. Проект остаётся pre-1.0 и активно развивается.
 
 ## Установка
 
 Готовые пакеты публикуются в [GitHub Releases](https://github.com/aequicor/mission-recorder/releases/latest):
 
-| Платформа | Артефакт | Поддержка в v0.1.2 |
+| Платформа | Артефакт | Поддержка в v0.1.3 |
 | --- | --- | --- |
 | Windows x64 | `.msi` или `.exe` | Основная desktop-платформа |
 | macOS Intel | `-macos-x64.dmg` | Screen/window capture; system audio пока не поддержан |
 | macOS Apple Silicon | `-macos-arm64.dmg` | Screen/window capture; system audio пока не поддержан |
 | Ubuntu/Debian x64 | `.deb` | Только X11; Wayland блокируется до появления portal adapter |
 
-Desktop-пакеты содержат собственный Java runtime. Пакеты v0.1.2 пока не подписаны и не notarized, поэтому ОС может показать предупреждение издателя. Перед запуском сверяйте файл с `SHA256SUMS.txt` из того же релиза. История изменений находится в [CHANGELOG.md](CHANGELOG.md), а процесс публикации — в [docs/releasing.md](docs/releasing.md).
+Desktop-пакеты содержат собственный Java runtime. Пакеты v0.1.3 пока не подписаны и не notarized, поэтому ОС может показать предупреждение издателя. Перед запуском сверяйте файл с `SHA256SUMS.txt` из того же релиза. История изменений находится в [CHANGELOG.md](CHANGELOG.md), а процесс публикации — в [docs/releasing.md](docs/releasing.md).
+
+Windows MSI/EXE устанавливают приложение в профиль пользователя без запроса прав администратора. Выбор системного каталога установки намеренно отключён.
 
 ## Текущий статус реализации
 

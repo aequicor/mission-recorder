@@ -69,6 +69,8 @@ compose.desktop {
             vendor = "Mission Recorder"
             windows {
                 iconFile.set(project.file("src/main/resources/icons/mission-recorder.ico"))
+                perUserInstall = true
+                dirChooser = false
             }
             macOS {
                 bundleID = "io.aequicor.missionrecorder"

@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-15
+
+### Изменено
+
+- Windows MSI/EXE устанавливают Mission Recorder только для текущего пользователя и больше не запрашивают права администратора.
+
+### Исправлено
+
+- Windows release-приложение больше не завершается при запуске из-за повреждённых ProGuard-обфускацией JNA-привязок Win32 и WASAPI.
+
 ## [0.1.2] - 2026-07-14
 
 ### Добавлено
@@ -48,6 +58,7 @@
 - Android application packaging ещё не реализован.
 - Desktop-пакеты пока не подписаны и не notarized.
 
+[0.1.3]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.3
 [0.1.2]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.2
 [0.1.1]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.1
 [0.1.0]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.0
