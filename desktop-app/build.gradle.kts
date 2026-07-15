@@ -1,8 +1,27 @@
+import org.gradle.api.DefaultTask
 import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.FileSystemOperations
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Exec
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.Sync
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
+import org.gradle.work.DisableCachingByDefault
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.compose.desktop.application.tasks.AbstractJPackageTask
+import java.io.ByteArrayOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import javax.inject.Inject
 
 plugins {
     id("buildsrc.convention.kotlin-jvm")
@@ -78,9 +97,9 @@ compose.desktop {
                 infoPlist {
                     extraKeysRawXml = """
                         <key>NSScreenCaptureUsageDescription</key>
-                        <string>Mission Recorder captures only the screen, window, or application explicitly selected for recording.</string>
+                        <string>Record the screen, window, application, or area you explicitly select in Mission Recorder.</string>
                         <key>NSMicrophoneUsageDescription</key>
-                        <string>Mission Recorder records microphone audio only when the microphone source is explicitly enabled.</string>
+                        <string>Record your voice commentary with the screen when you explicitly select a microphone.</string>
                     """.trimIndent()
                 }
             }
@@ -143,3 +162,151 @@ tasks.withType<JavaExec>().matching { task -> task.name == "run" }.configureEach
     classpath = files(stableRunClasspathDirectory.map { directory -> directory.asFileTree })
     enabled = guiRunRequested
 }
+
+@DisableCachingByDefault(because = "Uses macOS disk image tools and a mounted writable volume.")
+abstract class BrandDmgVolumeIconTask @Inject constructor(
+    private val execOperations: ExecOperations,
+    private val fileSystemOperations: FileSystemOperations,
+) : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val inputDmg: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val volumeIcon: RegularFileProperty
+
+    @get:Input
+    abstract val outputFileName: Property<String>
+
+    @get:OutputDirectory
+    abstract val destinationDirectory: DirectoryProperty
+
+    @TaskAction
+    fun brandVolume() {
+        val workingDirectory = temporaryDir.toPath()
+        fileSystemOperations.delete { delete(workingDirectory) }
+        Files.createDirectories(workingDirectory)
+        val writableImage = workingDirectory.resolve("writable.dmg")
+        exec(
+            "/usr/bin/hdiutil",
+            "convert",
+            inputDmg.get().asFile.absolutePath,
+            "-format",
+            "UDRW",
+            "-o",
+            writableImage.toString(),
+        )
+
+        val attachOutput = ByteArrayOutputStream()
+        execOperations.exec {
+            commandLine(
+                "/usr/bin/hdiutil",
+                "attach",
+                "-readwrite",
+                "-noverify",
+                "-noautoopen",
+                "-nobrowse",
+                writableImage.toString(),
+            )
+            standardOutput = attachOutput
+        }.assertNormalExitValue()
+        val mounted = parseMountedImage(attachOutput.toString(Charsets.UTF_8))
+        try {
+            Files.copy(
+                volumeIcon.get().asFile.toPath(),
+                mounted.path.resolve(".VolumeIcon.icns"),
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            exec("/usr/bin/SetFile", "-a", "C", mounted.path.toString())
+            removeUnexpectedVolumeEntries(mounted.path)
+        } finally {
+            exec("/usr/bin/hdiutil", "detach", mounted.device)
+        }
+
+        val destination = destinationDirectory.get().asFile.toPath()
+        fileSystemOperations.delete { delete(destination) }
+        Files.createDirectories(destination)
+        exec(
+            "/usr/bin/hdiutil",
+            "convert",
+            writableImage.toString(),
+            "-format",
+            "UDZO",
+            "-imagekey",
+            "zlib-level=9",
+            "-o",
+            destination.resolve(outputFileName.get()).toString(),
+        )
+    }
+
+    private fun exec(vararg command: String) {
+        execOperations.exec { commandLine(*command) }.assertNormalExitValue()
+    }
+
+    private fun parseMountedImage(output: String): MountedImage {
+        val line = output.lineSequence().firstOrNull { it.contains(VOLUME_MOUNT_PREFIX) }
+            ?: error("Could not find a mounted volume in hdiutil output:\n$output")
+        val mountIndex = line.lastIndexOf(VOLUME_MOUNT_PREFIX)
+        val device = line.trimStart().takeWhile { character -> !character.isWhitespace() }
+        return MountedImage(
+            device = device,
+            path = Path.of(line.substring(mountIndex).trim()),
+        )
+    }
+
+    private fun removeUnexpectedVolumeEntries(volumeRoot: Path) {
+        Files.list(volumeRoot).use { entries ->
+            entries
+                .filter { entry -> entry.fileName.toString() !in REQUIRED_VOLUME_ENTRIES }
+                .forEach { entry -> fileSystemOperations.delete { delete(entry) } }
+        }
+    }
+
+    private data class MountedImage(
+        val device: String,
+        val path: Path,
+    )
+
+    private companion object {
+        const val VOLUME_MOUNT_PREFIX = "/Volumes/"
+        val REQUIRED_VOLUME_ENTRIES = setOf(
+            ".DS_Store",
+            ".VolumeIcon.icns",
+            "Applications",
+            "Mission Recorder.app",
+        )
+    }
+}
+
+fun configureBrandedDmg(
+    packageTaskName: String,
+    brandTaskName: String,
+    binaryClassifier: String,
+) {
+    val rawDmgDirectory = layout.buildDirectory.dir("compose/binaries/$binaryClassifier/dmg-raw")
+    val finalDmgDirectory = layout.buildDirectory.dir("compose/binaries/$binaryClassifier/dmg")
+    val dmgFileName = "Mission Recorder-$macOsPackageVersion.dmg"
+    val brandTask = tasks.register<BrandDmgVolumeIconTask>(brandTaskName) {
+        inputDmg.set(rawDmgDirectory.map { directory -> directory.file(dmgFileName) })
+        volumeIcon.set(layout.projectDirectory.file("src/main/resources/icons/mission-recorder.icns"))
+        outputFileName.set(dmgFileName)
+        destinationDirectory.set(finalDmgDirectory)
+        onlyIf("DMG branding is available only on macOS") {
+            System.getProperty("os.name").orEmpty().contains("mac", ignoreCase = true)
+        }
+    }
+    afterEvaluate {
+        (tasks.findByName(packageTaskName) as? AbstractJPackageTask)?.apply {
+            destinationDir.set(rawDmgDirectory)
+            outputs.dir(rawDmgDirectory)
+            finalizedBy(brandTask)
+        }
+    }
+}
+
+configureBrandedDmg(
+    packageTaskName = "packageReleaseDmg",
+    brandTaskName = "brandReleaseDmgVolumeIcon",
+    binaryClassifier = "main-release",
+)

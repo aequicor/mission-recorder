@@ -4,6 +4,23 @@
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-15
+
+### Добавлено
+
+- Контекстный macOS-флоу разрешений для записи экрана и микрофона: тихий preflight для preview, по одному системному запросу после явного действия пользователя, переход в нужную панель System Settings и ручная повторная проверка.
+- Фирменная иконка тома в macOS DMG без служебных каталогов, случайно создаваемых Finder.
+
+### Изменено
+
+- Относительные каталоги записи теперь разрешаются от домашнего каталога пользователя, поэтому профиль `recordings` сохраняет файлы в `~/recordings` независимо от рабочего каталога приложения.
+- Purpose strings macOS конкретно описывают запись выбранного экрана и голосового комментария.
+
+### Исправлено
+
+- JavaCPP native classifier в Windows capture-модуле теперь учитывает фактические ОС и архитектуру build host, не ломая общие проверки и packaging на macOS и Linux.
+- Автоматический preview больше не расходует системный permission prompt, а отклонённый доступ не запускает capture adapters и не приводит к серии запросов разрешений.
+
 ## [0.1.4] - 2026-07-15
 
 ### Изменено
@@ -68,6 +85,7 @@
 - Android application packaging ещё не реализован.
 - Desktop-пакеты пока не подписаны и не notarized.
 
+[0.1.5]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.5
 [0.1.4]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.4
 [0.1.3]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.3
 [0.1.2]: https://github.com/aequicor/mission-recorder/releases/tag/v0.1.2

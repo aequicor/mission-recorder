@@ -8,6 +8,7 @@ import io.aequicor.capture.platform.CapturePermission
 import io.aequicor.capture.platform.PermissionGateway
 import io.aequicor.capture.platform.PermissionReport
 import io.aequicor.capture.platform.PermissionStatus
+import io.aequicor.capture.platform.PermissionUserAction
 
 internal interface MacScreenPermissionApi {
     fun isGranted(): Boolean
@@ -61,11 +62,20 @@ internal class MacOsPermissionGateway(
         } else {
             PermissionStatus.RequiresUserAction(
                 "Allow Mission Recorder in System Settings > Privacy & Security > Screen Recording, then retry.",
+                action = if (request) PermissionUserAction.OpenSettings else PermissionUserAction.Request,
+                restartMayBeRequired = request,
             )
         }
         CapturePermission.Microphone -> when (microphone.authorization()) {
-            MacMicrophoneAuthorization.Authorized,
-            MacMicrophoneAuthorization.NotDetermined -> PermissionStatus.Granted
+            MacMicrophoneAuthorization.Authorized -> PermissionStatus.Granted
+            MacMicrophoneAuthorization.NotDetermined -> if (request) {
+                PermissionStatus.Granted
+            } else {
+                PermissionStatus.RequiresUserAction(
+                    instructions = "Continue to let macOS ask for microphone access when recording starts.",
+                    action = PermissionUserAction.Request,
+                )
+            }
             MacMicrophoneAuthorization.Restricted,
             MacMicrophoneAuthorization.Denied -> PermissionStatus.RequiresUserAction(
                 "Allow Mission Recorder in System Settings > Privacy & Security > Microphone, then retry.",

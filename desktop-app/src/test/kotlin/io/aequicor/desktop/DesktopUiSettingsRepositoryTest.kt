@@ -23,6 +23,43 @@ import kotlin.test.assertTrue
 
 class DesktopUiSettingsRepositoryTest {
     @Test
+    fun resolvesRelativeOutputDirectoriesFromUserHomeInsteadOfProcessDirectory() {
+        val directory = Files.createTempDirectory("mission-recorder-relative-output")
+        val repository = DesktopUiSettingsRepository(
+            store = MissionRecorderSettingsStore(directory.resolve("settings.json")),
+            outputTimestamp = { "20260715-120000-000" },
+            relativeOutputRoot = directory.resolve("home"),
+        )
+
+        assertEquals(
+            directory.resolve("home/recordings/mission-20260715-120000-000.mp4").toString(),
+            repository.nextOutputPath("default"),
+        )
+    }
+
+    @Test
+    fun keepsAbsoluteOutputDirectoriesUnchanged() {
+        val directory = Files.createTempDirectory("mission-recorder-absolute-output")
+        val repository = DesktopUiSettingsRepository(
+            store = MissionRecorderSettingsStore(directory.resolve("settings.json")),
+            outputTimestamp = { "20260715-120000-000" },
+            relativeOutputRoot = directory.resolve("unused-home"),
+        )
+        val outputDirectory = directory.resolve("captures").toAbsolutePath()
+
+        assertEquals(
+            outputDirectory.resolve("mission-20260715-120000-000.mp4").toString(),
+            repository.previewOutputPath(
+                profileId = "default",
+                outputPolicy = DesktopOutputPolicy(
+                    directory = outputDirectory.toString(),
+                    fileNamePattern = "mission-{timestamp}.mp4",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun createsSelectsSavesAndDeletesNamedProfilesAtomically() {
         val path = Files.createTempDirectory("mission-recorder-profiles").resolve("settings.json")
         val store = MissionRecorderSettingsStore(path)

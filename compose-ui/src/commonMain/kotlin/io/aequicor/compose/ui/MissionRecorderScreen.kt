@@ -140,6 +140,22 @@ import io.aequicor.compose.resources.output_device
 import io.aequicor.compose.resources.overwrite_output
 import io.aequicor.compose.resources.pause
 import io.aequicor.compose.resources.cancel
+import io.aequicor.compose.resources.enable_preview
+import io.aequicor.compose.resources.permission_check_again
+import io.aequicor.compose.resources.permission_continue
+import io.aequicor.compose.resources.permission_microphone_description
+import io.aequicor.compose.resources.permission_microphone_settings
+import io.aequicor.compose.resources.permission_microphone_title
+import io.aequicor.compose.resources.permission_not_now
+import io.aequicor.compose.resources.permission_open_settings
+import io.aequicor.compose.resources.permission_request_explanation
+import io.aequicor.compose.resources.permission_restart_hint
+import io.aequicor.compose.resources.permission_screen_description
+import io.aequicor.compose.resources.permission_screen_settings
+import io.aequicor.compose.resources.permission_screen_title
+import io.aequicor.compose.resources.permission_system_audio_description
+import io.aequicor.compose.resources.permission_system_audio_settings
+import io.aequicor.compose.resources.permission_system_audio_title
 import io.aequicor.compose.resources.record
 import io.aequicor.compose.resources.record_mouse_trail
 import io.aequicor.compose.resources.recording_workspace
@@ -160,6 +176,7 @@ import io.aequicor.compose.resources.saving_screenshot
 import io.aequicor.compose.resources.selected_source
 import io.aequicor.compose.resources.preview_preparing
 import io.aequicor.compose.resources.preview_image_description
+import io.aequicor.compose.resources.preview_permission_required
 import io.aequicor.compose.resources.screenshot_saved_to
 import io.aequicor.compose.resources.select_area
 import io.aequicor.compose.resources.select_region_screenshot
@@ -395,6 +412,9 @@ private fun MissionRecorderScreen(
     modifier: Modifier,
 ) {
     MissionRecorderTheme {
+        state.permissionPrompt?.let { prompt ->
+            PermissionPromptDialog(prompt = prompt, onAction = onAction)
+        }
         if (state.showOutputNamingDialog) {
             OutputNamingDialog(state = state, onAction = onAction)
         }
@@ -418,6 +438,98 @@ private fun MissionRecorderScreen(
             }
         }
     }
+}
+
+@Composable
+private fun PermissionPromptDialog(
+    prompt: RecorderPermissionPrompt,
+    onAction: (RecorderUiAction) -> Unit,
+) {
+    val title = when (prompt.permission) {
+        RecorderPermissionKind.ScreenRecording -> stringResource(Res.string.permission_screen_title)
+        RecorderPermissionKind.Microphone -> stringResource(Res.string.permission_microphone_title)
+        RecorderPermissionKind.SystemAudio -> stringResource(Res.string.permission_system_audio_title)
+    }
+    val description = when (prompt.permission) {
+        RecorderPermissionKind.ScreenRecording -> stringResource(Res.string.permission_screen_description)
+        RecorderPermissionKind.Microphone -> stringResource(Res.string.permission_microphone_description)
+        RecorderPermissionKind.SystemAudio -> stringResource(Res.string.permission_system_audio_description)
+    }
+    val instructions = when (prompt.action) {
+        RecorderPermissionAction.Request -> stringResource(Res.string.permission_request_explanation)
+        RecorderPermissionAction.OpenSettings -> when (prompt.permission) {
+            RecorderPermissionKind.ScreenRecording -> stringResource(Res.string.permission_screen_settings)
+            RecorderPermissionKind.Microphone -> stringResource(Res.string.permission_microphone_settings)
+            RecorderPermissionKind.SystemAudio -> stringResource(Res.string.permission_system_audio_settings)
+        }
+    }
+    AlertDialog(
+        onDismissRequest = {
+            if (!prompt.isBusy) onAction(RecorderUiAction.DismissPermissionPrompt)
+        },
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(description)
+                Text(instructions, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (prompt.restartMayBeRequired) {
+                    Text(
+                        text = stringResource(Res.string.permission_restart_hint),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                prompt.errorMessage?.let { message ->
+                    Text(message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+                if (prompt.isBusy) {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onAction(
+                        when (prompt.action) {
+                            RecorderPermissionAction.Request -> RecorderUiAction.ContinuePermissionRequest
+                            RecorderPermissionAction.OpenSettings -> RecorderUiAction.OpenPermissionSettings
+                        },
+                    )
+                },
+                enabled = !prompt.isBusy,
+                modifier = Modifier.testTag("permission-primary-action"),
+            ) {
+                Text(
+                    stringResource(
+                        when (prompt.action) {
+                            RecorderPermissionAction.Request -> Res.string.permission_continue
+                            RecorderPermissionAction.OpenSettings -> Res.string.permission_open_settings
+                        },
+                    ),
+                )
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (prompt.action == RecorderPermissionAction.OpenSettings) {
+                    TextButton(
+                        onClick = { onAction(RecorderUiAction.RetryPermissionCheck) },
+                        enabled = !prompt.isBusy,
+                        modifier = Modifier.testTag("permission-check-again"),
+                    ) {
+                        Text(stringResource(Res.string.permission_check_again))
+                    }
+                }
+                TextButton(
+                    onClick = { onAction(RecorderUiAction.DismissPermissionPrompt) },
+                    enabled = !prompt.isBusy,
+                ) {
+                    Text(stringResource(Res.string.permission_not_now))
+                }
+            }
+        },
+    )
 }
 
 /**
@@ -1042,6 +1154,22 @@ private fun PreviewPane(
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        if (state.previewStatus == PreviewUiStatus.PermissionRequired) {
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = stringResource(Res.string.preview_permission_required),
+                                modifier = Modifier.padding(horizontal = 24.dp),
+                                color = Color(0xFFD5E0E8),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Button(
+                                onClick = { onAction(RecorderUiAction.RequestPreviewPermission) },
+                                modifier = Modifier.testTag("enable-preview"),
+                            ) {
+                                Text(stringResource(Res.string.enable_preview))
+                            }
+                        }
                     }
                 }
                 if (state.previewStatus == PreviewUiStatus.Preparing) {

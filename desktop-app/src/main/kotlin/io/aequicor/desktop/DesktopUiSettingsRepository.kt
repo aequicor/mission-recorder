@@ -35,6 +35,7 @@ internal class DesktopUiSettingsRepository(
     private val outputTimestamp: () -> String = {
         LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS"))
     },
+    private val relativeOutputRoot: Path = Path.of(System.getProperty("user.home")),
 ) {
     private val lock = Any()
 
@@ -310,7 +311,13 @@ internal class DesktopUiSettingsRepository(
         val fileName = fileNamePattern
             .replace("{timestamp}", outputTimestamp())
             .replace("{profile}", profileId)
-        return Path.of(directory).toAbsolutePath().normalize().resolve(fileName).toString()
+        val configuredDirectory = Path.of(directory)
+        val resolvedDirectory = if (configuredDirectory.isAbsolute) {
+            configuredDirectory
+        } else {
+            relativeOutputRoot.resolve(configuredDirectory)
+        }
+        return resolvedDirectory.toAbsolutePath().normalize().resolve(fileName).toString()
     }
 }
 

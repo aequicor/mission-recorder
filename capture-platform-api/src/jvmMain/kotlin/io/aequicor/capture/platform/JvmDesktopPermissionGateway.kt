@@ -20,16 +20,19 @@ class JvmDesktopPermissionGateway(
 
         DesktopPlatform.Linux -> linuxStatus(permission)
 
-        DesktopPlatform.MacOs -> PermissionStatus.RequiresUserAction(
-            when (permission) {
-                CapturePermission.ScreenRecording ->
-                    "Allow Mission Recorder in System Settings > Privacy & Security > Screen Recording, then retry."
-                CapturePermission.Microphone ->
-                    "Allow Mission Recorder in System Settings > Privacy & Security > Microphone, then retry."
-                CapturePermission.SystemAudio ->
-                    "The current macOS desktop backend does not support system-audio capture."
-            },
-        )
+        DesktopPlatform.MacOs -> when (permission) {
+            CapturePermission.ScreenRecording -> PermissionStatus.RequiresUserAction(
+                instructions =
+                    "Allow Mission Recorder in System Settings > Privacy & Security > Screen Recording, then retry.",
+                restartMayBeRequired = true,
+            )
+            CapturePermission.Microphone -> PermissionStatus.RequiresUserAction(
+                "Allow Mission Recorder in System Settings > Privacy & Security > Microphone, then retry.",
+            )
+            CapturePermission.SystemAudio -> PermissionStatus.Unsupported(
+                "The current macOS desktop backend does not support system-audio capture.",
+            )
+        }
 
         DesktopPlatform.Unknown -> PermissionStatus.Unsupported(
             "Permission handling is not implemented for this desktop platform.",

@@ -33,6 +33,9 @@ import io.aequicor.capture.platform.CapturePermission
 import io.aequicor.capture.platform.PermissionGateway
 import io.aequicor.capture.platform.PermissionReport
 import io.aequicor.capture.platform.PermissionStatus
+import io.aequicor.capture.platform.PermissionUserAction
+import io.aequicor.compose.ui.RecorderPermissionAction
+import io.aequicor.compose.ui.RecorderPermissionKind
 import io.aequicor.compose.ui.RecorderStatus
 import io.aequicor.compose.ui.PreviewUiStatus
 import io.aequicor.compose.ui.RecorderUiAction
@@ -307,7 +310,46 @@ class DesktopRecorderViewModelTest {
         assertEquals(PreviewUiStatus.Failed, viewModel.state.value.previewStatus)
         assertEquals(0, preview.starts)
         assertEquals(setOf(CapturePermission.ScreenRecording), permissions.lastChecked)
-        assertEquals(setOf(CapturePermission.ScreenRecording), permissions.lastRequested)
+        assertEquals(emptySet(), permissions.lastRequested)
+    }
+
+    @Test
+    fun automaticPreviewWaitsForAnExplicitPermissionAction() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val preview = FakeDesktopPreviewEngine()
+        val permissions = RequestableScreenPermissionGateway(requestResult = true)
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = FakeDesktopRecordingEngine(),
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            previewEngine = preview,
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            permissionGateway = permissions,
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.StartPreview)
+        runCurrent()
+
+        assertEquals(PreviewUiStatus.PermissionRequired, viewModel.state.value.previewStatus)
+        assertEquals(0, permissions.requestCount)
+        assertEquals(null, viewModel.state.value.permissionPrompt)
+
+        viewModel.onAction(RecorderUiAction.RequestPreviewPermission)
+        runCurrent()
+        assertEquals(RecorderPermissionAction.Request, viewModel.state.value.permissionPrompt?.action)
+        assertEquals(0, permissions.requestCount)
+
+        viewModel.onAction(RecorderUiAction.ContinuePermissionRequest)
+        runCurrent()
+
+        assertEquals(1, permissions.requestCount)
+        assertEquals(1, preview.starts)
+        assertEquals(PreviewUiStatus.Active, viewModel.state.value.previewStatus)
     }
 
     @Test
@@ -503,8 +545,92 @@ class DesktopRecorderViewModelTest {
         assertEquals(null, engine.startedSettings)
         assertEquals(RecorderStatus.Failed, viewModel.state.value.status)
         assertEquals(CapturePermission.entries.toSet(), permissions.lastChecked)
-        assertEquals(CapturePermission.entries.toSet(), permissions.lastRequested)
+        assertEquals(emptySet(), permissions.lastRequested)
         assertTrue(viewModel.state.value.errorMessage.orEmpty().contains("Required permissions"))
+    }
+
+    @Test
+    fun recordingShowsRationaleThenResumesOnlyAfterSettingsAreChecked() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val engine = FakeDesktopRecordingEngine()
+        val permissions = RequestableScreenPermissionGateway(requestResult = false)
+        val settingsOpener = RecordingPermissionSettingsOpener()
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(emptyList()),
+            recordingEngine = engine,
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            permissionGateway = permissions,
+            permissionSettingsOpener = settingsOpener,
+        )
+        runCurrent()
+
+        viewModel.onAction(RecorderUiAction.StartRecording)
+        runCurrent()
+
+        assertEquals(RecorderStatus.Idle, viewModel.state.value.status)
+        assertEquals(RecorderPermissionKind.ScreenRecording, viewModel.state.value.permissionPrompt?.permission)
+        assertEquals(RecorderPermissionAction.Request, viewModel.state.value.permissionPrompt?.action)
+        assertEquals(0, permissions.requestCount)
+        assertEquals(null, engine.startedSettings)
+
+        viewModel.onAction(RecorderUiAction.ContinuePermissionRequest)
+        runCurrent()
+
+        assertEquals(1, permissions.requestCount)
+        assertEquals(RecorderPermissionAction.OpenSettings, viewModel.state.value.permissionPrompt?.action)
+        assertTrue(viewModel.state.value.permissionPrompt?.restartMayBeRequired == true)
+        assertEquals(null, engine.startedSettings)
+
+        viewModel.onAction(RecorderUiAction.OpenPermissionSettings)
+        runCurrent()
+        assertEquals(listOf(CapturePermission.ScreenRecording), settingsOpener.opened)
+        assertEquals(null, engine.startedSettings)
+
+        permissions.grantScreen()
+        viewModel.onAction(RecorderUiAction.RetryPermissionCheck)
+        runCurrent()
+
+        assertEquals(null, viewModel.state.value.permissionPrompt)
+        assertEquals(screen, engine.startedSettings?.captureSource)
+    }
+
+    @Test
+    fun initialMicrophonePromptRequiresItsOwnActionBeforeRecordingStarts() = runTest {
+        val screen = CaptureSource.Screen(CaptureSourceId("screen:test"), "Test screen")
+        val microphone = AudioSource.Microphone(AudioSourceId("mic:test"), "Test mic", 48_000, 2)
+        val engine = FakeDesktopRecordingEngine()
+        val permissions = RequestableMicrophonePermissionGateway()
+        val viewModel = DesktopRecorderViewModel(
+            scope = backgroundScope,
+            captureSourceRepository = StaticCaptureSourceRepository(listOf(screen)),
+            audioSourceRepository = StaticAudioSourceRepository(listOf(microphone)),
+            recordingEngine = engine,
+            replayEngine = FakeDesktopReplayEngine(),
+            storyboardExporter = FakeDesktopStoryboardExporter(),
+            nextOutputPath = { "recordings/test.mp4" },
+            nextReplayOutputPath = { "recordings/replay.mp4" },
+            permissionGateway = permissions,
+        )
+        runCurrent()
+        viewModel.onAction(RecorderUiAction.SelectMicrophone(microphone.id.value))
+
+        viewModel.onAction(RecorderUiAction.StartRecording)
+        runCurrent()
+
+        assertEquals(RecorderPermissionKind.Microphone, viewModel.state.value.permissionPrompt?.permission)
+        assertEquals(null, engine.startedSettings)
+        assertEquals(0, permissions.requestCount)
+
+        viewModel.onAction(RecorderUiAction.ContinuePermissionRequest)
+        runCurrent()
+
+        assertEquals(1, permissions.requestCount)
+        assertEquals(listOf(microphone), engine.startedSettings?.audioSources)
     }
 
     @Test
@@ -1299,6 +1425,82 @@ private class RejectingPermissionGateway : PermissionGateway {
     private fun denied(required: Set<CapturePermission>) = PermissionReport(
         required.associateWith { PermissionStatus.Denied("Denied for test.") },
     )
+}
+
+private class RequestableScreenPermissionGateway(
+    private val requestResult: Boolean,
+) : PermissionGateway {
+    private var granted = false
+    var requestCount: Int = 0
+        private set
+
+    override suspend fun check(required: Set<CapturePermission>): PermissionReport = PermissionReport(
+        required.associateWith { permission ->
+            when {
+                permission != CapturePermission.ScreenRecording || granted -> PermissionStatus.Granted
+                else -> PermissionStatus.RequiresUserAction(
+                    instructions = "Allow screen recording.",
+                    action = PermissionUserAction.Request,
+                )
+            }
+        },
+    )
+
+    override suspend fun request(required: Set<CapturePermission>): PermissionReport {
+        requestCount += 1
+        if (requestResult) {
+            granted = true
+        }
+        return PermissionReport(
+            required.associateWith { permission ->
+                if (permission != CapturePermission.ScreenRecording || granted) {
+                    PermissionStatus.Granted
+                } else {
+                    PermissionStatus.RequiresUserAction(
+                        instructions = "Open screen recording settings.",
+                        action = PermissionUserAction.OpenSettings,
+                        restartMayBeRequired = true,
+                    )
+                }
+            },
+        )
+    }
+
+    fun grantScreen() {
+        granted = true
+    }
+}
+
+private class RequestableMicrophonePermissionGateway : PermissionGateway {
+    var requestCount: Int = 0
+        private set
+
+    override suspend fun check(required: Set<CapturePermission>): PermissionReport = PermissionReport(
+        required.associateWith { permission ->
+            if (permission == CapturePermission.Microphone) {
+                PermissionStatus.RequiresUserAction(
+                    instructions = "Continue before the microphone prompt.",
+                    action = PermissionUserAction.Request,
+                )
+            } else {
+                PermissionStatus.Granted
+            }
+        },
+    )
+
+    override suspend fun request(required: Set<CapturePermission>): PermissionReport {
+        requestCount += 1
+        return PermissionReport(required.associateWith { PermissionStatus.Granted })
+    }
+}
+
+private class RecordingPermissionSettingsOpener : DesktopPermissionSettingsOpener {
+    val opened = mutableListOf<CapturePermission>()
+
+    override suspend fun open(permission: CapturePermission): DesktopPermissionSettingsOpenResult {
+        opened += permission
+        return DesktopPermissionSettingsOpenResult.Opened
+    }
 }
 
 private class StaticCaptureSourceRepository(

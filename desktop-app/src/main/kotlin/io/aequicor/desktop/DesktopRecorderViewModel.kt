@@ -26,14 +26,20 @@ import io.aequicor.capture.platform.CaptureSourceRepository
 import io.aequicor.capture.platform.CaptureSourceRequest
 import io.aequicor.capture.platform.CaptureRegionSelection
 import io.aequicor.capture.platform.CaptureRegionSelector
+import io.aequicor.capture.platform.CapturePermission
 import io.aequicor.capture.platform.GrantedPermissionGateway
 import io.aequicor.capture.platform.PermissionAuthorization
 import io.aequicor.capture.platform.PermissionGateway
+import io.aequicor.capture.platform.PermissionStatus
+import io.aequicor.capture.platform.PermissionUserAction
 import io.aequicor.capture.platform.UnavailableCaptureRegionSelector
-import io.aequicor.capture.platform.authorize
 import io.aequicor.capture.platform.message
+import io.aequicor.capture.platform.preflight
 import io.aequicor.compose.ui.RecorderMicrophoneUi
 import io.aequicor.compose.ui.PreviewUiStatus
+import io.aequicor.compose.ui.RecorderPermissionAction
+import io.aequicor.compose.ui.RecorderPermissionKind
+import io.aequicor.compose.ui.RecorderPermissionPrompt
 import io.aequicor.compose.ui.RecorderProfileUi
 import io.aequicor.compose.ui.MAX_VIDEO_BITRATE_MBPS
 import io.aequicor.compose.ui.MAX_AUDIO_GAIN_PERCENT
@@ -172,6 +178,8 @@ internal class DesktopRecorderViewModel(
         UnavailableDesktopRecordingsDirectoryOpener,
     private val audioMuteController: AudioMuteController = NoopAudioMuteController,
     private val permissionGateway: PermissionGateway = GrantedPermissionGateway,
+    private val permissionSettingsOpener: DesktopPermissionSettingsOpener =
+        UnavailableDesktopPermissionSettingsOpener,
     initialPreferences: DesktopRecorderPreferences = DesktopRecorderPreferences(),
     initialStoryboardInputPath: String = "",
     initialShowApplicationInRecording: Boolean = false,
@@ -228,6 +236,8 @@ internal class DesktopRecorderViewModel(
     private val preferenceJob: Job
     private val profileJob: Job
     private val previewJob = AtomicReference<Job?>()
+    private var pendingPermissionOperation: PendingPermissionOperation? = null
+    private var pendingPermissionGrants: Set<CapturePermission> = emptySet()
 
     @Volatile
     private var captureSourcesById: Map<String, CaptureSource> = emptyMap()
@@ -352,6 +362,7 @@ internal class DesktopRecorderViewModel(
             RecorderUiAction.RefreshSources -> refreshSources()
             RecorderUiAction.StartRecording -> startRecording()
             RecorderUiAction.StartPreview -> startPreview()
+            RecorderUiAction.RequestPreviewPermission -> requestPreviewPermission()
             RecorderUiAction.StopPreview -> stopPreview()
             RecorderUiAction.PauseRecording -> pauseRecording()
             RecorderUiAction.ResumeRecording -> resumeRecording()
@@ -364,6 +375,10 @@ internal class DesktopRecorderViewModel(
             RecorderUiAction.StartReplayBuffer -> startReplayBuffer()
             RecorderUiAction.SaveReplayBuffer -> saveReplayBuffer()
             RecorderUiAction.StopReplayBuffer -> stopReplayBuffer()
+            RecorderUiAction.ContinuePermissionRequest -> continuePermissionRequest()
+            RecorderUiAction.OpenPermissionSettings -> openPermissionSettings()
+            RecorderUiAction.RetryPermissionCheck -> retryPermissionCheck()
+            RecorderUiAction.DismissPermissionPrompt -> dismissPermissionPrompt()
             RecorderUiAction.DismissError -> mutableState.update { it.copy(errorMessage = null) }
         }
     }
@@ -1090,9 +1105,11 @@ internal class DesktopRecorderViewModel(
                 )
             }
             stopPreviewAndJoin(clearFrame = false)
-            permissionError(settings)?.let { message ->
-                mutableState.update {
-                    it.copy(status = RecorderStatus.Failed, errorMessage = message)
+            if (!ensurePermissions(settings, PendingPermissionOperation.StartRecording)) {
+                mutableState.update { current ->
+                    current.copy(
+                        status = if (current.permissionPrompt != null) RecorderStatus.Idle else RecorderStatus.Failed,
+                    )
                 }
                 return@launch
             }
@@ -1261,8 +1278,8 @@ internal class DesktopRecorderViewModel(
             showMouseTrail = snapshot.showMouseTrail,
             encoder = encoderSettings,
         )
-        permissionError(settings)?.let { message ->
-            mutableState.update { it.copy(isSavingScreenshot = false, errorMessage = message) }
+        if (!ensurePermissions(settings, PendingPermissionOperation.TakeScreenshot(source.id.value))) {
+            mutableState.update { it.copy(isSavingScreenshot = false) }
             return null
         }
         val frame = withTimeoutOrNull(SCREENSHOT_CAPTURE_TIMEOUT_MILLIS) {
@@ -1346,9 +1363,15 @@ internal class DesktopRecorderViewModel(
                 )
             }
             stopPreviewAndJoin(clearFrame = false)
-            permissionError(settings)?.let { message ->
-                mutableState.update {
-                    it.copy(replayStatus = ReplayUiStatus.Failed, errorMessage = message)
+            if (!ensurePermissions(settings, PendingPermissionOperation.StartReplayBuffer)) {
+                mutableState.update { current ->
+                    current.copy(
+                        replayStatus = if (current.permissionPrompt != null) {
+                            ReplayUiStatus.Idle
+                        } else {
+                            ReplayUiStatus.Failed
+                        },
+                    )
                 }
                 return@launch
             }
@@ -1401,12 +1424,22 @@ internal class DesktopRecorderViewModel(
             mutableState.update {
                 it.copy(previewStatus = PreviewUiStatus.Preparing, errorMessage = null)
             }
-            permissionError(settings)?.let { message ->
-                mutablePreviewFrame.value = null
-                mutableState.update {
-                    it.copy(previewStatus = PreviewUiStatus.Failed, errorMessage = message)
+            when (val permissionCheck = checkPermissions(settings)) {
+                PermissionCheckResult.Granted -> Unit
+                is PermissionCheckResult.UserActionRequired -> {
+                    mutablePreviewFrame.value = null
+                    mutableState.update {
+                        it.copy(previewStatus = PreviewUiStatus.PermissionRequired, errorMessage = null)
+                    }
+                    return@launch
                 }
-                return@launch
+                is PermissionCheckResult.Failed -> {
+                    mutablePreviewFrame.value = null
+                    mutableState.update {
+                        it.copy(previewStatus = PreviewUiStatus.Failed, errorMessage = permissionCheck.message)
+                    }
+                    return@launch
+                }
             }
             try {
                 previewEngine.frames(settings).collect { frame ->
@@ -1446,6 +1479,29 @@ internal class DesktopRecorderViewModel(
         job.start()
     }
 
+    private fun requestPreviewPermission() {
+        val snapshot = mutableState.value
+        if (snapshot.previewStatus != PreviewUiStatus.PermissionRequired || snapshot.permissionPrompt != null) {
+            return
+        }
+        val captureSource = snapshot.selectedSourceId?.let(captureSourcesById::get) ?: return
+        val settings = RecordingSettings(
+            captureSource = captureSource,
+            audioSources = emptyList(),
+            outputPath = PREVIEW_OUTPUT_PLACEHOLDER,
+            frameRate = minOf(snapshot.frameRate, MAX_PREVIEW_FRAME_RATE),
+            captureCursor = false,
+            showMouseTrail = snapshot.showMouseTrail,
+            encoder = encoderSettings,
+        )
+        scope.launch {
+            if (ensurePermissions(settings, PendingPermissionOperation.StartPreview)) {
+                mutableState.update { it.copy(previewStatus = PreviewUiStatus.Idle) }
+                startPreview()
+            }
+        }
+    }
+
     private fun stopPreview() {
         previewJob.getAndSet(null)?.cancel()
         clearPreviewState()
@@ -1466,15 +1522,197 @@ internal class DesktopRecorderViewModel(
         }
     }
 
-    private suspend fun permissionError(settings: RecordingSettings): String? = try {
-        when (val authorization = permissionGateway.authorize(settings)) {
-            is PermissionAuthorization.Granted -> null
-            is PermissionAuthorization.Rejected -> authorization.message()
+    private suspend fun ensurePermissions(
+        settings: RecordingSettings,
+        pendingOperation: PendingPermissionOperation,
+    ): Boolean = when (val result = checkPermissions(settings, pendingPermissionGrants)) {
+        PermissionCheckResult.Granted -> {
+            pendingPermissionGrants = emptySet()
+            true
+        }
+        is PermissionCheckResult.UserActionRequired -> {
+            pendingPermissionOperation = pendingOperation
+            mutableState.update {
+                it.copy(permissionPrompt = result.toUiPrompt(), errorMessage = null)
+            }
+            false
+        }
+        is PermissionCheckResult.Failed -> {
+            pendingPermissionGrants = emptySet()
+            mutableState.update { it.copy(errorMessage = result.message) }
+            false
+        }
+    }
+
+    private suspend fun checkPermissions(
+        settings: RecordingSettings,
+        grantedForPendingOperation: Set<CapturePermission> = emptySet(),
+    ): PermissionCheckResult = try {
+        when (val authorization = permissionGateway.preflight(settings)) {
+            is PermissionAuthorization.Granted -> PermissionCheckResult.Granted
+            is PermissionAuthorization.Rejected -> {
+                val unresolved = authorization.required.filter { permission ->
+                    permission !in grantedForPendingOperation &&
+                        authorization.report.status(permission) !is PermissionStatus.Granted
+                }
+                val hasBlockingStatus = unresolved.any { permission ->
+                    authorization.report.status(permission) !is PermissionStatus.RequiresUserAction
+                }
+                val requiredAction = unresolved.firstNotNullOfOrNull { permission ->
+                    val status = authorization.report.status(permission)
+                    if (status is PermissionStatus.RequiresUserAction) {
+                        PermissionCheckResult.UserActionRequired(permission, status)
+                    } else {
+                        null
+                    }
+                }
+                when {
+                    unresolved.isEmpty() -> PermissionCheckResult.Granted
+                    hasBlockingStatus -> PermissionCheckResult.Failed(authorization.message())
+                    requiredAction != null -> requiredAction
+                    else -> PermissionCheckResult.Failed(authorization.message())
+                }
+            }
         }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (failure: Throwable) {
-        "Could not check capture permissions: ${failure.message ?: failure::class.simpleName}."
+        PermissionCheckResult.Failed(
+            "Could not check capture permissions: ${failure.message ?: failure::class.simpleName}.",
+        )
+    }
+
+    private fun continuePermissionRequest() {
+        val prompt = mutableState.value.permissionPrompt
+            ?.takeIf { it.action == RecorderPermissionAction.Request && !it.isBusy }
+            ?: return
+        val permission = prompt.permission.toCapturePermission()
+        mutableState.update { it.copy(permissionPrompt = prompt.copy(isBusy = true, errorMessage = null)) }
+        scope.launch {
+            val status = try {
+                permissionGateway.request(setOf(permission)).status(permission)
+            } catch (cancelled: CancellationException) {
+                mutableState.update { current ->
+                    current.copy(permissionPrompt = current.permissionPrompt?.copy(isBusy = false))
+                }
+                throw cancelled
+            } catch (failure: Throwable) {
+                mutableState.update { current ->
+                    current.copy(
+                        permissionPrompt = current.permissionPrompt?.copy(
+                            isBusy = false,
+                            errorMessage = failure.message ?: "Could not request permission.",
+                        ),
+                    )
+                }
+                return@launch
+            }
+            when (status) {
+                PermissionStatus.Granted -> {
+                    pendingPermissionGrants = pendingPermissionGrants + permission
+                    resumePendingPermissionOperation()
+                }
+                is PermissionStatus.RequiresUserAction -> mutableState.update {
+                    it.copy(
+                        permissionPrompt = PermissionCheckResult.UserActionRequired(permission, status).toUiPrompt(),
+                    )
+                }
+                is PermissionStatus.Denied -> updatePermissionPromptError(status.reason)
+                is PermissionStatus.Unsupported -> updatePermissionPromptError(status.reason)
+            }
+        }
+    }
+
+    private fun openPermissionSettings() {
+        val prompt = mutableState.value.permissionPrompt
+            ?.takeIf { it.action == RecorderPermissionAction.OpenSettings && !it.isBusy }
+            ?: return
+        mutableState.update { it.copy(permissionPrompt = prompt.copy(isBusy = true, errorMessage = null)) }
+        scope.launch {
+            val result = try {
+                permissionSettingsOpener.open(prompt.permission.toCapturePermission())
+            } catch (cancelled: CancellationException) {
+                mutableState.update { current ->
+                    current.copy(permissionPrompt = current.permissionPrompt?.copy(isBusy = false))
+                }
+                throw cancelled
+            } catch (failure: Throwable) {
+                updatePermissionPromptError(failure.message ?: "Could not open permission settings.")
+                return@launch
+            }
+            when (result) {
+                DesktopPermissionSettingsOpenResult.Opened -> mutableState.update { current ->
+                    current.copy(permissionPrompt = current.permissionPrompt?.copy(isBusy = false))
+                }
+                is DesktopPermissionSettingsOpenResult.Unavailable -> updatePermissionPromptError(result.message)
+            }
+        }
+    }
+
+    private fun retryPermissionCheck() {
+        val prompt = mutableState.value.permissionPrompt
+            ?.takeIf { it.action == RecorderPermissionAction.OpenSettings && !it.isBusy }
+            ?: return
+        if (pendingPermissionOperation != null) {
+            resumePendingPermissionOperation()
+        } else {
+            mutableState.update { it.copy(permissionPrompt = prompt.copy(errorMessage = "Nothing is waiting for access.")) }
+        }
+    }
+
+    private fun dismissPermissionPrompt() {
+        val pending = pendingPermissionOperation
+        pendingPermissionOperation = null
+        pendingPermissionGrants = emptySet()
+        mutableState.update { current ->
+            current.copy(
+                permissionPrompt = null,
+                status = if (current.status == RecorderStatus.Preparing) RecorderStatus.Idle else current.status,
+                replayStatus = if (current.replayStatus == ReplayUiStatus.Preparing) {
+                    ReplayUiStatus.Idle
+                } else {
+                    current.replayStatus
+                },
+                previewStatus = if (pending == PendingPermissionOperation.StartPreview) {
+                    PreviewUiStatus.PermissionRequired
+                } else {
+                    current.previewStatus
+                },
+                isSavingScreenshot = false,
+            )
+        }
+    }
+
+    private fun resumePendingPermissionOperation() {
+        val pending = pendingPermissionOperation ?: return
+        pendingPermissionOperation = null
+        mutableState.update { current ->
+            current.copy(
+                permissionPrompt = null,
+                errorMessage = null,
+                previewStatus = if (pending == PendingPermissionOperation.StartPreview) {
+                    PreviewUiStatus.Idle
+                } else {
+                    current.previewStatus
+                },
+            )
+        }
+        when (pending) {
+            PendingPermissionOperation.StartRecording -> startRecording()
+            PendingPermissionOperation.StartReplayBuffer -> startReplayBuffer()
+            PendingPermissionOperation.StartPreview -> startPreview()
+            is PendingPermissionOperation.TakeScreenshot -> {
+                captureSourcesById[pending.sourceId]?.let(::takeScreenshot)
+            }
+        }
+    }
+
+    private fun updatePermissionPromptError(message: String) {
+        mutableState.update { current ->
+            current.copy(
+                permissionPrompt = current.permissionPrompt?.copy(isBusy = false, errorMessage = message),
+            )
+        }
     }
 
     private fun saveReplayBuffer() {
@@ -1783,6 +2021,44 @@ private fun Double?.toGainPercent(): Int = ((this ?: 1.0) * 100.0)
     .coerceIn(MIN_AUDIO_GAIN_PERCENT, MAX_AUDIO_GAIN_PERCENT)
 
 private fun Int.toAudioGain(): Double = toDouble() / 100.0
+
+private sealed interface PermissionCheckResult {
+    data object Granted : PermissionCheckResult
+    data class UserActionRequired(
+        val permission: CapturePermission,
+        val status: PermissionStatus.RequiresUserAction,
+    ) : PermissionCheckResult
+    data class Failed(val message: String) : PermissionCheckResult
+}
+
+private sealed interface PendingPermissionOperation {
+    data object StartRecording : PendingPermissionOperation
+    data object StartReplayBuffer : PendingPermissionOperation
+    data object StartPreview : PendingPermissionOperation
+    data class TakeScreenshot(val sourceId: String) : PendingPermissionOperation
+}
+
+private fun PermissionCheckResult.UserActionRequired.toUiPrompt(): RecorderPermissionPrompt =
+    RecorderPermissionPrompt(
+        permission = permission.toUiPermissionKind(),
+        action = when (status.action) {
+            PermissionUserAction.Request -> RecorderPermissionAction.Request
+            PermissionUserAction.OpenSettings -> RecorderPermissionAction.OpenSettings
+        },
+        restartMayBeRequired = status.restartMayBeRequired,
+    )
+
+private fun CapturePermission.toUiPermissionKind(): RecorderPermissionKind = when (this) {
+    CapturePermission.ScreenRecording -> RecorderPermissionKind.ScreenRecording
+    CapturePermission.Microphone -> RecorderPermissionKind.Microphone
+    CapturePermission.SystemAudio -> RecorderPermissionKind.SystemAudio
+}
+
+private fun RecorderPermissionKind.toCapturePermission(): CapturePermission = when (this) {
+    RecorderPermissionKind.ScreenRecording -> CapturePermission.ScreenRecording
+    RecorderPermissionKind.Microphone -> CapturePermission.Microphone
+    RecorderPermissionKind.SystemAudio -> CapturePermission.SystemAudio
+}
 
 private enum class RegionSelectionFollowUp {
     None,

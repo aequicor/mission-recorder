@@ -12,7 +12,7 @@ class JvmDesktopPermissionGatewayTest {
 
         assertIs<PermissionStatus.RequiresUserAction>(report.status(CapturePermission.ScreenRecording))
         assertIs<PermissionStatus.RequiresUserAction>(report.status(CapturePermission.Microphone))
-        assertIs<PermissionStatus.RequiresUserAction>(report.status(CapturePermission.SystemAudio))
+        assertIs<PermissionStatus.Unsupported>(report.status(CapturePermission.SystemAudio))
     }
 
     @Test

@@ -6,6 +6,7 @@ import io.aequicor.capture.core.RecordingSettings
 import io.aequicor.capture.platform.CapturePermission
 import io.aequicor.capture.platform.CaptureSourceRequest
 import io.aequicor.capture.platform.PermissionStatus
+import io.aequicor.capture.platform.PermissionUserAction
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -121,13 +122,31 @@ class MacCaptureAdaptersTest {
         val gateway = MacOsPermissionGateway(screen) { MacMicrophoneAuthorization.Authorized }
 
         val checked = gateway.check(setOf(CapturePermission.ScreenRecording, CapturePermission.Microphone))
-        assertIs<PermissionStatus.RequiresUserAction>(checked.status(CapturePermission.ScreenRecording))
+        val screenStatus = assertIs<PermissionStatus.RequiresUserAction>(
+            checked.status(CapturePermission.ScreenRecording),
+        )
+        assertEquals(PermissionUserAction.Request, screenStatus.action)
         assertIs<PermissionStatus.Granted>(checked.status(CapturePermission.Microphone))
         assertEquals(0, screen.requestCount)
 
         val requested = gateway.request(setOf(CapturePermission.ScreenRecording))
         assertIs<PermissionStatus.Granted>(requested.status(CapturePermission.ScreenRecording))
         assertEquals(1, screen.requestCount)
+    }
+
+    @Test
+    fun permissionGatewayDirectsToSettingsAfterScreenRequestIsDenied() = runTest {
+        val gateway = MacOsPermissionGateway(FakeScreenPermissionApi(granted = false, requestResult = false)) {
+            MacMicrophoneAuthorization.Authorized
+        }
+
+        val report = gateway.request(setOf(CapturePermission.ScreenRecording))
+
+        val status = assertIs<PermissionStatus.RequiresUserAction>(
+            report.status(CapturePermission.ScreenRecording),
+        )
+        assertEquals(PermissionUserAction.OpenSettings, status.action)
+        assertTrue(status.restartMayBeRequired)
     }
 
     @Test
@@ -140,6 +159,22 @@ class MacCaptureAdaptersTest {
 
         assertIs<PermissionStatus.RequiresUserAction>(report.status(CapturePermission.Microphone))
         assertIs<PermissionStatus.Unsupported>(report.status(CapturePermission.SystemAudio))
+    }
+
+    @Test
+    fun permissionGatewayRequiresASeparateActionBeforeTheInitialMicrophonePrompt() = runTest {
+        val gateway = MacOsPermissionGateway(FakeScreenPermissionApi(true, true)) {
+            MacMicrophoneAuthorization.NotDetermined
+        }
+
+        val checked = gateway.check(setOf(CapturePermission.Microphone))
+        val requested = gateway.request(setOf(CapturePermission.Microphone))
+
+        val status = assertIs<PermissionStatus.RequiresUserAction>(
+            checked.status(CapturePermission.Microphone),
+        )
+        assertEquals(PermissionUserAction.Request, status.action)
+        assertIs<PermissionStatus.Granted>(requested.status(CapturePermission.Microphone))
     }
 
     @Test

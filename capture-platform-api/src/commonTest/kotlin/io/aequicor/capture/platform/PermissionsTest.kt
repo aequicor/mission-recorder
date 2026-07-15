@@ -40,7 +40,10 @@ class PermissionsTest {
         val gateway = RecordingGateway(
             checked = mapOf(
                 CapturePermission.ScreenRecording to PermissionStatus.Granted,
-                CapturePermission.Microphone to PermissionStatus.RequiresUserAction("Allow microphone."),
+                CapturePermission.Microphone to PermissionStatus.RequiresUserAction(
+                    instructions = "Allow microphone.",
+                    action = PermissionUserAction.Request,
+                ),
             ),
             requested = mapOf(CapturePermission.Microphone to PermissionStatus.Granted),
         )
@@ -54,6 +57,28 @@ class PermissionsTest {
     }
 
     @Test
+    fun requestsAtMostOnePermissionPerAuthorizationAction() = runTest {
+        val requestRequired = PermissionStatus.RequiresUserAction(
+            instructions = "Continue.",
+            action = PermissionUserAction.Request,
+        )
+        val gateway = RecordingGateway(
+            checked = mapOf(
+                CapturePermission.ScreenRecording to requestRequired,
+                CapturePermission.Microphone to requestRequired,
+            ),
+            requested = mapOf(CapturePermission.ScreenRecording to PermissionStatus.Granted),
+        )
+
+        val result = gateway.authorize(
+            settings(listOf(AudioSource.Microphone(AudioSourceId("mic"), "Mic", 48_000, 2))),
+        )
+
+        assertIs<PermissionAuthorization.Rejected>(result)
+        assertEquals(setOf(CapturePermission.ScreenRecording), gateway.lastRequested)
+    }
+
+    @Test
     fun rejectsIncompleteGatewayReports() = runTest {
         val gateway = RecordingGateway(emptyMap(), emptyMap())
 
@@ -61,7 +86,7 @@ class PermissionsTest {
 
         val rejected = assertIs<PermissionAuthorization.Rejected>(result)
         assertTrue(rejected.message().contains("screen recording"))
-        assertEquals(setOf(CapturePermission.ScreenRecording), gateway.lastRequested)
+        assertEquals(emptySet(), gateway.lastRequested)
     }
 }
 

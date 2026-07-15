@@ -37,8 +37,17 @@ data class PermissionReport(
 sealed interface PermissionStatus {
     data object Granted : PermissionStatus
     data class Denied(val reason: String) : PermissionStatus
-    data class RequiresUserAction(val instructions: String) : PermissionStatus
+    data class RequiresUserAction(
+        val instructions: String,
+        val action: PermissionUserAction = PermissionUserAction.OpenSettings,
+        val restartMayBeRequired: Boolean = false,
+    ) : PermissionStatus
     data class Unsupported(val reason: String) : PermissionStatus
+}
+
+enum class PermissionUserAction {
+    Request,
+    OpenSettings,
 }
 
 sealed interface PermissionAuthorization {
@@ -67,27 +76,35 @@ fun RecordingSettings.requiredPermissions(): Set<CapturePermission> = buildSet {
 }
 
 suspend fun PermissionGateway.authorize(settings: RecordingSettings): PermissionAuthorization {
-    val required = settings.requiredPermissions()
-    val checked = check(required)
-    if (checked.allGrantedFor(required)) {
-        return PermissionAuthorization.Granted(required, checked)
+    val preflight = preflight(settings)
+    if (preflight is PermissionAuthorization.Granted) {
+        return preflight
     }
-
-    val unresolved = required.filterTo(linkedSetOf()) { permission ->
-        checked.status(permission) !is PermissionStatus.Granted
-    }
-    val requested = request(unresolved)
+    val required = preflight.required
+    val requestable = required.firstOrNull { permission ->
+        val status = preflight.report.status(permission)
+        status is PermissionStatus.RequiresUserAction && status.action == PermissionUserAction.Request
+    } ?: return preflight
+    val requested = request(setOf(requestable))
     val finalReport = PermissionReport(
         statuses = required.associateWith { permission ->
-            if (permission in unresolved) requested.status(permission) else checked.status(permission)
+            if (permission == requestable) requested.status(permission) else preflight.report.status(permission)
         },
     )
-    return if (finalReport.allGrantedFor(required)) {
-        PermissionAuthorization.Granted(required, finalReport)
-    } else {
-        PermissionAuthorization.Rejected(required, finalReport)
-    }
+    return finalReport.toAuthorization(required)
 }
+
+suspend fun PermissionGateway.preflight(settings: RecordingSettings): PermissionAuthorization {
+    val required = settings.requiredPermissions()
+    return check(required).toAuthorization(required)
+}
+
+private fun PermissionReport.toAuthorization(required: Set<CapturePermission>): PermissionAuthorization =
+    if (allGrantedFor(required)) {
+        PermissionAuthorization.Granted(required, this)
+    } else {
+        PermissionAuthorization.Rejected(required, this)
+    }
 
 fun PermissionAuthorization.Rejected.message(): String = required
     .mapNotNull { permission ->

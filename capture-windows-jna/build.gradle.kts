@@ -18,10 +18,16 @@ dependencies {
 }
 
 fun currentJavaCppPlatform(): String {
+    val os = System.getProperty("os.name").lowercase()
     val architecture = when (System.getProperty("os.arch").lowercase()) {
         "amd64", "x86_64" -> "x86_64"
         "aarch64", "arm64" -> "arm64"
-        else -> error("Unsupported Windows architecture for FFmpeg capture: ${System.getProperty("os.arch")}")
+        else -> error("Unsupported desktop architecture for FFmpeg capture: ${System.getProperty("os.arch")}")
     }
-    return "windows-$architecture"
+    return when {
+        os.startsWith("windows") -> "windows-$architecture"
+        os.startsWith("mac") || os.startsWith("darwin") -> "macosx-$architecture"
+        os.contains("linux") -> "linux-$architecture"
+        else -> error("Unsupported desktop operating system for FFmpeg capture: $os")
+    }
 }

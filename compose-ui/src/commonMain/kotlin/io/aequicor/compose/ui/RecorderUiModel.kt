@@ -57,8 +57,28 @@ enum class PreviewUiStatus {
     Idle,
     Preparing,
     Active,
+    PermissionRequired,
     Failed,
 }
+
+enum class RecorderPermissionKind {
+    ScreenRecording,
+    Microphone,
+    SystemAudio,
+}
+
+enum class RecorderPermissionAction {
+    Request,
+    OpenSettings,
+}
+
+data class RecorderPermissionPrompt(
+    val permission: RecorderPermissionKind,
+    val action: RecorderPermissionAction,
+    val restartMayBeRequired: Boolean = false,
+    val isBusy: Boolean = false,
+    val errorMessage: String? = null,
+)
 
 data class RecorderUiState(
     val profiles: List<RecorderProfileUi> = listOf(RecorderProfileUi("default", "Default local recording")),
@@ -120,6 +140,7 @@ data class RecorderUiState(
     val replayAudioFrames: Int = 0,
     val replayDroppedFrames: Long = 0,
     val lastReplayPath: String? = null,
+    val permissionPrompt: RecorderPermissionPrompt? = null,
     val errorMessage: String? = null,
 ) {
     val isRecording: Boolean
@@ -143,6 +164,7 @@ data class RecorderUiState(
             isSelectingRegion ||
             isChoosingOutputFile ||
             isManagingProfiles ||
+            permissionPrompt != null ||
             isReplayActive
 
     val isPreviewRunning: Boolean
@@ -265,6 +287,7 @@ sealed interface RecorderUiAction {
     data object RefreshSources : RecorderUiAction
     data object StartRecording : RecorderUiAction
     data object StartPreview : RecorderUiAction
+    data object RequestPreviewPermission : RecorderUiAction
     data object StopPreview : RecorderUiAction
     data object PauseRecording : RecorderUiAction
     data object ResumeRecording : RecorderUiAction
@@ -278,6 +301,10 @@ sealed interface RecorderUiAction {
     data object StartReplayBuffer : RecorderUiAction
     data object SaveReplayBuffer : RecorderUiAction
     data object StopReplayBuffer : RecorderUiAction
+    data object ContinuePermissionRequest : RecorderUiAction
+    data object OpenPermissionSettings : RecorderUiAction
+    data object RetryPermissionCheck : RecorderUiAction
+    data object DismissPermissionPrompt : RecorderUiAction
     data object DismissError : RecorderUiAction
 }
 

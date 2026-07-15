@@ -33,7 +33,7 @@ JDK jpackage не принимает macOS app version с нулевым major. 
 
    Для локальной Windows-сборки нужен Inno Setup 6.7.1; путь к `ISCC.exe` можно передать через `-PinnoSetupCompiler=C:\path\to\ISCC.exe` или переменную `INNO_SETUP_COMPILER`. На macOS используются `packageReleaseDmg`, на Linux — `packageReleaseDeb`.
 
-5. На Windows проверить, что EXE устанавливается без UAC в `%LOCALAPPDATA%\Programs\Mission Recorder` и не удаляет старые MSI-установки. В установленном приложении вручную проверить запуск, preview, короткую запись с остановкой, открытие MP4 и выход через tray. Проверки устройств и разрешений выполняются на реальном целевом хосте.
+5. На Windows проверить, что EXE устанавливается без UAC в `%LOCALAPPDATA%\Programs\Mission Recorder` и не удаляет старые MSI-установки. На macOS проверить, что у смонтированного DMG фирменная иконка Mission Recorder, а не стандартная Java-иконка, и что в корне отсутствуют служебные каталоги `.background` и `.fseventsd`. При включённом показе скрытых файлов Finder может показать `.VolumeIcon.icns`: этот файл необходим для фирменной иконки тома. В установленном приложении вручную проверить запуск, preview, короткую запись с остановкой, открытие MP4 и выход через tray. Проверки устройств и разрешений выполняются на реальном целевом хосте.
 6. Просмотреть staged diff и убедиться, что в нём нет секретов, локальных recordings, settings и временных design-файлов.
 7. Запустить `Release` вручную на release commit и дождаться успешной сборки пакетов всех платформ.
 8. После публикации проверить все assets и `SHA256SUMS.txt`, установить хотя бы пакет основной платформы и убедиться, что release workflow завершился успешно.
@@ -43,9 +43,9 @@ JDK jpackage не принимает macOS app version с нулевым major. 
 Release commit сначала попадает в `master`. Затем создаётся annotated tag на этом commit и отправляется отдельно:
 
 ```powershell
-git tag -a v0.1.4 -m "Mission Recorder 0.1.4"
+git tag -a v0.1.5 -m "Mission Recorder 0.1.5"
 git push origin master
-git push origin v0.1.4
+git push origin v0.1.5
 ```
 
 Tag нельзя перемещать или переиспользовать. Если workflow упал, исправление выпускается новым patch-релизом. Публикацию нельзя считать завершённой, пока GitHub Release не содержит четыре desktop assets и checksum-файл.

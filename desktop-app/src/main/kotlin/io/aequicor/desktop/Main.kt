@@ -269,6 +269,12 @@ private fun desktopApplication() = application(exitProcessOnExit = true) {
         }
     }
 
+    LaunchedEffect(state.permissionPrompt != null) {
+        if (state.permissionPrompt != null) {
+            showFromTray()
+        }
+    }
+
     LaunchedEffect(viewModel) {
         var pendingImage: DesktopPreviewImage? = null
         var retiredImage: DesktopPreviewImage? = null
@@ -835,6 +841,7 @@ private fun createDesktopRecorderViewModel(
         permissionGateway = captureAdapters.permissionGateway ?: JvmDesktopPermissionGateway(
             linuxSystemAudioAvailable = audioAdapters.systemAudioSupported,
         ),
+        permissionSettingsOpener = MacOsPermissionSettingsOpener(),
         initialPreferences = initialPreferences,
         initialStoryboardInputPath = initialStoryboardInputPath,
         initialShowApplicationInRecording = initialShowApplicationInRecording,

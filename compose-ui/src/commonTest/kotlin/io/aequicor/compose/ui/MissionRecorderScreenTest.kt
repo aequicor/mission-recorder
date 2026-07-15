@@ -84,6 +84,56 @@ class MissionRecorderScreenTest {
     }
 
     @Test
+    fun permissionBlockedPreviewRequestsAccessOnlyFromItsInlineButton() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(
+                    sources = listOf(RecorderSourceUi("screen:test", "Test screen", RecorderSourceKind.Screen)),
+                    selectedSourceId = "screen:test",
+                    previewStatus = PreviewUiStatus.PermissionRequired,
+                ),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("enable-preview").assertIsDisplayed().performClick()
+
+        assertEquals(listOf<RecorderUiAction>(RecorderUiAction.RequestPreviewPermission), actions)
+    }
+
+    @Test
+    fun screenPermissionDialogHoistsRequestAndSettingsActions() = runComposeUiTest {
+        val actions = mutableListOf<RecorderUiAction>()
+        var prompt by mutableStateOf(
+            RecorderPermissionPrompt(
+                permission = RecorderPermissionKind.ScreenRecording,
+                action = RecorderPermissionAction.Request,
+            ),
+        )
+        setContent {
+            MissionRecorderScreen(
+                state = RecorderUiState(permissionPrompt = prompt),
+                onAction = actions::add,
+            )
+        }
+
+        onNodeWithTag("permission-primary-action").assertIsEnabled().performClick()
+        prompt = prompt.copy(action = RecorderPermissionAction.OpenSettings, restartMayBeRequired = true)
+        onNodeWithTag("permission-check-again").assertIsEnabled().performClick()
+        onNodeWithTag("permission-primary-action").assertIsEnabled().performClick()
+
+        assertEquals(
+            listOf(
+                RecorderUiAction.ContinuePermissionRequest,
+                RecorderUiAction.RetryPermissionCheck,
+                RecorderUiAction.OpenPermissionSettings,
+            ),
+            actions,
+        )
+    }
+
+    @Test
     fun displaysFirstPreviewFrameAfterSourceSelection() = runComposeUiTest {
         val previewImage = mutableStateOf<ImageBitmap?>(null)
         setContent {
